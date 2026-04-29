@@ -147,6 +147,67 @@ fn is_protected_root_dir(name: &str) -> bool {
     matches!(name, "System Volume Information" | "$Recycle.Bin")
 }
 
+/// Scan a specific directory for subdirectories (used for drill-down navigation)
+pub fn scan_directory(path: &str) -> Result<Vec<DirInfo>, String> {
+    let path = Path::new(path);
+    if !path.exists() {
+        return Err(format!("Directory does not exist: {}", path.display()));
+    }
+    if !path.is_dir() {
+        return Err(format!("Not a directory: {}", path.display()));
+    }
+
+    let entries: Vec<_> = std::fs::read_dir(path)
+        .map_err(|e| format!("Cannot read directory: {}", e))?
+        .flatten()
+        .collect();
+
+    let mut dirs: Vec<DirInfo> = Vec::new();
+    let mut files_size: u64 = 0;
+    let mut files_count: u64 = 0;
+
+    for entry in entries {
+        let entry_path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if entry_path.is_dir() {
+            if name.starts_with('$') || name == "System Volume Information" {
+                continue;
+            }
+            let (size, file_count, dir_count) = calculate_dir_size(&entry_path);
+            dirs.push(DirInfo {
+                name,
+                path: entry_path.to_string_lossy().to_string(),
+                size_bytes: size,
+                file_count,
+                dir_count,
+                risk_level: None,
+            });
+        } else {
+            // Count direct files in this directory
+            if let Ok(meta) = entry_path.metadata() {
+                files_size += meta.len();
+                files_count += 1;
+            }
+        }
+    }
+
+    // If there are direct files, add a virtual entry for them
+    if files_count > 0 {
+        dirs.push(DirInfo {
+            name: "(files)".into(),
+            path: path.to_string_lossy().to_string(),
+            size_bytes: files_size,
+            file_count: files_count,
+            dir_count: 0,
+            risk_level: None,
+        });
+    }
+
+    dirs.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    Ok(dirs)
+}
+
 /// Recursively calculate directory size using walkdir + rayon
 fn calculate_dir_size(path: &Path) -> (u64, u64, u64) {
     use rayon::prelude::*;

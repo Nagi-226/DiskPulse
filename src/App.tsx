@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import Treemap from "./components/Treemap";
 
 /* ============================================================
    DiskPulse — Dashboard
@@ -311,6 +312,12 @@ export default function App() {
   const [drives, setDrives] = useState<string[]>([]);
   const [selectedDrive, setSelectedDrive] = useState("C");
 
+  // Drill-down state
+  interface Breadcrumb { name: string; path: string }
+  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
+  const [drillData, setDrillData] = useState<DirInfo[] | null>(null);
+  const [drillTotal, setDrillTotal] = useState(0);
+
   useEffect(() => {
     invoke<string>("app_version").then(setVersion);
     loadDrives();
@@ -343,6 +350,8 @@ export default function App() {
     setError(null);
     setProgress(null);
     setSelectedDrive(drive);
+    setBreadcrumbs([]);
+    setDrillData(null);
     try {
       const info = await invoke<DriveInfo>("scan_drive", { drive });
       setDriveInfo(info);
@@ -351,6 +360,38 @@ export default function App() {
     } finally {
       setLoading(false);
       setProgress(null);
+    }
+  }
+
+  const handleDrillDown = useCallback(async (path: string, name: string) => {
+    setLoading(true);
+    try {
+      const dirs = await invoke<DirInfo[]>("scan_directory", { path });
+      setDrillData(dirs);
+      setBreadcrumbs((prev) => [...prev, { name, path }]);
+      // Use the parent item's size as approximation for total in this view
+      const total = dirs.reduce((sum, d) => sum + d.size_bytes, 0);
+      setDrillTotal(total);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  function handleBreadcrumbClick(index: number) {
+    if (index === -1) {
+      // Back to root
+      setBreadcrumbs([]);
+      setDrillData(null);
+      return;
+    }
+    const newBreadcrumbs = breadcrumbs.slice(0, index + 1);
+    setBreadcrumbs(newBreadcrumbs);
+    // Re-scan the selected directory
+    const last = newBreadcrumbs[newBreadcrumbs.length - 1];
+    if (last) {
+      handleDrillDown(last.path, last.name);
     }
   }
 
@@ -525,23 +566,70 @@ export default function App() {
                     freeBytes={driveInfo.free_bytes}
                   />
 
+                  {/* Breadcrumb navigation */}
+                  {breadcrumbs.length > 0 && (
+                    <div className="flex items-center gap-1.5 text-sm flex-wrap">
+                      <button
+                        className="text-text-muted hover:text-accent-light transition-colors px-2 py-0.5 rounded-md hover:bg-aurora-elevated/50"
+                        onClick={() => handleBreadcrumbClick(-1)}
+                      >
+                        {driveInfo.drive_letter}:\\
+                      </button>
+                      {breadcrumbs.map((crumb, i) => (
+                        <span key={crumb.path} className="flex items-center gap-1.5">
+                          <span className="text-text-muted">/</span>
+                          <button
+                            className={`px-2 py-0.5 rounded-md transition-colors ${
+                              i === breadcrumbs.length - 1
+                                ? "text-accent-light font-medium"
+                                : "text-text-secondary hover:text-accent-light hover:bg-aurora-elevated/50"
+                            }`}
+                            onClick={() => handleBreadcrumbClick(i)}
+                          >
+                            {crumb.name}
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Treemap Visualization */}
+                  <div className="glass-card p-4">
+                    <div className="flex items-center justify-between mb-4 px-2">
+                      <div>
+                        <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
+                          {breadcrumbs.length > 0
+                            ? breadcrumbs[breadcrumbs.length - 1].name
+                            : "Disk Space Treemap"}
+                        </h3>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          {drillData
+                            ? `${drillData.length} items — click to explore deeper`
+                            : `${driveInfo.top_dirs.length} top-level directories — click to drill down`}
+                        </p>
+                      </div>
+                    </div>
+                    <Treemap
+                      data={drillData ?? driveInfo.top_dirs}
+                      totalBytes={drillData ? drillTotal : driveInfo.total_bytes}
+                      onDrillDown={handleDrillDown}
+                    />
+                  </div>
+
+                  {/* Directory List (detailed view below treemap) */}
                   <div className="glass-card p-6">
                     <div className="flex items-center justify-between mb-6">
                       <div>
                         <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-                          Top Directories
+                          Directory List
                         </h3>
                         <p className="text-xs text-text-muted mt-0.5">
-                          {driveInfo.top_dirs.length} directories scanned — ranked by size
+                          Ranked by size — showing top 20
                         </p>
                       </div>
-                      <span className="text-xs text-text-muted font-mono">
-                        Showing top 20
-                      </span>
                     </div>
-
                     <div className="space-y-0.5">
-                      {driveInfo.top_dirs.slice(0, 20).map((dir, i) => (
+                      {(drillData ?? driveInfo.top_dirs).slice(0, 20).map((dir, i) => (
                         <DirBarItem
                           key={dir.path}
                           dir={dir}

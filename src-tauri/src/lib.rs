@@ -49,6 +49,12 @@ fn list_drives() -> Result<Vec<String>, String> {
     }
 }
 
+/// Scan a specific directory for drill-down navigation
+#[tauri::command]
+fn scan_directory(path: String) -> Result<Vec<scanner::DirInfo>, String> {
+    scanner::scan_directory(&path)
+}
+
 /// Get the app version
 #[tauri::command]
 fn app_version() -> String {
@@ -61,7 +67,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![scan_drive, list_drives, app_version])
+        .invoke_handler(tauri::generate_handler![scan_drive, list_drives, scan_directory, app_version])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
