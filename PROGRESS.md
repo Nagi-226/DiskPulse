@@ -65,14 +65,16 @@ E:\Github Project\DiskPulse\
 ├── README.md                    ✅ Created
 ├── CLAUDE.md                    ✅ Created
 ├── PROGRESS.md                  ✅ This file
-├── development_plan.txt         ✅ Updated 2026-04-29 (detailed 10-version plan)
-├── package.json                 ✅ v0.0.1, deps installed (missing echarts/d3/tailwind)
-├── vite.config.ts               ✅ Default (needs Tailwind plugin)
+├── development_plan.txt         ✅ Updated 2026-04-29 (Aurora design system integrated)
+├── package.json                 ✅ All deps installed (echarts, d3, tailwindcss, lucide-react)
+├── vite.config.ts               ✅ Tailwind CSS plugin configured
 ├── tsconfig.json                ✅ Default
 ├── src/
-│   ├── main.tsx                 ✅ Default Vite entry
-│   ├── App.tsx                  ✅ Custom dashboard with ring chart + dir list
-│   ├── App.css                  ✅ Dark theme styling
+│   ├── main.tsx                 ✅ Updated with index.css import
+│   ├── App.tsx                  ✅ Aurora design: sidebar, treemap, breadcrumbs, drive selector
+│   ├── index.css                ✅ Full Aurora design system (tokens, glass-morphism, animations)
+│   ├── components/
+│   │   └── Treemap.tsx          ✅ ECharts treemap with drill-down + category colors
 │   ├── vite-env.d.ts            ✅ Default
 │   └── assets/                  ✅ Default
 ├── src-tauri/
@@ -83,16 +85,16 @@ E:\Github Project\DiskPulse\
 │   ├── icons/                   ✅ Default Tauri icons
 │   └── src/
 │       ├── main.rs              ✅ App entry
-│       ├── lib.rs               ✅ scan_drive + app_version commands
-│       └── scanner/
-│           └── mod.rs           ✅ DriveInfo, scan_drive, GetDiskFreeSpaceExW
+│       ├── lib.rs               ✅ scan_drive, list_drives, scan_directory, classify_risks, app_version
+│       ├── scanner/
+│       │   └── mod.rs           ✅ DriveInfo, scan_drive_with_progress, scan_directory, tests
+│       └── risk/
+│           └── mod.rs           ✅ 16 risk rules, classify_risks, RiskReport, 5 unit tests
 ├── (NOT YET CREATED)
 │   ├── src-tauri/src/watcher/   — Planned v0.0.7
-│   ├── src-tauri/src/risk/      — Planned v0.0.4
 │   ├── src-tauri/src/cleaner/   — Planned v0.0.6
 │   ├── src-tauri/src/db/        — Planned v0.0.8
-│   ├── src/pages/               — Planned v0.0.3+
-│   ├── src/components/          — Planned v0.0.3+
+│   ├── src/pages/               — Planned v0.0.5+
 │   └── src/hooks/               — Planned v0.0.7
 ```
 
@@ -109,17 +111,26 @@ E:\Github Project\DiskPulse\
 
 | Version | Name | Days | Status | Completion |
 |---------|------|------|--------|------------|
-| v0.0.1 | Scaffold & Verify | 2d | In progress | ~70% |
-| v0.0.2 | Scanner Polish | 2d | Core done, needs polish | ~60% |
-| v0.0.3 | Dashboard Treemap | 3d | Not started | 0% |
-| v0.0.4 | Risk Engine | 3d | Not started | 0% |
+| v0.0.1 | Scaffold & Verify | 2d | ✅ Complete | 100% |
+| v0.0.2 | Scanner Polish | 2d | ✅ Complete | 100% |
+| v0.0.3 | Dashboard Treemap | 3d | ✅ Complete | 100% |
+| v0.0.4 | Risk Engine | 3d | ✅ Complete | 100% |
 | v0.0.5 | Cleanup Report | 3d | Not started | 0% |
 | v0.0.6 | Safe Cleanup | 4d | Not started | 0% |
 | v0.0.7 | FS Watcher + Tray | 3d | Not started | 0% |
 | v0.0.8 | History & Trends | 3d | Not started | 0% |
 | v0.0.9 | System Integration | 3d | Not started | 0% |
 | v0.1.0 | Release Candidate | 4d | Not started | 0% |
-| **Total** | | **30d** | | **~8%** |
+| **Total** | | **30d** | | **~40%** |
+
+### Git Commits
+
+| # | Commit | Description |
+|---|--------|-------------|
+| 1 | `11df38a` | feat: v0.0.1 project scaffold with working scanner and Aurora design system |
+| 2 | `9623ec4` | feat: v0.0.2 scanner progress callback + multi-drive + tests |
+| 3 | `2ce2510` | feat: v0.0.3 ECharts treemap + drill-down navigation |
+| 4 | `7fcad28` | feat: v0.0.4 risk classification engine |
 
 ### Parallel Work Tracks (after v0.0.2 done)
 
