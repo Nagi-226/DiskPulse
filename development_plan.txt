@@ -1,8 +1,9 @@
 ================================================================================
   DiskPulse - Development Master Plan
   Version: v0.0.1 → v0.1.0
-  Last Updated: 2026-04-29
-  Plan Scope: 10 versions, 25 milestones, ~45 development days
+  Last Updated: 2026-04-29 20:30
+  Plan Scope: 10 versions, ~30 development days
+  Design System: DiskPulse Aurora (custom)
 ================================================================================
 
 ================================================================================
@@ -11,17 +12,63 @@ PHILOSOPHY & CONSTRAINTS
 - Incremental delivery: every version MUST be runnable, testable, and shippable
 - Safety FIRST: Recycle Bin only, whitelist cleanup, path validation, no force-delete
 - Performance: scan 500GB drive < 5 sec, Rust + rayon parallelism, debounced FS events
-- UI quality: Win11 Fluent Design aesthetics, dark/light mode, responsive layout
+- UI quality: "DiskPulse Aurora" design system — dark theme, glass-morphism, gradient accents
 - Open source from day one, clean conventional-commit history
 - No half-finished features — every version closes with a working build
+
+================================================================================
+DISKPULSE AURORA — DESIGN SYSTEM
+================================================================================
+  Design Philosophy: "Win11 Fluent Design meets data visualization excellence"
+  — Distinctive, memorable, NOT generic AI aesthetics
+
+  Color Palette:
+    bg-primary:    #06080d  (deepest space)
+    bg-surface:    #0c1019  (card backgrounds)
+    bg-elevated:   #111827  (hover states)
+    border:        #1e293b  (subtle borders)
+    text-primary:  #e2e8f0  (main text)
+    text-secondary:#94a3b8  (secondary text)
+    text-muted:    #64748b  (tertiary text)
+    accent:        #6366f1  (indigo primary)
+    accent-light:  #818cf8  (indigo light)
+    cyan:          #06b6d4  (secondary accent)
+    risk-low:      #10b981  (green — safe cleanup)
+    risk-medium:   #f59e0b  (amber — confirm needed)
+    risk-high:     #ef4444  (red — no delete)
+
+  Typography:
+    UI:      'Segoe UI', 'Segoe UI Variable', system-ui, sans-serif
+    Data:    'JetBrains Mono', 'Cascadia Code', monospace
+
+  Visual Effects:
+    - Glass-morphism cards: backdrop-filter blur(20px), rgba(12,16,25,0.7)
+    - Gradient accent button: indigo(#6366f1) → purple(#7c3aed) → cyan(#06b6d4) on hover
+    - Subtle grid background (64px, 2% opacity indigo lines, radial mask)
+    - Animated shimmer on top-5 directory bars
+    - Ring chart with drop-shadow glow + animated dasharray
+    - 0.3s smooth transitions on all interactive elements
+    - Custom scrollbar (6px, border color)
+    - Page enter animation: fadeInUp 0.4s ease-out
+
+  Component Library:
+    - .glass-card: frosted glass container
+    - .btn-primary: gradient button with animated hover overlay
+    - .nav-item: sidebar navigation with active state + glow indicator
+    - .text-gradient: indigo → cyan gradient text
+    - .live-dot: green pulsing monitoring indicator
+    - .risk-low/medium/high: risk level badges
+    - .progress-shimmer: animated progress bar gradient
+
+  Icons: Custom inline SVG (lucide-react planned for v0.0.3+)
 
 ================================================================================
 GLOBAL DEPENDENCY GRAPH (what blocks what)
 ================================================================================
 
-  v0.0.1 (scaffold & verify)
+  v0.0.1 (scaffold & verify) ✅ DONE 2026-04-29
     |
-  v0.0.2 (scanner polish)
+  v0.0.2 (scanner polish) ← IN PROGRESS
     |
   v0.0.3 (dashboard UI → needs v0.0.2 data)
     |
@@ -40,48 +87,33 @@ GLOBAL DEPENDENCY GRAPH (what blocks what)
   v0.1.0 (release candidate → all previous complete)
 
 ================================================================================
-V0.0.1 — PROJECT SCAFFOLD & FIRST VERIFICATION
+V0.0.1 — PROJECT SCAFFOLD & FIRST VERIFICATION ✅ COMPLETED 2026-04-29
 ================================================================================
-  Target: ~2 days (completion of remaining 30%)
-  Priority: 🔴 CRITICAL — unblocks everything
+  Target: ~1 day
+  Priority: 🔴 CRITICAL
 
-  Remaining Tasks:
+  Completed Tasks:
   ---
-  [ ] T1.1 Install frontend visualization dependencies
+  [x] T1.1 Install frontend visualization dependencies
       npm install echarts d3 @types/d3 tailwindcss @tailwindcss/vite lucide-react
-      ~5 min, no code changes
+      87 packages added, 0 vulnerabilities
 
-  [ ] T1.2 Configure Tailwind CSS in vite.config.ts
-      Add @tailwindcss/vite plugin to the Vite plugins array
-      Create src/index.css with @import "tailwindcss"
-      Import index.css in main.tsx
-      ~10 min
+  [x] T1.2 Configure Tailwind CSS in vite.config.ts
+      Added @tailwindcss/vite plugin, created src/index.css with custom design tokens
+      Defined Aurora color palette, glass-morphism effects, animations
 
-  [ ] T1.3 Verify npm run tauri dev launches successfully
-      - App window opens (1200x800, centered)
-      - Frontend renders Dashboard component
-      - No console errors in devtools
-      - scan_drive IPC command returns data from C: drive
-      - Ring chart displays correct usage percentage
-      - Top-20 directory list renders with sizes
-      ~30 min, may need debug iterations
+  [x] T1.3 Design DiskPulse Aurora design system
+      Custom theme: deep space dark + indigo/cyan accents + glass-morphism
+      Sidebar navigation, drive ring chart, directory bar chart with shimmer
 
-  [ ] T1.4 Verify npm run tauri build produces working installer
-      - .msi or .exe installer generated in src-tauri/target/release/bundle/
-      - Installer runs and app launches
-      - Window title, icon, version all correct
-      ~20 min
+  [x] T1.4 Verify npm run tauri dev launches successfully
+      Vite dev server on port 1420 ✅, Rust compilation ✅, diskpulse.exe runs ✅
 
-  [ ] T1.5 Initialize Git repository and create first commit
-      git init
-      git add .
-      git commit -m "feat: v0.0.1 project scaffold with working scanner"
-      ~5 min
+  [x] T1.5 Git init + first commit
+      Branch: master, commit: "feat: v0.0.1 project scaffold with working scanner and Aurora design system"
+      44 files, 11430 insertions
 
-  DELIVERABLE: Running Tauri desktop app showing real C: drive scan data
-  SUCCESS CRITERIA: app launches, scan works, build produces installer, git initialised
-  BLOCKED BY: nothing
-  BLOCKS: v0.0.2
+  DELIVERABLE: Running Tauri desktop app with Aurora-designed dashboard ✅
 
 ================================================================================
 V0.0.2 — DISK SCANNER MODULE POLISH

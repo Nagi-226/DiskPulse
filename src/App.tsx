@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 /* ============================================================
    DiskPulse — Dashboard
@@ -22,6 +23,13 @@ interface DirInfo {
   file_count: number;
   dir_count: number;
   risk_level: string | null;
+}
+
+interface ScanProgress {
+  drive_letter: string;
+  processed: number;
+  total: number;
+  current_path: string | null;
 }
 
 // --- Helpers ---
@@ -59,14 +67,12 @@ function DriveRing({
       {/* Ring */}
       <div className="relative flex-shrink-0">
         <svg width="140" height="140" viewBox="0 0 140 140">
-          {/* Background ring */}
           <circle
             cx="70" cy="70" r="62"
             fill="none"
             stroke="var(--color-aurora-border)"
             strokeWidth="10"
           />
-          {/* Usage arc */}
           <circle
             cx="70" cy="70" r="62"
             fill="none"
@@ -80,7 +86,6 @@ function DriveRing({
               filter: `drop-shadow(0 0 8px ${color}44)`,
             }}
           />
-          {/* Inner circle decoration */}
           <circle
             cx="70" cy="70" r="48"
             fill="none"
@@ -88,7 +93,6 @@ function DriveRing({
             strokeWidth="0.5"
             strokeDasharray="4 6"
           />
-          {/* Center text */}
           <text
             x="70" y="62"
             textAnchor="middle"
@@ -109,7 +113,6 @@ function DriveRing({
             USED
           </text>
         </svg>
-        {/* Glow behind ring */}
         <div
           className="absolute inset-0 rounded-full opacity-20"
           style={{
@@ -225,10 +228,7 @@ function DirBarItem({
 
   return (
     <div className="group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors hover:bg-aurora-elevated/50">
-      {/* Rank */}
       <span className="w-6 text-xs text-right text-text-muted font-mono">{rank}</span>
-
-      {/* Info */}
       <div className="w-48 flex-shrink-0 flex items-center justify-between">
         <span className="text-sm text-text-primary truncate" title={dir.path}>
           {dir.name}
@@ -237,8 +237,6 @@ function DirBarItem({
           {formatSize(dir.size_bytes)}
         </span>
       </div>
-
-      {/* Bar track */}
       <div className="flex-1 h-7 relative">
         <div className="absolute inset-0 rounded-md bg-aurora-border/40 overflow-hidden">
           <div
@@ -252,20 +250,52 @@ function DirBarItem({
               opacity: 0.3 + (rank <= 5 ? 0.5 : 0) + (rank <= 3 ? 0.2 : 0),
             }}
           />
-          {/* Shimmer for top 5 items */}
           {rank <= 5 && (
-            <div
-              className="absolute inset-0 rounded-md progress-shimmer"
-              style={{ opacity: 0.5 }}
-            />
+            <div className="absolute inset-0 rounded-md progress-shimmer" style={{ opacity: 0.5 }} />
           )}
         </div>
       </div>
-
-      {/* Percentage */}
       <span className="w-14 text-right text-xs text-text-muted font-mono">
         {((dir.size_bytes / (maxSize > 0 ? maxSize * 100 : 1)) * 100).toFixed(1)}%
       </span>
+    </div>
+  );
+}
+
+// --- Scan Progress Bar ---
+function ScanProgressBar({ progress }: { progress: ScanProgress }) {
+  const pct = progress.total > 0 ? (progress.processed / progress.total) * 100 : 0;
+  const dirName = progress.current_path
+    ? progress.current_path.split("\\").pop() || progress.current_path
+    : "";
+
+  return (
+    <div className="glass-card p-4 mb-6 animate-in fade-in">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 text-sm">
+          <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" />
+          </svg>
+          <span className="text-text-primary font-medium">Scanning {progress.drive_letter}: Drive</span>
+        </div>
+        <span className="text-xs text-text-muted font-mono">
+          {progress.processed}/{progress.total} dirs
+        </span>
+      </div>
+      <div className="h-2 rounded-full bg-aurora-border/60 overflow-hidden">
+        <div
+          className="h-full rounded-full transition-all duration-300 ease-out"
+          style={{
+            width: `${Math.max(pct, 2)}%`,
+            background: "linear-gradient(90deg, var(--color-accent), var(--color-cyan))",
+          }}
+        />
+      </div>
+      {dirName && (
+        <p className="mt-1.5 text-xs text-text-muted truncate">
+          Scanning: {dirName}
+        </p>
+      )}
     </div>
   );
 }
@@ -274,25 +304,53 @@ function DirBarItem({
 export default function App() {
   const [driveInfo, setDriveInfo] = useState<DriveInfo | null>(null);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [drives, setDrives] = useState<string[]>([]);
+  const [selectedDrive, setSelectedDrive] = useState("C");
 
   useEffect(() => {
     invoke<string>("app_version").then(setVersion);
-    scanDrive();
+    loadDrives();
+    scanDrive("C");
+
+    // Listen for scan progress events
+    const unlisten = listen<ScanProgress>("scan-progress", (event) => {
+      setProgress(event.payload);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
-  async function scanDrive() {
+  async function loadDrives() {
+    try {
+      const driveList = await invoke<string[]>("list_drives");
+      setDrives(driveList);
+      if (driveList.length > 0 && !driveList.includes("C")) {
+        setSelectedDrive(driveList[0]);
+      }
+    } catch {
+      // Fallback: just use C:
+      setDrives(["C"]);
+    }
+  }
+
+  async function scanDrive(drive: string) {
     setLoading(true);
     setError(null);
+    setProgress(null);
+    setSelectedDrive(drive);
     try {
-      const info = await invoke<DriveInfo>("scan_drive", { drive: "C" });
+      const info = await invoke<DriveInfo>("scan_drive", { drive });
       setDriveInfo(info);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
 
@@ -306,10 +364,8 @@ export default function App() {
     <div className="h-full flex bg-aurora-bg">
       {/* --- Sidebar --- */}
       <aside className="w-60 flex-shrink-0 flex flex-col border-r border-aurora-border/60 bg-aurora-surface/50 backdrop-blur-xl">
-        {/* Logo */}
         <div className="px-5 pt-6 pb-5 border-b border-aurora-border/40">
           <div className="flex items-center gap-3">
-            {/* App icon */}
             <div className="relative w-9 h-9 rounded-xl flex items-center justify-center"
               style={{
                 background: "linear-gradient(135deg, var(--color-accent), #7c3aed)",
@@ -329,7 +385,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1">
           {NAV_ITEMS.map((item) => (
             <button
@@ -339,7 +394,6 @@ export default function App() {
             >
               <item.icon />
               <span>{item.label}</span>
-              {/* Active indicator */}
               {activeTab === item.id && (
                 <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent"
                   style={{ boxShadow: "0 0 6px var(--color-accent-glow)" }}
@@ -349,11 +403,10 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Footer */}
         <div className="px-4 py-4 border-t border-aurora-border/40">
           <div className="flex items-center gap-2 text-xs text-text-muted">
             <span className="live-dot" />
-            <span>Monitoring active</span>
+            <span>{loading ? "Scanning..." : "Monitoring active"}</span>
           </div>
         </div>
       </aside>
@@ -367,13 +420,38 @@ export default function App() {
               {activeTab === "dashboard" ? "Drive Overview" : activeTab}
             </h2>
             <p className="text-xs text-text-muted mt-0.5">
-              {driveInfo && `${driveInfo.drive_letter}: Drive — ${formatSize(driveInfo.total_bytes)} total`}
+              {driveInfo
+                ? `${driveInfo.drive_letter}: Drive — ${formatSize(driveInfo.total_bytes)} total`
+                : "Ready"}
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Quick stats in header */}
-            {driveInfo && (
+            {/* Drive selector */}
+            {drives.length > 0 && (
+              <select
+                value={selectedDrive}
+                onChange={(e) => scanDrive(e.target.value)}
+                disabled={loading}
+                className="px-3 py-2 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
+                           focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30
+                           disabled:opacity-50 cursor-pointer appearance-none"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
+                  backgroundPosition: "right 8px center",
+                  backgroundRepeat: "no-repeat",
+                  backgroundSize: "16px",
+                  paddingRight: "32px",
+                }}
+              >
+                {drives.map((d) => (
+                  <option key={d} value={d}>{d}: Drive</option>
+                ))}
+              </select>
+            )}
+
+            {/* Quick stats */}
+            {driveInfo && !loading && (
               <div className="flex items-center gap-4 mr-4 px-4 py-1.5 rounded-lg bg-aurora-elevated/50 border border-aurora-border/30">
                 <div className="flex items-center gap-1.5 text-xs">
                   <span className="text-text-muted">Used</span>
@@ -389,7 +467,7 @@ export default function App() {
 
             <button
               className="btn-primary"
-              onClick={scanDrive}
+              onClick={() => scanDrive(selectedDrive)}
               disabled={loading}
             >
               <span className="flex items-center gap-2">
@@ -406,7 +484,7 @@ export default function App() {
                       <circle cx="11" cy="11" r="8" />
                       <path d="M21 21l-4.35-4.35" />
                     </svg>
-                    Scan C: Drive
+                    Scan {selectedDrive}: Drive
                   </>
                 )}
               </span>
@@ -434,9 +512,11 @@ export default function App() {
         <div className="flex-1 overflow-y-auto page-enter">
           {activeTab === "dashboard" && (
             <div className="p-8 space-y-8">
+              {/* Scan progress */}
+              {progress && <ScanProgressBar progress={progress} />}
+
               {driveInfo ? (
                 <>
-                  {/* Drive Overview Card */}
                   <DriveRing
                     usedPercent={usedPercent}
                     driveLetter={driveInfo.drive_letter}
@@ -445,7 +525,6 @@ export default function App() {
                     freeBytes={driveInfo.free_bytes}
                   />
 
-                  {/* Top Directories */}
                   <div className="glass-card p-6">
                     <div className="flex items-center justify-between mb-6">
                       <div>
@@ -479,13 +558,12 @@ export default function App() {
                     <circle cx="11" cy="11" r="8" />
                     <path d="M21 21l-4.35-4.35" />
                   </svg>
-                  <p className="mt-4 text-sm">Click "Scan C: Drive" to begin</p>
+                  <p className="mt-4 text-sm">Select a drive and click Scan to begin</p>
                 </div>
               ) : null}
             </div>
           )}
 
-          {/* Placeholder pages */}
           {activeTab === "cleanup" && (
             <div className="flex items-center justify-center py-32">
               <div className="text-center">
