@@ -1,0 +1,260 @@
+@import "tailwindcss";
+
+/* ============================================================
+   DiskPulse Aurora — Design System
+   A fusion of Win11 Fluent Design + data viz excellence
+   ============================================================ */
+
+@theme {
+  /* --- Aurora Color Palette --- */
+  --color-aurora-bg: #06080d;
+  --color-aurora-surface: #0c1019;
+  --color-aurora-elevated: #111827;
+  --color-aurora-border: #1e293b;
+  --color-aurora-border-light: rgba(30, 41, 59, 0.6);
+
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+
+  --color-accent: #6366f1;
+  --color-accent-light: #818cf8;
+  --color-accent-glow: rgba(99, 102, 241, 0.3);
+  --color-cyan: #06b6d4;
+  --color-cyan-glow: rgba(6, 182, 212, 0.25);
+
+  --color-risk-low: #10b981;
+  --color-risk-low-bg: rgba(16, 185, 129, 0.1);
+  --color-risk-medium: #f59e0b;
+  --color-risk-medium-bg: rgba(245, 158, 11, 0.1);
+  --color-risk-high: #ef4444;
+  --color-risk-high-bg: rgba(239, 68, 68, 0.1);
+
+  --color-info: #3b82f6;
+  --color-warning: #f59e0b;
+  --color-success: #10b981;
+  --color-danger: #ef4444;
+
+  /* Typography */
+  --font-sans: 'Segoe UI', 'Segoe UI Variable', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+
+/* --- Base Styles --- */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-aurora-bg);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle grid background pattern */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(99, 102, 241, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.02) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 80% 80% at 50% 0%, black 30%, transparent 70%);
+}
+
+/* --- Scrollbar Styling --- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-aurora-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* --- Glass Card Effect --- */
+.glass-card {
+  background: rgba(12, 16, 25, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-aurora-border-light);
+  border-radius: 16px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.glass-card:hover {
+  border-color: rgba(99, 102, 241, 0.2);
+  box-shadow: 0 0 30px rgba(99, 102, 241, 0.05), 0 0 60px rgba(6, 182, 212, 0.03);
+}
+
+/* --- Gradient Button --- */
+.btn-primary {
+  background: linear-gradient(135deg, var(--color-accent), #7c3aed);
+  color: white;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+.btn-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, var(--color-cyan), var(--color-accent));
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.btn-primary:hover::after {
+  opacity: 1;
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 25px rgba(99, 102, 241, 0.35);
+}
+.btn-primary:active {
+  transform: translateY(0);
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.btn-primary span {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- Gradient Text --- */
+.text-gradient {
+  background: linear-gradient(135deg, var(--color-accent-light), var(--color-cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* --- Animated Progress Bar --- */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.progress-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(99, 102, 241, 0.2) 25%,
+    rgba(6, 182, 212, 0.3) 50%,
+    rgba(99, 102, 241, 0.2) 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* --- Risk Badge Colors --- */
+.risk-low { color: var(--color-risk-low); }
+.risk-medium { color: var(--color-risk-medium); }
+.risk-high { color: var(--color-risk-high); }
+.bg-risk-low { background: var(--color-risk-low-bg); border: 1px solid rgba(16, 185, 129, 0.3); }
+.bg-risk-medium { background: var(--color-risk-medium-bg); border: 1px solid rgba(245, 158, 11, 0.3); }
+.bg-risk-high { background: var(--color-risk-high-bg); border: 1px solid rgba(239, 68, 68, 0.3); }
+
+/* --- Pulsing Live Indicator --- */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.75); }
+}
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* --- Page Transition --- */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.page-enter {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+/* --- Ring Chart Animation --- */
+@keyframes ring-fill {
+  from { stroke-dashoffset: 314; }
+}
+.ring-animate {
+  animation: ring-fill 1.2s ease-out forwards;
+}
+
+/* --- Treemap tile hover --- */
+.treemap-tile {
+  transition: filter 0.2s ease, transform 0.2s ease;
+}
+.treemap-tile:hover {
+  filter: brightness(1.3);
+  transform: scale(1.02);
+  z-index: 10;
+}
+
+/* --- Sidebar nav item --- */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+.nav-item:hover {
+  background: rgba(99, 102, 241, 0.08);
+  color: var(--color-text-primary);
+}
+.nav-item.active {
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--color-accent-light);
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+/* --- Stats card number animation --- */
+@keyframes count-up {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+.stat-number {
+  animation: count-up 0.5s ease-out;
+}

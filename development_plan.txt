@@ -1,0 +1,662 @@
+================================================================================
+  DiskPulse - Development Master Plan
+  Version: v0.0.1 → v0.1.0
+  Last Updated: 2026-04-29
+  Plan Scope: 10 versions, 25 milestones, ~45 development days
+================================================================================
+
+================================================================================
+PHILOSOPHY & CONSTRAINTS
+================================================================================
+- Incremental delivery: every version MUST be runnable, testable, and shippable
+- Safety FIRST: Recycle Bin only, whitelist cleanup, path validation, no force-delete
+- Performance: scan 500GB drive < 5 sec, Rust + rayon parallelism, debounced FS events
+- UI quality: Win11 Fluent Design aesthetics, dark/light mode, responsive layout
+- Open source from day one, clean conventional-commit history
+- No half-finished features — every version closes with a working build
+
+================================================================================
+GLOBAL DEPENDENCY GRAPH (what blocks what)
+================================================================================
+
+  v0.0.1 (scaffold & verify)
+    |
+  v0.0.2 (scanner polish)
+    |
+  v0.0.3 (dashboard UI → needs v0.0.2 data)
+    |
+  v0.0.4 (risk engine → needs v0.0.2 scanner data)
+    |
+  v0.0.5 (cleanup report → needs v0.0.4 risk engine)
+    |
+  v0.0.6 (safe cleanup → needs v0.0.4 risk engine + v0.0.5 UI)
+    |
+  v0.0.7 (FS watcher → independent, but enriches v0.0.3 dashboard)
+    |
+  v0.0.8 (history/trends → needs v0.0.1 scanner + v0.0.6 cleanup logs)
+    |
+  v0.0.9 (system integration → depends on all above)
+    |
+  v0.1.0 (release candidate → all previous complete)
+
+================================================================================
+V0.0.1 — PROJECT SCAFFOLD & FIRST VERIFICATION
+================================================================================
+  Target: ~2 days (completion of remaining 30%)
+  Priority: 🔴 CRITICAL — unblocks everything
+
+  Remaining Tasks:
+  ---
+  [ ] T1.1 Install frontend visualization dependencies
+      npm install echarts d3 @types/d3 tailwindcss @tailwindcss/vite lucide-react
+      ~5 min, no code changes
+
+  [ ] T1.2 Configure Tailwind CSS in vite.config.ts
+      Add @tailwindcss/vite plugin to the Vite plugins array
+      Create src/index.css with @import "tailwindcss"
+      Import index.css in main.tsx
+      ~10 min
+
+  [ ] T1.3 Verify npm run tauri dev launches successfully
+      - App window opens (1200x800, centered)
+      - Frontend renders Dashboard component
+      - No console errors in devtools
+      - scan_drive IPC command returns data from C: drive
+      - Ring chart displays correct usage percentage
+      - Top-20 directory list renders with sizes
+      ~30 min, may need debug iterations
+
+  [ ] T1.4 Verify npm run tauri build produces working installer
+      - .msi or .exe installer generated in src-tauri/target/release/bundle/
+      - Installer runs and app launches
+      - Window title, icon, version all correct
+      ~20 min
+
+  [ ] T1.5 Initialize Git repository and create first commit
+      git init
+      git add .
+      git commit -m "feat: v0.0.1 project scaffold with working scanner"
+      ~5 min
+
+  DELIVERABLE: Running Tauri desktop app showing real C: drive scan data
+  SUCCESS CRITERIA: app launches, scan works, build produces installer, git initialised
+  BLOCKED BY: nothing
+  BLOCKS: v0.0.2
+
+================================================================================
+V0.0.2 — DISK SCANNER MODULE POLISH
+================================================================================
+  Target: ~2 days
+  Priority: 🟡 HIGH — scanner is the data foundation for all features
+
+  Context: Core scanner already works (parallel traversal, Win32 space query,
+  DriveInfo JSON serialization). This version adds polish, testing, and UX.
+
+  Tasks:
+  ---
+  [ ] T2.1 Add scan progress callback via Tauri events
+      - scanner/mod.rs: emit progress events (current dir, files scanned, bytes counted)
+      - Use tauri::Emitter trait: app_handle.emit("scan-progress", payload)
+      - Frontend: subscribe via listen("scan-progress", callback)
+      - Show scanning animation + progress bar during scan
+      ~4 hours
+
+  [ ] T2.2 Add error resilience to scanner
+      - Handle permission-denied directories (log warning, continue)
+      - Handle junction points and symlinks (skip to avoid infinite loops)
+      - Handle disconnected network drives gracefully
+      - Return partial results even if some dirs fail
+      ~3 hours
+
+  [ ] T2.3 Write comprehensive unit tests
+      - Test get_drive_space() with known C: drive (validate total > 0)
+      - Test scan_top_level_dirs() returns Windows, Users, Program Files
+      - Test calculate_dir_size() on a small known directory
+      - Test scan_drive() error case: non-existent drive letter "Z:"
+      - Test DirInfo JSON serialization round-trip
+      ~3 hours
+
+  [ ] T2.4 Create scanner benchmark
+      - Benchmark scan_drive("C:") in release mode
+      - Target: 500GB drive < 5 seconds
+      - Add benches/scanner_bench.rs with criterion
+      ~2 hours
+
+  [ ] T2.5 Add multi-drive support
+      - Auto-detect available drives via GetLogicalDrives()
+      - Frontend: drive selector dropdown (C:, D:, etc.)
+      - scan_drive() accepts any valid drive letter
+      ~3 hours
+
+  DELIVERABLE: Robust, tested, benchmarked scanner with progress feedback
+  SUCCESS CRITERIA: all tests pass, benchmark < 5s for 500GB, progress events work
+  BLOCKED BY: v0.0.1 (need running app to test integration)
+  BLOCKS: v0.0.3, v0.0.4
+
+================================================================================
+V0.0.3 — DASHBOARD UI: TREEMAP + FULL REDESIGN
+================================================================================
+  Target: ~3 days
+  Priority: 🟡 HIGH — primary user-facing feature
+
+  Context: Current App.tsx has a basic ring chart + bar list. This version replaces
+  it with a proper page-based layout using ECharts treemap, D3 for drill-down,
+  and Tailwind CSS for styling.
+
+  Tasks:
+  ---
+  [ ] T3.1 Set up page routing and layout shell
+      - Create src/pages/Dashboard/index.tsx
+      - Create src/pages/Cleanup/index.tsx (placeholder)
+      - Create src/pages/History/index.tsx (placeholder)
+      - Create src/pages/Settings/index.tsx (placeholder)
+      - Create src/components/Sidebar.tsx with tab navigation + icons (lucide-react)
+      - Create src/components/Header.tsx with drive selector + scan button
+      - Responsive: sidebar collapses on narrow windows
+      ~6 hours
+
+  [ ] T3.2 Implement ECharts Treemap visualization
+      - Replace current SVG ring chart with ECharts treemap
+      - Color-code tiles by category: system/red, user/blue, cache/green, dev/purple
+      - Tile size proportional to directory size
+      - Tooltip shows: name, path, size, file count, risk level
+      - Click handler for drill-down (see T3.3)
+      ~6 hours
+
+  [ ] T3.3 Implement D3 drill-down navigation
+      - Click treemap tile → zoom into that directory
+      - Back button + breadcrumb: C: > Users > AppData > Local
+      - Each drill-down level calls backend for subdirectory scan
+      - Smooth transition animation (D3 zoom)
+      ~6 hours
+
+  [ ] T3.4 Add drive summary sidebar panel
+      - Drive ring chart (keep improved version from v0.0.1)
+      - Total / Used / Free with formatted sizes
+      - Quick stats: top 5 largest dirs, scan timestamp
+      - Low-space warning (< 10% free turns ring red)
+      ~4 hours
+
+  [ ] T3.5 Dark/Light theme toggle
+      - CSS custom properties for both themes
+      - Toggle button in header (sun/moon icon)
+      - Persist preference in localStorage
+      - Follow system preference on first launch
+      ~3 hours
+
+  DELIVERABLE: Beautiful, interactive dashboard with treemap + drill-down
+  SUCCESS CRITERIA: treemap renders, drill-down works, theme toggle works, responsive
+  BLOCKED BY: v0.0.2 (need multi-drive support, progress events)
+  BLOCKS: v0.0.5 (cleanup report uses same layout)
+
+================================================================================
+V0.0.4 — RISK CLASSIFICATION ENGINE
+================================================================================
+  Target: ~3 days
+  Priority: 🔴 HIGH — core safety intelligence
+
+  Context: The risk engine determines what is safe to delete. Rules must be
+  data-driven (YAML/JSON config), not hardcoded, so the community can contribute.
+
+  Tasks:
+  ---
+  [ ] T4.1 Design risk rule schema
+      Rule format:
+        {
+          "id": "npm-cache",
+          "pattern": "**/AppData/Local/npm-cache/**",
+          "risk_level": "low",
+          "category": "developer_cache",
+          "explanation": "npm package cache — safe to delete, re-downloaded on next install",
+          "max_age_days": null,
+          "protected": false
+        }
+      ~2 hours
+
+  [ ] T4.2 Create default risk ruleset (YAML)
+      Low Risk (safe one-click cleanup):
+        - %TEMP% files older than 7 days
+        - Browser caches: Chrome, Edge, Firefox
+        - NVIDIA DXCache, AMD DXCache
+        - npm cache, pip cache, cargo cache, nuget cache
+        - Edge/Chrome download history cache
+        - Windows Delivery Optimization files
+        - VS Code cache, Cursor cache
+        - Windows.old (30+ days old)
+        - Recycle Bin contents
+
+      Medium Risk (confirm before cleanup):
+        - Downloads folder files > 90 days old
+        - Large log files (> 100MB): .log, .etl
+        - Cursor/VS Code worktrees > 30 days idle
+        - Steam/Epic game installers (leftover)
+        - WinSxS component store (DISM cleanup)
+
+      High Risk (display only, no cleanup button):
+        - Windows Installer directory (C:\Windows\Installer)
+        - WeChat/QQ/TIM user data directories
+        - Program Files and Program Files (x86)
+        - Windows system32
+        - Registry hive files
+        - Active project directories (detect .git presence)
+      ~5 hours (research + write rules)
+
+  [ ] T4.3 Implement risk classification engine (Rust)
+      Create src-tauri/src/risk/mod.rs:
+        - pub struct RiskRule { id, pattern, risk_level, category, explanation, ... }
+        - pub struct RiskReport { items: Vec<RiskItem>, summary: RiskSummary }
+        - pub fn classify_risks(drive_info: &DriveInfo, rules: &[RiskRule]) -> RiskReport
+        - Pattern matching: glob-based, case-insensitive paths
+        - Age check: use std::fs::metadata modified time
+        - Developer project detection: check for .git, node_modules, Cargo.toml, etc.
+        - Active process file lock detection (deferred to v0.0.6)
+      ~8 hours
+
+  [ ] T4.4 Create Tauri command: classify_risks
+      Register in lib.rs:
+        #[tauri::command]
+        fn classify_risks(scan: DriveInfo) -> Result<RiskReport, String>
+      Load rules from app data directory (with embedded defaults)
+      ~3 hours
+
+  [ ] T4.5 Write risk engine unit tests
+      - Test each risk level has at least one matching rule on typical C: drive
+      - Test developer project detection (mock .git directory)
+      - Test age-based rules (mock old/new files)
+      - Test protected patterns never return safe_to_delete=true
+      ~3 hours
+
+  DELIVERABLE: Working risk classification with ~30 default rules
+  SUCCESS CRITERIA: classify_risks returns correct levels, all tests pass, rules loadable
+  BLOCKED BY: v0.0.2 (need DriveInfo data)
+  BLOCKS: v0.0.5, v0.0.6
+
+================================================================================
+V0.0.5 — CLEANUP REPORT PAGE
+================================================================================
+  Target: ~3 days
+  Priority: 🟡 MEDIUM — primary user-facing feature for cleanup
+
+  Tasks:
+  ---
+  [ ] T5.1 Create Cleanup Report page layout
+      - Three risk-level tabs: Low (green) | Medium (yellow) | High (red)
+      - Each tab shows count + total size badge
+      - Sortable columns: name, path, size, risk reason
+      - Select all / deselect all per tab + individual checkboxes
+      - Summary bar at bottom: selected count, total recoverable size
+      ~6 hours
+
+  [ ] T5.2 Implement risk item detail panel
+      - Click item → expand detail
+      - Show: full path, size breakdown (files vs subdirs), risk explanation
+      - "Open in Explorer" button
+      - "Exclude from cleanup" toggle (whitelist this path)
+      - High risk items: no checkbox, informational only
+      ~4 hours
+
+  [ ] T5.3 Add export functionality
+      - Export current report as HTML (reuse original approved design)
+      - Export as CSV (simple rows: path, size, risk_level, explanation)
+      - Use Tauri save file dialog
+      ~3 hours
+
+  [ ] T5.4 Wire up to risk engine backend
+      - Call classify_risks() after scan completes
+      - Handle loading state while classifying
+      - Handle errors gracefully
+      ~2 hours
+
+  DELIVERABLE: Polished cleanup report with risk tabs, export, and selection
+  SUCCESS CRITERIA: tabs work, sorting works, export generates valid files, UI matches design
+  BLOCKED BY: v0.0.3 (layout shell), v0.0.4 (risk engine)
+  BLOCKS: v0.0.6
+
+================================================================================
+V0.0.6 — SAFE CLEANUP EXECUTION
+================================================================================
+  Target: ~4 days
+  Priority: 🔴 CRITICAL — where safety matters most
+
+  Context: This is THE most safety-critical version. Every delete must go to
+  Recycle Bin, every path must be validated, locked files must be skipped.
+  This version makes the app actually useful.
+
+  Tasks:
+  ---
+  [ ] T6.1 Implement Recycle Bin deletion in Rust
+      Create src-tauri/src/cleaner/mod.rs:
+        - Use IFileOperation COM interface (preferred) or SHFileOperationW
+        - Fallback: move file to C:\$Recycle.Bin\<SID>\ with rename
+        - pub fn recycle_item(path: &Path) -> Result<String, String>
+          Returns new Recycle Bin path for undo capability
+        - pub fn restore_item(recycle_path: &str) -> Result<(), String>
+      ~8 hours
+
+  [ ] T6.2 Implement safety validation pipeline
+      Before ANY deletion, execute in order:
+        1. Path existence check
+        2. Whitelist pattern match (is this a known-safe path?)
+        3. Protected pattern check (is this in the NEVER-delete list?)
+        4. File lock check (attempt CreateFile with exclusive access)
+        5. Active process check (is any running exe inside this path?)
+        6. Confirmation prompt (UI dialog listing exact files)
+      If ANY check fails → skip, log reason, continue to next item
+      ~8 hours
+
+  [ ] T6.3 Implement cleanup orchestration with progress
+      - pub fn clean_items(items: Vec<CleanItem>) -> Result<CleanResult, String>
+      - CleanResult: { total_attempted, succeeded, skipped, failed, freed_bytes, undos }
+      - Each item result: { path, status (Success/Skipped/Failed), reason, undo_path }
+      - Progress events: clean_item_completed(current, total, item_result)
+      - Cancellation: check cancellation token between items, stop gracefully
+      ~8 hours
+
+  [ ] T6.4 Create Tauri commands for cleanup
+      #[tauri::command]
+      fn clean_items(items: Vec<CleanItem>) -> Result<CleanResult, String>
+
+      #[tauri::command]
+      fn undo_cleanup(undo_paths: Vec<String>) -> Result<UndoResult, String>
+      ~2 hours
+
+  [ ] T6.5 Frontend cleanup execution UX
+      - "Clean Selected" button (disabled if nothing selected)
+      - Confirmation modal: list of items to delete with sizes
+      - Progress modal: current item, progress bar, cancel button
+      - Completion modal: summary (freed X GB, Y items cleaned, Z skipped)
+      - Skipped items detail: why each was skipped
+      - Undo button per-item in history view
+      ~6 hours
+
+  [ ] T6.6 Write safety-critical tests
+      - Test protected paths are NEVER deleted
+      - Test locked file is skipped (not force-deleted)
+      - Test invalid path returns error
+      - Test empty items list returns immediately
+      - Test cancellation mid-cleanup stops cleanly
+      - Test restore from Recycle Bin works
+      - Integration test: scan → classify → clean low-risk items → verify Recycle Bin
+      ~4 hours
+
+  DELIVERABLE: One-click safe cleanup of low-risk items to Recycle Bin
+  SUCCESS CRITERIA: all safety tests pass, cleanup works end-to-end, undo works
+  BLOCKED BY: v0.0.4 (risk engine), v0.0.5 (cleanup UI)
+  BLOCKS: v0.0.8 (needs cleanup logs)
+
+================================================================================
+V0.0.7 — REAL-TIME FILE SYSTEM WATCHER
+================================================================================
+  Target: ~3 days
+  Priority: 🟡 MEDIUM — differentiates from manual disk analyzers
+
+  Tasks:
+  ---
+  [ ] T7.1 Implement ReadDirectoryChangesW in Rust
+      Create src-tauri/src/watcher/mod.rs:
+        - Watch key directories: %TEMP%, %APPDATA%, %USERPROFILE%\Downloads, C:\
+        - Use windows::Win32::System::IO::ReadDirectoryChangesW
+        - Buffer events, parse FILE_NOTIFY_INFORMATION structs
+        - Filter to relevant changes: FileAdded, FileRemoved, FileModified, DirRenamed
+        - Handle buffer overflow (increase buffer or rescan)
+      ~8 hours
+
+  [ ] T7.2 Implement event debouncing and aggregation
+      - Batch events per directory (1-second window)
+      - Deduplicate: if file added then removed within window → ignore
+      - Calculate size delta per watched directory
+      - Emit aggregated event to frontend via Tauri events
+      ~4 hours
+
+  [ ] T7.3 Frontend live update integration
+      - Create useFsEvents() hook: subscribes to Tauri events, updates state
+      - Treemap partial re-render: animate size changes for affected tiles
+      - Drive ring chart updates in real-time as space changes
+      - "Live" badge indicator (green pulsing dot)
+      - Toggle live monitoring on/off
+      ~6 hours
+
+  [ ] T7.4 System tray integration
+      - Tray icon with disk usage percentage overlay (or color indicator)
+      - Tray tooltip: "DiskPulse — C: 234 GB free"
+      - Tray context menu: Quick Scan, Open DiskPulse, Pause Monitoring, Exit
+      - Click tray icon → restore/bring app to front
+      - Minimize to tray (optional, configurable)
+      ~5 hours
+
+  DELIVERABLE: Real-time disk monitoring with system tray integration
+  SUCCESS CRITERIA: events fire within 2s of file change, tray icon works, live UI updates
+  BLOCKED BY: v0.0.2 (scanner for baseline)
+  BLOCKS: nothing (enhances existing features)
+
+================================================================================
+V0.0.8 — SPACE TREND CHARTS & HISTORY
+================================================================================
+  Target: ~3 days
+  Priority: 🟡 MEDIUM — shows value over time
+
+  Tasks:
+  ---
+  [ ] T8.1 Implement SQLite database layer
+      Create src-tauri/src/db/mod.rs:
+        - Database initialization with migrations
+        - Tables: snapshots, cleanup_logs, settings
+        - snapshots: id, timestamp, drive_letter, total_bytes, used_bytes, free_bytes
+        - cleanup_logs: id, timestamp, drive, items_count, freed_bytes, items_json
+        - settings: key-value store for user preferences
+        - DAO functions: insert_snapshot, get_snapshots, insert_cleanup_log, get_cleanup_logs
+      ~6 hours
+
+  [ ] T8.2 Implement periodic snapshot service
+      - Background task: snapshot every 30 min while app is running
+      - Configurable interval (1 min to 24 hours)
+      - On-demand snapshot button
+      - Auto-cleanup old snapshots: keep 1/day for last 30 days, 1/week beyond
+      ~4 hours
+
+  [ ] T8.3 Create History page with ECharts trend charts
+      - src/pages/History/index.tsx
+      - Line chart: free space over time (last 7/30/90 days)
+      - Area chart: space composition (used vs free) over time
+      - Cleanup history table: date, items cleaned, space freed, undo links
+      - "Restore" button that calls undo Tauri command
+      - Empty state: "Collecting snapshots... first data in 30 min"
+      ~6 hours
+
+  [ ] T8.4 Low-space alert system
+      - Configurable threshold (default: 10 GB free)
+      - Check on every snapshot
+      - Show Windows native notification via tauri-plugin-notification
+      - Visual warning in header when space is low
+      ~3 hours
+
+  [ ] T8.5 Create Tauri commands
+      #[tauri::command]
+      fn get_snapshot_history(days: u32) -> Result<Vec<Snapshot>, String>
+
+      #[tauri::command]
+      fn get_cleanup_history() -> Result<Vec<CleanupLog>, String>
+
+      #[tauri::command]
+      fn take_snapshot() -> Result<Snapshot, String>
+      ~2 hours
+
+  DELIVERABLE: Historical trend charts and cleanup history
+  SUCCESS CRITERIA: snapshots auto-save, trend charts render, notifications fire when low
+  BLOCKED BY: v0.0.1 (scanner), v0.0.3 (layout), v0.0.6 (cleanup logs)
+  BLOCKS: v0.0.9 (notification polish)
+
+================================================================================
+V0.0.9 — SYSTEM INTEGRATION & POLISH
+================================================================================
+  Target: ~3 days
+  Priority: 🟡 MEDIUM — production feel
+
+  Tasks:
+  ---
+  [ ] T9.1 DISM WinSxS cleanup integration
+      - Detect WinSxS size (> 5GB triggers recommendation)
+      - "Run DISM Cleanup" button with UAC elevation
+      - Spawn elevated process: dism /online /cleanup-image /startcomponentcleanup
+      - Parse DISM output for freed space
+      - Handle errors (DISM unavailable, elevation denied)
+      ~5 hours
+
+  [ ] T9.2 Windows Storage Sense integration
+      - "Open Storage Settings" button → ms-settings:storagesense
+      - Display current Storage Sense status if detectable
+      ~2 hours
+
+  [ ] T9.3 Auto-start option
+      - Register/remove app in HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+      - Settings toggle: "Start with Windows"
+      - Start minimized to tray (if tray is enabled)
+      ~3 hours
+
+  [ ] T9.4 Keyboard shortcuts
+      - Ctrl+R — refresh scan
+      - Ctrl+1/2/3/4 — switch tabs (Dashboard/Cleanup/History/Settings)
+      - Ctrl+Shift+C — open cleanup report
+      - F5 — refresh current view
+      - Escape — close modal / cancel operation
+      ~3 hours
+
+  [ ] T9.5 Accessibility
+      - ARIA labels on all interactive elements
+      - Keyboard navigation: Tab, arrow keys in lists
+      - Screen reader announcements for scan completion, cleanup results
+      - Focus management: modals trap focus, restore on close
+      - Color contrast: ensure WCAG AA compliance in both themes
+      ~5 hours
+
+  [ ] T9.6 Settings page implementation
+      - src/pages/Settings/index.tsx
+      - Sections: General (theme, startup), Scanning (default drive, interval),
+        Cleanup (confirmation dialogs, auto-select low risk), Notifications, About
+      - Persist all settings to SQLite settings table
+      ~4 hours
+
+  DELIVERABLE: Polished, accessible, system-integrated experience
+  SUCCESS CRITERIA: DISM cleanup works, auto-start works, keyboard nav complete, WCAG AA
+  BLOCKED BY: everything v0.0.1 - v0.0.8
+  BLOCKS: v0.1.0
+
+================================================================================
+V0.1.0 — PUBLIC RELEASE CANDIDATE
+================================================================================
+  Target: ~4 days
+  Priority: 🔴 CRITICAL — go-live gate
+
+  Tasks:
+  ---
+  [ ] T10.1 Comprehensive testing
+      - Fresh Win11 VM: install and run, verify all features
+      - Test with drives: 128GB SSD, 1TB HDD, external USB drive
+      - Test edge cases: 0 bytes free, 100% used, drive letter collision
+      - Test with localized Windows (Chinese, Japanese)
+      - Performance test: scan 500GB < 5s, 1M files < 3s
+      - Memory test: app stays < 100MB RAM during scan
+      ~8 hours
+
+  [ ] T10.2 Security audit
+      - Code review of all unsafe {} blocks in Rust
+      - Verify no permanent delete code paths exist
+      - Verify IPC commands don't expose system paths
+      - Verify SQLite queries use parameterized statements (no SQL injection)
+      - Verify CSP headers (if re-enabled)
+      - Dependency audit: cargo audit, npm audit
+      ~6 hours
+
+  [ ] T10.3 Internationalization setup
+      - Add i18n framework (react-i18next or custom)
+      - Extract all UI strings to locale files
+      - Ship with en-US + zh-CN locales
+      - Detect system language on first launch
+      ~6 hours
+
+  [ ] T10.4 CI/CD pipeline
+      - GitHub Actions workflow: on push/PR → cargo test + tsc + eslint + cargo clippy
+      - Build workflow: matrix Windows x64, produces .msi artifact
+      - Release workflow: on tag v* → build + create GitHub Release + upload installer
+      - Auto-update: configure Tauri updater with GitHub Releases as backend
+      ~5 hours
+
+  [ ] T10.5 Documentation
+      - README.md: banner, features, screenshots, install guide, contributing
+      - CONTRIBUTING.md: dev setup, commit conventions, PR process, CLA
+      - LICENSE (MIT)
+      - User guide: first scan, understanding risks, safe cleanup, undo
+      - Architecture docs: module diagram, data flow, safety pipeline
+      ~6 hours
+
+  [ ] T10.6 GitHub Release
+      - Tag: v0.1.0
+      - Release notes: features, known issues, system requirements
+      - Upload: .msi installer + .exe portable
+      - README badges: build passing, version, license, downloads
+      - Submit to awesome-tauri list, r/rust, r/Windows11
+      ~4 hours
+
+  DELIVERABLE: Public v0.1.0 release on GitHub with installer
+  SUCCESS CRITERIA: all tests pass, security audit clean, CI green, installer works on clean VM
+  BLOCKED BY: everything
+
+================================================================================
+VERSION TIMELINE SUMMARY
+================================================================================
+
+  | Version  | Name                    | Days | Cumulative | Dependencies        |
+  |----------|-------------------------|------|------------|---------------------|
+  | v0.0.1   | Scaffold & Verify       |  2d  | Day 1-2    | none                |
+  | v0.0.2   | Scanner Polish          |  2d  | Day 3-4    | v0.0.1              |
+  | v0.0.3   | Dashboard Treemap       |  3d  | Day 5-7    | v0.0.2              |
+  | v0.0.4   | Risk Engine             |  3d  | Day 8-10   | v0.0.2              |
+  | v0.0.5   | Cleanup Report          |  3d  | Day 11-13  | v0.0.3, v0.0.4      |
+  | v0.0.6   | Safe Cleanup            |  4d  | Day 14-17  | v0.0.4, v0.0.5      |
+  | v0.0.7   | FS Watcher + Tray       |  3d  | Day 18-20  | v0.0.2              |
+  | v0.0.8   | History & Trends        |  3d  | Day 21-23  | v0.0.1, v0.0.3, v0.0.6 |
+  | v0.0.9   | System Integration      |  3d  | Day 24-26  | v0.0.1-v0.0.8       |
+  | v0.1.0   | Release Candidate       |  4d  | Day 27-30  | all                 |
+  |----------|-------------------------|------|------------|---------------------|
+  | TOTAL    |                         | 30d  | ~6 weeks   |                     |
+
+  Note: "Days" = focused development days. Real calendar time ~6-8 weeks
+  accounting for review, bug fixing, and iteration.
+
+================================================================================
+PARALLEL WORK OPPORTUNITIES
+================================================================================
+
+  After v0.0.2 is done, these can be worked on in parallel:
+    Track A: v0.0.3 (Dashboard)  +  v0.0.5 (Cleanup Report)
+    Track B: v0.0.4 (Risk Engine) +  v0.0.6 (Safe Cleanup)
+    Track C: v0.0.7 (FS Watcher)  — independent after v0.0.2
+    Track D: v0.0.8 (History DB)  — independent after v0.0.1
+
+================================================================================
+ARCHITECTURE DECISIONS LOG (cumulative)
+================================================================================
+
+  [2026-04-28] Tauri 2.0 over Electron — 5-10MB vs 150MB+ installer, native win11 feel
+  [2026-04-28] SQLite over JSON — concurrent access, queries, trend analysis
+  [2026-04-28] Recycle Bin only deletes — safety, undo capability, Windows convention
+  [2026-04-28] Risk rules as config, not hardcoded — community contributions via PR
+  [2026-04-28] windows crate 0.58 for Win32 APIs — type-safe, maintained by Microsoft
+  [2026-04-28] walkdir + rayon for parallel scanning — proven, fast, well-maintained
+  [2026-04-29] ECharts for treemap/charts, D3 for drill-down — complementary strengths
+  [2026-04-29] IFileOperation COM over SHFileOperationW for Recycle Bin — modern API
+
+================================================================================
+RISK REGISTER
+================================================================================
+
+  ID | Risk                                    | Impact | Mitigation
+  ---|-----------------------------------------|--------|------------------------------
+  R1 | Accidental system file deletion          | HIGH   | Recycle Bin only; whitelist rules; path validation; auto-protect system dirs
+  R2 | Performance degradation during scan      | MEDIUM | Rayon thread pool; debounced FS events; cancel support; < 5s target
+  R3 | Tauri 2.x breaking changes               | LOW    | Pin versions; follow release notes; semver awareness
+  R4 | UAC elevation for DISM                   | MEDIUM | Spawn elevated helper; clear consent UX; only when user initiates
+  R5 | User trust (disk tool reliability)        | HIGH   | Open source; audit trail; every op logged; community review
+  R6 | Chinese path / Unicode handling           | MEDIUM | Use OsStr/OsString; encode_wide() for Win32; test with Chinese dirs
+  R7 | Antivirus flagging disk scanner           | LOW    | Sign binaries; submit to AV vendors; avoid suspicious API patterns
+  R8 | Large drive stalls UI                     | MEDIUM | Rayon parallel; progress events; cancel support; scan is non-blocking

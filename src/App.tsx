@@ -1,0 +1,526 @@
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+
+/* ============================================================
+   DiskPulse — Dashboard
+   Real-time disk space monitor for Windows 11
+   ============================================================ */
+
+// --- Types ---
+interface DriveInfo {
+  drive_letter: string;
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  top_dirs: DirInfo[];
+}
+
+interface DirInfo {
+  name: string;
+  path: string;
+  size_bytes: number;
+  file_count: number;
+  dir_count: number;
+  risk_level: string | null;
+}
+
+// --- Helpers ---
+function formatSize(bytes: number): string {
+  if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(2)} TB`;
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
+  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(0)} KB`;
+  return `${bytes} B`;
+}
+
+// --- Drive ring chart ---
+function DriveRing({
+  usedPercent,
+  driveLetter,
+  totalBytes,
+  usedBytes,
+  freeBytes,
+}: {
+  usedPercent: number;
+  driveLetter: string;
+  totalBytes: number;
+  usedBytes: number;
+  freeBytes: number;
+}) {
+  const color =
+    usedPercent > 90
+      ? "var(--color-danger)"
+      : usedPercent > 70
+        ? "var(--color-warning)"
+        : "var(--color-accent)";
+
+  return (
+    <div className="glass-card p-8 flex items-center gap-8 min-w-[480px]">
+      {/* Ring */}
+      <div className="relative flex-shrink-0">
+        <svg width="140" height="140" viewBox="0 0 140 140">
+          {/* Background ring */}
+          <circle
+            cx="70" cy="70" r="62"
+            fill="none"
+            stroke="var(--color-aurora-border)"
+            strokeWidth="10"
+          />
+          {/* Usage arc */}
+          <circle
+            cx="70" cy="70" r="62"
+            fill="none"
+            stroke={color}
+            strokeWidth="10"
+            strokeLinecap="round"
+            strokeDasharray={`${(usedPercent / 100) * 389.6} 389.6`}
+            transform="rotate(-90 70 70)"
+            style={{
+              transition: "stroke-dasharray 1.2s ease-out, stroke 0.5s ease",
+              filter: `drop-shadow(0 0 8px ${color}44)`,
+            }}
+          />
+          {/* Inner circle decoration */}
+          <circle
+            cx="70" cy="70" r="48"
+            fill="none"
+            stroke="var(--color-aurora-border-light)"
+            strokeWidth="0.5"
+            strokeDasharray="4 6"
+          />
+          {/* Center text */}
+          <text
+            x="70" y="62"
+            textAnchor="middle"
+            fill="var(--color-text-primary)"
+            fontSize="22"
+            fontWeight="700"
+            fontFamily="var(--font-mono)"
+          >
+            {usedPercent.toFixed(1)}%
+          </text>
+          <text
+            x="70" y="84"
+            textAnchor="middle"
+            fill="var(--color-text-secondary)"
+            fontSize="11"
+            fontWeight="500"
+          >
+            USED
+          </text>
+        </svg>
+        {/* Glow behind ring */}
+        <div
+          className="absolute inset-0 rounded-full opacity-20"
+          style={{
+            background: `radial-gradient(circle, ${color}22 0%, transparent 70%)`,
+            filter: "blur(20px)",
+          }}
+        />
+      </div>
+
+      {/* Stats */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-lg font-bold text-text-primary">{driveLetter}:</span>
+          <span className="text-xs text-text-muted uppercase tracking-wider">Drive Overview</span>
+        </div>
+        <StatRow label="Total" value={formatSize(totalBytes)} />
+        <StatRow label="Used" value={formatSize(usedBytes)} highlight />
+        <StatRow label="Free" value={formatSize(freeBytes)} success />
+        <div className="mt-3 pt-3 border-t border-aurora-border-light">
+          <div className="flex items-center gap-2 text-xs text-text-muted">
+            <span className="live-dot" />
+            Free space: <strong className="text-success">{formatSize(freeBytes)}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatRow({
+  label,
+  value,
+  highlight,
+  success,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+  success?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-12">
+      <span className="text-sm text-text-secondary">{label}</span>
+      <span
+        className={`text-sm font-semibold font-mono stat-number ${
+          success ? "text-success" : highlight ? "text-text-primary" : "text-text-secondary"
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// --- Navigation Sidebar ---
+const NAV_ITEMS = [
+  { id: "dashboard", label: "Dashboard", icon: DashboardIcon },
+  { id: "cleanup", label: "Cleanup Report", icon: CleanupIcon },
+  { id: "history", label: "History", icon: HistoryIcon },
+  { id: "settings", label: "Settings", icon: SettingsIcon },
+] as const;
+
+function DashboardIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+function CleanupIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </svg>
+  );
+}
+function HistoryIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="1 4 1 10 7 10" />
+      <path d="M3.5 17.5A9 9 0 102 12" />
+    </svg>
+  );
+}
+function SettingsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+    </svg>
+  );
+}
+
+// --- Directory bar item ---
+function DirBarItem({
+  dir,
+  maxSize,
+  rank,
+}: {
+  dir: DirInfo;
+  maxSize: number;
+  rank: number;
+}) {
+  const percent = maxSize > 0 ? (dir.size_bytes / maxSize) * 100 : 0;
+  const widthPercent = Math.max(percent, 1);
+
+  return (
+    <div className="group flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors hover:bg-aurora-elevated/50">
+      {/* Rank */}
+      <span className="w-6 text-xs text-right text-text-muted font-mono">{rank}</span>
+
+      {/* Info */}
+      <div className="w-48 flex-shrink-0 flex items-center justify-between">
+        <span className="text-sm text-text-primary truncate" title={dir.path}>
+          {dir.name}
+        </span>
+        <span className="text-xs text-text-secondary font-mono ml-2">
+          {formatSize(dir.size_bytes)}
+        </span>
+      </div>
+
+      {/* Bar track */}
+      <div className="flex-1 h-7 relative">
+        <div className="absolute inset-0 rounded-md bg-aurora-border/40 overflow-hidden">
+          <div
+            className="h-full rounded-md transition-all duration-700 ease-out"
+            style={{
+              width: `${widthPercent}%`,
+              background: `linear-gradient(90deg,
+                var(--color-accent) 0%,
+                var(--color-accent-light) 40%,
+                var(--color-cyan) 100%)`,
+              opacity: 0.3 + (rank <= 5 ? 0.5 : 0) + (rank <= 3 ? 0.2 : 0),
+            }}
+          />
+          {/* Shimmer for top 5 items */}
+          {rank <= 5 && (
+            <div
+              className="absolute inset-0 rounded-md progress-shimmer"
+              style={{ opacity: 0.5 }}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Percentage */}
+      <span className="w-14 text-right text-xs text-text-muted font-mono">
+        {((dir.size_bytes / (maxSize > 0 ? maxSize * 100 : 1)) * 100).toFixed(1)}%
+      </span>
+    </div>
+  );
+}
+
+// --- Main App ---
+export default function App() {
+  const [driveInfo, setDriveInfo] = useState<DriveInfo | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState("");
+  const [activeTab, setActiveTab] = useState("dashboard");
+
+  useEffect(() => {
+    invoke<string>("app_version").then(setVersion);
+    scanDrive();
+  }, []);
+
+  async function scanDrive() {
+    setLoading(true);
+    setError(null);
+    try {
+      const info = await invoke<DriveInfo>("scan_drive", { drive: "C" });
+      setDriveInfo(info);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const usedPercent = driveInfo
+    ? (driveInfo.used_bytes / driveInfo.total_bytes) * 100
+    : 0;
+
+  const maxDirSize = driveInfo?.top_dirs[0]?.size_bytes ?? 1;
+
+  return (
+    <div className="h-full flex bg-aurora-bg">
+      {/* --- Sidebar --- */}
+      <aside className="w-60 flex-shrink-0 flex flex-col border-r border-aurora-border/60 bg-aurora-surface/50 backdrop-blur-xl">
+        {/* Logo */}
+        <div className="px-5 pt-6 pb-5 border-b border-aurora-border/40">
+          <div className="flex items-center gap-3">
+            {/* App icon */}
+            <div className="relative w-9 h-9 rounded-xl flex items-center justify-center"
+              style={{
+                background: "linear-gradient(135deg, var(--color-accent), #7c3aed)",
+                boxShadow: "0 4px 15px var(--color-accent-glow)",
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
+                <circle cx="12" cy="12" r="10" />
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+              </svg>
+            </div>
+            <div>
+              <h1 className="text-base font-bold text-text-primary tracking-tight">DiskPulse</h1>
+              <p className="text-[10px] text-text-muted uppercase tracking-wider">v{version || "0.0.1"}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 px-3 py-4 space-y-1">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.id}
+              className={`nav-item w-full text-left ${activeTab === item.id ? "active" : ""}`}
+              onClick={() => setActiveTab(item.id)}
+            >
+              <item.icon />
+              <span>{item.label}</span>
+              {/* Active indicator */}
+              {activeTab === item.id && (
+                <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent"
+                  style={{ boxShadow: "0 0 6px var(--color-accent-glow)" }}
+                />
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Footer */}
+        <div className="px-4 py-4 border-t border-aurora-border/40">
+          <div className="flex items-center gap-2 text-xs text-text-muted">
+            <span className="live-dot" />
+            <span>Monitoring active</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* --- Main Content --- */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <header className="flex items-center justify-between px-8 py-4 border-b border-aurora-border/40 bg-aurora-surface/30 backdrop-blur-lg">
+          <div>
+            <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
+              {activeTab === "dashboard" ? "Drive Overview" : activeTab}
+            </h2>
+            <p className="text-xs text-text-muted mt-0.5">
+              {driveInfo && `${driveInfo.drive_letter}: Drive — ${formatSize(driveInfo.total_bytes)} total`}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Quick stats in header */}
+            {driveInfo && (
+              <div className="flex items-center gap-4 mr-4 px-4 py-1.5 rounded-lg bg-aurora-elevated/50 border border-aurora-border/30">
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-text-muted">Used</span>
+                  <span className="font-mono font-semibold text-text-primary">{usedPercent.toFixed(1)}%</span>
+                </div>
+                <div className="w-px h-4 bg-aurora-border/60" />
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="text-text-muted">Free</span>
+                  <span className="font-mono font-semibold text-success">{formatSize(driveInfo.free_bytes)}</span>
+                </div>
+              </div>
+            )}
+
+            <button
+              className="btn-primary"
+              onClick={scanDrive}
+              disabled={loading}
+            >
+              <span className="flex items-center gap-2">
+                {loading ? (
+                  <>
+                    <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" />
+                    </svg>
+                    Scanning...
+                  </>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="M21 21l-4.35-4.35" />
+                    </svg>
+                    Scan C: Drive
+                  </>
+                )}
+              </span>
+            </button>
+          </div>
+        </header>
+
+        {/* Error banner */}
+        {error && (
+          <div className="mx-8 mt-4 px-4 py-3 rounded-xl bg-risk-high-bg border border-red-500/20 text-sm text-danger flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 8v4M12 16h.01" />
+            </svg>
+            {error}
+            <button onClick={() => setError(null)} className="ml-auto text-text-muted hover:text-text-primary">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto page-enter">
+          {activeTab === "dashboard" && (
+            <div className="p-8 space-y-8">
+              {driveInfo ? (
+                <>
+                  {/* Drive Overview Card */}
+                  <DriveRing
+                    usedPercent={usedPercent}
+                    driveLetter={driveInfo.drive_letter}
+                    totalBytes={driveInfo.total_bytes}
+                    usedBytes={driveInfo.used_bytes}
+                    freeBytes={driveInfo.free_bytes}
+                  />
+
+                  {/* Top Directories */}
+                  <div className="glass-card p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
+                          Top Directories
+                        </h3>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          {driveInfo.top_dirs.length} directories scanned — ranked by size
+                        </p>
+                      </div>
+                      <span className="text-xs text-text-muted font-mono">
+                        Showing top 20
+                      </span>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      {driveInfo.top_dirs.slice(0, 20).map((dir, i) => (
+                        <DirBarItem
+                          key={dir.path}
+                          dir={dir}
+                          maxSize={maxDirSize}
+                          rank={i + 1}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : !error && !loading ? (
+                <div className="flex flex-col items-center justify-center py-32 text-text-muted">
+                  <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.3">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="M21 21l-4.35-4.35" />
+                  </svg>
+                  <p className="mt-4 text-sm">Click "Scan C: Drive" to begin</p>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/* Placeholder pages */}
+          {activeTab === "cleanup" && (
+            <div className="flex items-center justify-center py-32">
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-aurora-elevated border border-aurora-border/40 flex items-center justify-center">
+                  <CleanupIcon />
+                </div>
+                <p className="text-text-secondary text-sm">Cleanup Report — Coming in v0.0.5</p>
+                <p className="text-text-muted text-xs mt-1">Risk classification engine will power this page</p>
+              </div>
+            </div>
+          )}
+          {activeTab === "history" && (
+            <div className="flex items-center justify-center py-32">
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-aurora-elevated border border-aurora-border/40 flex items-center justify-center">
+                  <HistoryIcon />
+                </div>
+                <p className="text-text-secondary text-sm">History & Trends — Coming in v0.0.8</p>
+                <p className="text-text-muted text-xs mt-1">SQLite snapshots + ECharts trend charts</p>
+              </div>
+            </div>
+          )}
+          {activeTab === "settings" && (
+            <div className="flex items-center justify-center py-32">
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-aurora-elevated border border-aurora-border/40 flex items-center justify-center">
+                  <SettingsIcon />
+                </div>
+                <p className="text-text-secondary text-sm">Settings — Coming in v0.0.9</p>
+                <p className="text-text-muted text-xs mt-1">Preferences, rules config, about</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
