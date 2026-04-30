@@ -5,6 +5,7 @@ import Treemap from "./components/Treemap";
 import CleanupPage from "./pages/Cleanup";
 import CleanupPreview from "./components/CleanupPreview";
 import { formatSize } from "./utils/format";
+import { useFsEvents } from "./hooks/useFsEvents";
 import type { DirInfo, DriveInfo, RiskReport, ScanProgress } from "./types";
 
 // --- Drive ring chart ---
@@ -284,6 +285,9 @@ export default function App() {
   const [drillData, setDrillData] = useState<DirInfo[] | null>(null);
   const [drillTotal, setDrillTotal] = useState(0);
 
+  // File system watcher
+  const { isWatching, lastBatch, eventCount, startWatching, stopWatching } = useFsEvents();
+
   useEffect(() => {
     invoke<string>("app_version").then(setVersion);
     loadDrives();
@@ -418,11 +422,21 @@ export default function App() {
           ))}
         </nav>
 
-        <div className="px-4 py-4 border-t border-aurora-border/40">
+        <div className="px-4 py-4 border-t border-aurora-border/40 space-y-3">
           <div className="flex items-center gap-2 text-xs text-text-muted">
-            <span className="live-dot" />
-            <span>{loading ? "Scanning..." : "Monitoring active"}</span>
+            <span className={`${isWatching ? "live-dot" : ""} w-2 h-2 rounded-full ${isWatching ? "bg-success" : "bg-aurora-border"}`} />
+            <span>{loading ? "Scanning..." : isWatching ? `Live · ${eventCount} events` : "Monitor paused"}</span>
           </div>
+          <button
+            className={`w-full px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
+              isWatching
+                ? "bg-success/10 border-success/20 text-success hover:bg-success/20"
+                : "bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-accent-light hover:border-accent/30"
+            }`}
+            onClick={() => (isWatching ? stopWatching() : startWatching())}
+          >
+            {isWatching ? "Pause Monitoring" : "Start Monitoring"}
+          </button>
         </div>
       </aside>
 
@@ -529,6 +543,40 @@ export default function App() {
             <div className="p-8 space-y-8">
               {/* Scan progress */}
               {progress && <ScanProgressBar progress={progress} />}
+
+              {/* Live event feed */}
+              {isWatching && lastBatch && (
+                <div className="glass-card p-4 rounded-2xl border border-success/15 bg-risk-low-bg/10">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="live-dot" />
+                      <span className="text-sm font-semibold text-text-primary">Live Changes</span>
+                    </div>
+                    <span className="text-xs text-text-muted font-mono">
+                      {eventCount} event{eventCount !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {lastBatch.events.slice(0, 15).map((ev, i) => (
+                      <div key={`${ev.path}-${i}`} className="flex items-center gap-2 text-xs">
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                          ev.kind === "Added" ? "bg-success" : ev.kind === "Removed" ? "bg-danger" : "bg-warning"
+                        }`} />
+                        <span className="text-text-muted w-14 flex-shrink-0">{ev.kind}</span>
+                        <span className="text-text-primary truncate">{ev.path.split("\\").pop() ?? ev.path}</span>
+                        <span className="text-text-muted font-mono ml-auto flex-shrink-0">
+                          {ev.size_bytes > 0 ? formatSize(ev.size_bytes) : ""}
+                        </span>
+                      </div>
+                    ))}
+                    {lastBatch.events.length > 15 && (
+                      <p className="text-xs text-text-muted pt-1">
+                        +{lastBatch.events.length - 15} more changes in this batch
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {driveInfo ? (
                 <>

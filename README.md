@@ -1,8 +1,8 @@
-<img src="" alt="DiskPulse Banner" />
-
 # DiskPulse
 
 **Real-time disk space monitor & safe cleanup tool for Windows 11**
+
+> [中文版](README_zh-CN.md)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Tauri](https://img.shields.io/badge/tauri-2.0-6366f1)](https://tauri.app)

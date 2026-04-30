@@ -1,13 +1,19 @@
 mod cleaner;
 mod risk;
 mod scanner;
+mod watcher;
 
 use cleaner::{CleanItem, CleanPreview, CleanResult};
 use scanner::DriveInfo;
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
 pub const SCAN_PROGRESS_EVENT: &str = "scan-progress";
 pub const CLEAN_PROGRESS_EVENT: &str = "clean-progress";
+pub const FS_EVENT_BATCH: &str = "fs-event-batch";
+
+/// Global watcher guard so we can stop it from another command.
+static WATCHER: Mutex<Option<watcher::WatcherGuard>> = Mutex::new(None);
 
 /// Scan a drive and emit progress events
 #[tauri::command]
@@ -78,6 +84,40 @@ fn clean_items(app: AppHandle, items: Vec<CleanItem>) -> Result<CleanResult, Str
     Ok(result)
 }
 
+/// Start the file system watcher on default directories.
+/// Emits `fs-event-batch` events to the frontend with aggregated changes.
+#[tauri::command]
+fn start_fs_watcher(app: AppHandle) -> Result<String, String> {
+    let mut guard = WATCHER.lock().map_err(|e| format!("Lock error: {}", e))?;
+    if guard.is_some() {
+        return Ok("watcher already running".into());
+    }
+
+    let config = watcher::WatcherConfig::default();
+    let dir_list = config.directories.join(", ");
+    let handle = app.clone();
+
+    let watcher_guard = watcher::start_watching(config, move |batch| {
+        let _ = handle.emit(FS_EVENT_BATCH, batch);
+    });
+
+    *guard = Some(watcher_guard);
+
+    Ok(format!("watching: {}", dir_list))
+}
+
+/// Stop the file system watcher.
+#[tauri::command]
+fn stop_fs_watcher() -> Result<String, String> {
+    let mut guard = WATCHER.lock().map_err(|e| format!("Lock error: {}", e))?;
+    if let Some(w) = guard.take() {
+        w.stop();
+        Ok("watcher stopped".into())
+    } else {
+        Ok("no watcher running".into())
+    }
+}
+
 /// Get the app version
 #[tauri::command]
 fn app_version() -> String {
@@ -90,7 +130,17 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![scan_drive, list_drives, scan_directory, classify_risks, preview_cleanup, clean_items, app_version])
+        .invoke_handler(tauri::generate_handler![
+            scan_drive,
+            list_drives,
+            scan_directory,
+            classify_risks,
+            preview_cleanup,
+            clean_items,
+            start_fs_watcher,
+            stop_fs_watcher,
+            app_version
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
