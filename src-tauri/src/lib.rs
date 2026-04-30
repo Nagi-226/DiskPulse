@@ -7,6 +7,7 @@ use scanner::DriveInfo;
 use tauri::{AppHandle, Emitter};
 
 pub const SCAN_PROGRESS_EVENT: &str = "scan-progress";
+pub const CLEAN_PROGRESS_EVENT: &str = "clean-progress";
 
 /// Scan a drive and emit progress events
 #[tauri::command]
@@ -32,7 +33,6 @@ fn list_drives() -> Result<Vec<String>, String> {
         for i in 0..26 {
             if drives_mask & (1 << i) != 0 {
                 let letter = (b'A' + i) as char;
-                // Check if drive exists
                 let path = format!("{}:\\", letter);
                 let wide: Vec<u16> = std::ffi::OsStr::new(&path)
                     .encode_wide()
@@ -41,9 +41,7 @@ fn list_drives() -> Result<Vec<String>, String> {
                 let result = windows::Win32::Storage::FileSystem::GetDriveTypeW(
                     windows::core::PCWSTR(wide.as_ptr()),
                 );
-                // Include fixed drives, removable drives, and network drives
                 if result != 1 {
-                    // DRIVE_NO_ROOT_DIR = 1, skip non-existent
                     drives.push(letter.to_string());
                 }
             }
@@ -64,16 +62,20 @@ fn classify_risks(scan: DriveInfo) -> Result<risk::RiskReport, String> {
     Ok(risk::classify_risks(&scan))
 }
 
-/// Preview cleanup candidates with whitelist validation.
+/// Preview cleanup candidates with whitelist validation and safety checks.
 #[tauri::command]
 fn preview_cleanup(items: Vec<CleanItem>) -> Result<CleanPreview, String> {
     Ok(cleaner::preview_cleanup(items))
 }
 
-/// Execute cleanup candidates using Recycle Bin only.
+/// Execute cleanup with progress events emitted to the frontend.
 #[tauri::command]
-fn clean_items(items: Vec<CleanItem>) -> Result<CleanResult, String> {
-    cleaner::clean_items(items)
+fn clean_items(app: AppHandle, items: Vec<CleanItem>) -> Result<CleanResult, String> {
+    let handle = app.clone();
+    let result = cleaner::clean_items_with_progress(items, None, move |progress| {
+        let _ = handle.emit(CLEAN_PROGRESS_EVENT, progress);
+    });
+    Ok(result)
 }
 
 /// Get the app version

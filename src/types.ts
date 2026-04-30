@@ -73,11 +73,31 @@ export interface CleanPreview {
   accepted: CleanItem[];
   blocked: CleanItem[];
   validation: CleanValidationResult;
+  unsafe_items: CleanItemResult[];
+}
+
+export type CleanItemStatus = "Success" | "Skipped" | "Failed";
+
+export interface CleanItemResult {
+  path: string;
+  name: string;
+  size_bytes: number;
+  status: CleanItemStatus;
+  reason: string | null;
+}
+
+export interface CleanProgress {
+  current: number;
+  total: number;
+  current_item: string | null;
+  status: string | null;
 }
 
 export interface CleanResult {
-  deleted_items: CleanItem[];
-  failed_items: CleanItem[];
-  deleted_bytes: number;
-  failed_reason: string | null;
+  total_attempted: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+  freed_bytes: number;
+  items: CleanItemResult[];
 }
