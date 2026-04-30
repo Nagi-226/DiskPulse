@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Treemap from "./components/Treemap";
 import CleanupPage from "./pages/Cleanup";
+import CleanupPreview from "./components/CleanupPreview";
 import { formatSize } from "./utils/format";
 import type { DirInfo, DriveInfo, RiskReport, ScanProgress } from "./types";
 
@@ -626,7 +627,10 @@ export default function App() {
           )}
 
           {activeTab === "cleanup" && (
-            <CleanupPage report={riskReport} />
+            <div className="space-y-6">
+              <CleanupPage report={riskReport} />
+              {riskReport && <CleanupPreview items={riskReport.items} />}
+            </div>
           )}
           {activeTab === "history" && (
             <div className="flex items-center justify-center py-32">

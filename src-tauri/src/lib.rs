@@ -1,6 +1,8 @@
+mod cleaner;
 mod risk;
 mod scanner;
 
+use cleaner::{CleanItem, CleanPreview, CleanResult};
 use scanner::DriveInfo;
 use tauri::{AppHandle, Emitter};
 
@@ -62,6 +64,18 @@ fn classify_risks(scan: DriveInfo) -> Result<risk::RiskReport, String> {
     Ok(risk::classify_risks(&scan))
 }
 
+/// Preview cleanup candidates with whitelist validation.
+#[tauri::command]
+fn preview_cleanup(items: Vec<CleanItem>) -> Result<CleanPreview, String> {
+    Ok(cleaner::preview_cleanup(items))
+}
+
+/// Execute cleanup candidates using Recycle Bin only.
+#[tauri::command]
+fn clean_items(items: Vec<CleanItem>) -> Result<CleanResult, String> {
+    cleaner::clean_items(items)
+}
+
 /// Get the app version
 #[tauri::command]
 fn app_version() -> String {
@@ -74,7 +88,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![scan_drive, list_drives, scan_directory, classify_risks, app_version])
+        .invoke_handler(tauri::generate_handler![scan_drive, list_drives, scan_directory, classify_risks, preview_cleanup, clean_items, app_version])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
