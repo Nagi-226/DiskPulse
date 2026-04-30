@@ -1,0 +1,83 @@
+export interface DirInfo {
+  name: string;
+  path: string;
+  size_bytes: number;
+  file_count: number;
+  dir_count: number;
+  risk_level: string | null;
+}
+
+export interface DriveInfo {
+  drive_letter: string;
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  top_dirs: DirInfo[];
+}
+
+export interface ScanProgress {
+  drive_letter: string;
+  processed: number;
+  total: number;
+  current_path: string | null;
+}
+
+export type RiskLevel = "low" | "medium" | "high";
+
+export interface RiskItem {
+  name: string;
+  path: string;
+  size_bytes: number;
+  file_count: number;
+  dir_count: number;
+  risk_level: RiskLevel;
+  category: string;
+  explanation: string;
+  safe_to_delete: boolean;
+}
+
+export interface RiskSummary {
+  total_items: number;
+  low_risk_count: number;
+  medium_risk_count: number;
+  high_risk_count: number;
+  low_risk_bytes: number;
+  medium_risk_bytes: number;
+  high_risk_bytes: number;
+  safe_deletable_bytes: number;
+}
+
+export interface RiskReport {
+  drive_letter: string;
+  items: RiskItem[];
+  summary: RiskSummary;
+}
+
+export interface CleanItem {
+  name: string;
+  path: string;
+  size_bytes: number;
+  risk_level: RiskLevel;
+  safe_to_delete: boolean;
+}
+
+export interface CleanValidationResult {
+  allowed: boolean;
+  valid_items: number;
+  blocked_items: number;
+  total_bytes: number;
+  blocked_reason: string | null;
+}
+
+export interface CleanPreview {
+  accepted: CleanItem[];
+  blocked: CleanItem[];
+  validation: CleanValidationResult;
+}
+
+export interface CleanResult {
+  deleted_items: CleanItem[];
+  failed_items: CleanItem[];
+  deleted_bytes: number;
+  failed_reason: string | null;
+}

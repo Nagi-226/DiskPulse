@@ -31,7 +31,8 @@ pub struct DirInfo {
     pub risk_level: Option<String>,
 }
 
-/// Scan a drive and return its overview information.
+/// Scan a drive and return its overview information (used in tests).
+#[allow(dead_code)]
 pub fn scan_drive(drive_letter: &str) -> Result<DriveInfo, String> {
     scan_drive_with_progress(drive_letter, |_| {})
 }
@@ -104,21 +105,21 @@ where
 
     let entries = std::fs::read_dir(root).map_err(|e| format!("Cannot read root: {}", e))?;
     let entries: Vec<_> = entries.flatten().collect();
-    let total = entries.len();
+    let total = entries
+        .iter()
+        .filter(|e| e.path().is_dir() && !is_protected_root_dir(&e.file_name().to_string_lossy()))
+        .count();
     let mut processed = 0usize;
 
     for entry in entries {
-        processed += 1;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
 
-        if !path.is_dir() {
+        if !path.is_dir() || is_protected_root_dir(&name) {
             continue;
         }
 
-        if is_protected_root_dir(&name) {
-            continue;
-        }
+        processed += 1;
 
         let (size, file_count, dir_count) = calculate_dir_size(&path);
 

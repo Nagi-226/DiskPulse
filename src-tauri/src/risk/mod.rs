@@ -71,70 +71,56 @@ pub struct RiskRule {
 
 impl RiskRule {
     fn matches(&self, dir: &DirInfo) -> bool {
-        let lower_name = dir.name.to_lowercase();
-        let lower_path = dir.path.to_lowercase();
+        let lower_name = normalize_match_text(&dir.name);
+        let lower_path = normalize_match_text(&dir.path);
 
-        // Check name match if specified
         if let Some(ref name_pat) = self.name_match {
-            let pat = name_pat.to_lowercase();
+            let pat = normalize_match_text(name_pat);
             if lower_name == pat || lower_name.contains(&pat) {
                 return true;
             }
         }
 
-        // Check path patterns
-        for pattern in &self.patterns {
-            let pat = pattern.to_lowercase();
-            // Support simple glob patterns
-            if lower_path.contains(&pat.trim_start_matches("*").trim_end_matches("*"))
-                || lower_name.contains(&pat)
-            {
-                return true;
-            }
-        }
-
-        false
+        self.patterns.iter().any(|pattern| {
+            let pat = normalize_match_text(pattern);
+            lower_path.contains(&pat) || lower_name.contains(&pat)
+        })
     }
 }
 
-/// Default risk ruleset — embedded in binary, can be overridden by external config
+/// Default risk ruleset — embedded in binary, can be overridden later.
 fn default_rules() -> Vec<RiskRule> {
     vec![
-        // === LOW RISK — safe one-click cleanup ===
         RiskRule {
             id: "temp-files".into(),
-            patterns: vec!["Temp".into(), "tmp".into()],
+            patterns: vec!["temp".into(), "tmp".into()],
             risk_level: RiskLevel::Low,
             category: "temporary_files".into(),
             explanation: "Temporary files — safe to delete, automatically recreated as needed".into(),
             safe_to_delete: true,
-            name_match: Some("Temp".into()),
+            name_match: None,
         },
         RiskRule {
             id: "browser-cache".into(),
-            patterns: vec![
-                "Google/Chrome/User Data/*/Cache".into(),
-                "Mozilla/Firefox/Profiles/*/cache2".into(),
-                "Microsoft/Edge/User Data/*/Cache".into(),
-            ],
+            patterns: vec!["chrome/user data".into(), "firefox/profiles".into(), "edge/user data".into()],
             risk_level: RiskLevel::Low,
             category: "browser_cache".into(),
             explanation: "Browser cache files — safe to delete, will be re-downloaded".into(),
             safe_to_delete: true,
-            name_match: None,
+            name_match: Some("/cache".into()),
         },
         RiskRule {
             id: "nvidia-dx-cache".into(),
-            patterns: vec!["NVIDIA/DXCache".into(), "AMD/DxCache".into()],
+            patterns: vec!["nvidia/dxcache".into(), "amd/dxcache".into()],
             risk_level: RiskLevel::Low,
             category: "gpu_cache".into(),
             explanation: "GPU shader cache — safe to delete, rebuilt on next game launch".into(),
             safe_to_delete: true,
-            name_match: Some("DXCache".into()),
+            name_match: Some("/dxcache".into()),
         },
         RiskRule {
             id: "npm-cache".into(),
-            patterns: vec!["npm-cache".into(), ".npm".into()],
+            patterns: vec![".npm".into(), "npm-cache".into()],
             risk_level: RiskLevel::Low,
             category: "developer_cache".into(),
             explanation: "npm package cache — safe to delete, re-downloaded on next install".into(),
@@ -148,7 +134,7 @@ fn default_rules() -> Vec<RiskRule> {
             category: "developer_cache".into(),
             explanation: "pip package cache — safe to delete, re-downloaded on next install".into(),
             safe_to_delete: true,
-            name_match: None,
+            name_match: Some("pip".into()),
         },
         RiskRule {
             id: "cargo-cache".into(),
@@ -161,66 +147,61 @@ fn default_rules() -> Vec<RiskRule> {
         },
         RiskRule {
             id: "delivery-optimization".into(),
-            patterns: vec!["DeliveryOptimization".into()],
+            patterns: vec!["deliveryoptimization".into()],
             risk_level: RiskLevel::Low,
             category: "windows_cache".into(),
             explanation: "Windows Delivery Optimization files — safe to delete".into(),
             safe_to_delete: true,
-            name_match: Some("DeliveryOptimization".into()),
+            name_match: Some("deliveryoptimization".into()),
         },
         RiskRule {
             id: "recycle-bin".into(),
-            patterns: vec!["$Recycle.Bin".into()],
+            patterns: vec!["$recycle.bin".into()],
             risk_level: RiskLevel::Low,
             category: "recycle_bin".into(),
             explanation: "Recycle Bin contents — already marked for deletion by user".into(),
             safe_to_delete: true,
-            name_match: Some("$Recycle.Bin".into()),
+            name_match: Some("$recycle.bin".into()),
         },
-        // === MEDIUM RISK — confirm before cleanup ===
         RiskRule {
             id: "downloads-old".into(),
-            patterns: vec![
-                "Downloads".into(),
-                "Download".into(),
-            ],
+            patterns: vec!["downloads".into(), "download".into()],
             risk_level: RiskLevel::Medium,
             category: "downloads".into(),
             explanation: "Downloads folder — review contents before deleting".into(),
             safe_to_delete: false,
-            name_match: Some("Downloads".into()),
+            name_match: Some("downloads".into()),
         },
         RiskRule {
             id: "large-logs".into(),
-            patterns: vec!["logs".into(), "Logs".into()],
+            patterns: vec!["/logs".into(), "\\logs".into(), "logs".into()],
             risk_level: RiskLevel::Medium,
             category: "log_files".into(),
             explanation: "Log files — review before deleting, may be needed for debugging".into(),
             safe_to_delete: false,
-            name_match: None,
+            name_match: Some("log".into()),
         },
         RiskRule {
             id: "winsxs".into(),
-            patterns: vec!["WinSxS".into()],
+            patterns: vec!["winsxs".into()],
             risk_level: RiskLevel::Medium,
             category: "windows_components".into(),
             explanation: "Windows component store — use DISM cleanup, not manual deletion".into(),
             safe_to_delete: false,
-            name_match: Some("WinSxS".into()),
+            name_match: Some("winsxs".into()),
         },
-        // === HIGH RISK — display only, NEVER delete ===
         RiskRule {
             id: "windows-installer".into(),
-            patterns: vec!["Windows/Installer".into()],
+            patterns: vec!["windows/installer".into()],
             risk_level: RiskLevel::High,
             category: "system_installer".into(),
             explanation: "Windows Installer database — DO NOT DELETE, required for uninstalls".into(),
             safe_to_delete: false,
-            name_match: Some("Installer".into()),
+            name_match: Some("installer".into()),
         },
         RiskRule {
             id: "windows-system".into(),
-            patterns: vec!["Windows/System32".into(), "Windows/SysWOW64".into()],
+            patterns: vec!["windows/system32".into(), "windows/syswow64".into()],
             risk_level: RiskLevel::High,
             category: "system_critical".into(),
             explanation: "Windows system directory — NEVER delete, OS will break".into(),
@@ -229,7 +210,7 @@ fn default_rules() -> Vec<RiskRule> {
         },
         RiskRule {
             id: "program-files".into(),
-            patterns: vec!["Program Files".into(), "Program Files (x86)".into()],
+            patterns: vec!["program files (x86)".into(), "program files".into()],
             risk_level: RiskLevel::High,
             category: "installed_applications".into(),
             explanation: "Installed applications — only remove via Settings > Apps".into(),
@@ -238,11 +219,7 @@ fn default_rules() -> Vec<RiskRule> {
         },
         RiskRule {
             id: "wechat-qq-data".into(),
-            patterns: vec![
-                "WeChat Files".into(),
-                "Tencent Files".into(),
-                "QQ Files".into(),
-            ],
+            patterns: vec!["wechat files".into(), "tencent files".into(), "qq files".into()],
             risk_level: RiskLevel::High,
             category: "chat_user_data".into(),
             explanation: "Chat application user data — contains personal files and history".into(),
@@ -251,7 +228,7 @@ fn default_rules() -> Vec<RiskRule> {
         },
         RiskRule {
             id: "appdata-config".into(),
-            patterns: vec!["AppData/Roaming".into(), "AppData/Local".into()],
+            patterns: vec!["appdata/roaming".into(), "appdata/local".into()],
             risk_level: RiskLevel::High,
             category: "user_config".into(),
             explanation: "Application configuration — contains user settings and data".into(),
@@ -295,16 +272,35 @@ pub fn classify_risks(drive_info: &DriveInfo) -> RiskReport {
             .then(b.size_bytes.cmp(&a.size_bytes))
     });
 
-    let summary = RiskSummary {
+    let mut summary = RiskSummary {
         total_items: items.len(),
-        low_risk_count: items.iter().filter(|i| i.risk_level == RiskLevel::Low).count(),
-        medium_risk_count: items.iter().filter(|i| i.risk_level == RiskLevel::Medium).count(),
-        high_risk_count: items.iter().filter(|i| i.risk_level == RiskLevel::High).count(),
-        low_risk_bytes: items.iter().filter(|i| i.risk_level == RiskLevel::Low).map(|i| i.size_bytes).sum(),
-        medium_risk_bytes: items.iter().filter(|i| i.risk_level == RiskLevel::Medium).map(|i| i.size_bytes).sum(),
-        high_risk_bytes: items.iter().filter(|i| i.risk_level == RiskLevel::High).map(|i| i.size_bytes).sum(),
-        safe_deletable_bytes: items.iter().filter(|i| i.safe_to_delete).map(|i| i.size_bytes).sum(),
+        low_risk_count: 0,
+        medium_risk_count: 0,
+        high_risk_count: 0,
+        low_risk_bytes: 0,
+        medium_risk_bytes: 0,
+        high_risk_bytes: 0,
+        safe_deletable_bytes: 0,
     };
+    for item in &items {
+        match item.risk_level {
+            RiskLevel::Low => {
+                summary.low_risk_count += 1;
+                summary.low_risk_bytes += item.size_bytes;
+            }
+            RiskLevel::Medium => {
+                summary.medium_risk_count += 1;
+                summary.medium_risk_bytes += item.size_bytes;
+            }
+            RiskLevel::High => {
+                summary.high_risk_count += 1;
+                summary.high_risk_bytes += item.size_bytes;
+            }
+        }
+        if item.safe_to_delete {
+            summary.safe_deletable_bytes += item.size_bytes;
+        }
+    }
 
     RiskReport {
         drive_letter: drive_info.drive_letter.clone(),
@@ -315,7 +311,7 @@ pub fn classify_risks(drive_info: &DriveInfo) -> RiskReport {
 
 fn match_rule(dir: &DirInfo, rules: &[RiskRule]) -> (RiskLevel, String, String, bool) {
     // Check for developer project detection (medium risk)
-    if is_developer_project(&dir.name) {
+    if is_developer_project(&dir.path) {
         return (
             RiskLevel::Medium,
             "developer_project".into(),
@@ -344,11 +340,24 @@ fn match_rule(dir: &DirInfo, rules: &[RiskRule]) -> (RiskLevel, String, String, 
     )
 }
 
-/// Check if a path looks like an active developer project
-fn is_developer_project(_name: &str) -> bool {
-    // This is a heuristic — the full implementation in v0.0.6 will
-    // check for .git, Cargo.toml, package.json, etc. inside the directory.
-    false
+/// Check if a path looks like an active developer project.
+fn is_developer_project(path: &str) -> bool {
+    let lower = normalize_match_text(path);
+    lower.contains("/.git")
+        || lower.contains("/cargo.toml")
+        || lower.contains("/package.json")
+        || lower.contains("/pyproject.toml")
+        || lower.contains("/go.mod")
+        || lower.contains("/node_modules")
+        || lower.contains("/target")
+}
+
+fn normalize_match_text(input: &str) -> String {
+    input
+        .replace('\\', "/")
+        .to_lowercase()
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]

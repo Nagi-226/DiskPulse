@@ -2,45 +2,9 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Treemap from "./components/Treemap";
-
-/* ============================================================
-   DiskPulse — Dashboard
-   Real-time disk space monitor for Windows 11
-   ============================================================ */
-
-// --- Types ---
-interface DriveInfo {
-  drive_letter: string;
-  total_bytes: number;
-  used_bytes: number;
-  free_bytes: number;
-  top_dirs: DirInfo[];
-}
-
-interface DirInfo {
-  name: string;
-  path: string;
-  size_bytes: number;
-  file_count: number;
-  dir_count: number;
-  risk_level: string | null;
-}
-
-interface ScanProgress {
-  drive_letter: string;
-  processed: number;
-  total: number;
-  current_path: string | null;
-}
-
-// --- Helpers ---
-function formatSize(bytes: number): string {
-  if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(2)} TB`;
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
-  if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(0)} KB`;
-  return `${bytes} B`;
-}
+import CleanupPage from "./pages/Cleanup";
+import { formatSize } from "./utils/format";
+import type { DirInfo, DriveInfo, RiskReport, ScanProgress } from "./types";
 
 // --- Drive ring chart ---
 function DriveRing({
@@ -257,7 +221,7 @@ function DirBarItem({
         </div>
       </div>
       <span className="w-14 text-right text-xs text-text-muted font-mono">
-        {((dir.size_bytes / (maxSize > 0 ? maxSize * 100 : 1)) * 100).toFixed(1)}%
+        {(maxSize > 0 ? (dir.size_bytes / maxSize) * 100 : 0).toFixed(1)}%
       </span>
     </div>
   );
@@ -311,6 +275,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [drives, setDrives] = useState<string[]>([]);
   const [selectedDrive, setSelectedDrive] = useState("C");
+  const [riskReport, setRiskReport] = useState<RiskReport | null>(null);
 
   // Drill-down state
   interface Breadcrumb { name: string; path: string }
@@ -352,9 +317,16 @@ export default function App() {
     setSelectedDrive(drive);
     setBreadcrumbs([]);
     setDrillData(null);
+    setRiskReport(null);
     try {
       const info = await invoke<DriveInfo>("scan_drive", { drive });
       setDriveInfo(info);
+      try {
+        const report = await invoke<RiskReport>("classify_risks", { scan: info });
+        setRiskReport(report);
+      } catch {
+        setRiskReport(null);
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -399,7 +371,8 @@ export default function App() {
     ? (driveInfo.used_bytes / driveInfo.total_bytes) * 100
     : 0;
 
-  const maxDirSize = driveInfo?.top_dirs[0]?.size_bytes ?? 1;
+  const currentData = drillData ?? driveInfo?.top_dirs ?? [];
+  const maxDirSize = currentData[0]?.size_bytes ?? 1;
 
   return (
     <div className="h-full flex bg-aurora-bg">
@@ -629,7 +602,7 @@ export default function App() {
                       </div>
                     </div>
                     <div className="space-y-0.5">
-                      {(drillData ?? driveInfo.top_dirs).slice(0, 20).map((dir, i) => (
+                      {currentData.slice(0, 20).map((dir, i) => (
                         <DirBarItem
                           key={dir.path}
                           dir={dir}
@@ -653,15 +626,7 @@ export default function App() {
           )}
 
           {activeTab === "cleanup" && (
-            <div className="flex items-center justify-center py-32">
-              <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-aurora-elevated border border-aurora-border/40 flex items-center justify-center">
-                  <CleanupIcon />
-                </div>
-                <p className="text-text-secondary text-sm">Cleanup Report — Coming in v0.0.5</p>
-                <p className="text-text-muted text-xs mt-1">Risk classification engine will power this page</p>
-              </div>
-            </div>
+            <CleanupPage report={riskReport} />
           )}
           {activeTab === "history" && (
             <div className="flex items-center justify-center py-32">
