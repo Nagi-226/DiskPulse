@@ -91,11 +91,11 @@ E:\Github Project\DiskPulse\
 │       └── risk/
 │           └── mod.rs           ✅ 16 risk rules, classify_risks, RiskReport, 5 unit tests
 ├── (NOT YET CREATED)
-│   ├── src-tauri/src/watcher/   — Planned v0.0.7
-│   ├── src-tauri/src/cleaner/   — Planned v0.0.6
+│   ├── src-tauri/src/watcher/   — ✅ Created v0.0.7
+│   ├── src-tauri/src/cleaner/   — ✅ Created v0.0.6
 │   ├── src-tauri/src/db/        — Planned v0.0.8
-│   ├── src/pages/               — Planned v0.0.5+
-│   └── src/hooks/               — Planned v0.0.7
+│   ├── src/pages/               — ✅ Created v0.0.5
+│   └── src/hooks/               — ✅ Created v0.0.7
 ```
 
 ### Known Pitfalls (learned the hard way)
@@ -117,7 +117,7 @@ E:\Github Project\DiskPulse\
 | v0.0.4 | Risk Engine | 3d | ✅ Complete | 100% |
 | v0.0.5 | Cleanup Report | 3d | ✅ Complete | 100% |
 | v0.0.6 | Safe Cleanup | 4d | 🚧 In Progress | 25% |
-| v0.0.7 | FS Watcher + Tray | 3d | Not started | 0% |
+| v0.0.7 | FS Watcher + Tray | 3d | 🚧 In Progress | 60% |
 | v0.0.8 | History & Trends | 3d | Not started | 0% |
 | v0.0.9 | System Integration | 3d | Not started | 0% |
 | v0.1.0 | Release Candidate | 4d | Not started | 0% |
