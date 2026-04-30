@@ -116,12 +116,12 @@ E:\Github Project\DiskPulse\
 | v0.0.3 | Dashboard Treemap | 3d | ✅ Complete | 100% |
 | v0.0.4 | Risk Engine | 3d | ✅ Complete | 100% |
 | v0.0.5 | Cleanup Report | 3d | ✅ Complete | 100% |
-| v0.0.6 | Safe Cleanup | 4d | 🚧 In Progress | 25% |
-| v0.0.7 | FS Watcher + Tray | 3d | 🚧 In Progress | 60% |
+| v0.0.6 | Safe Cleanup | 4d | ✅ Complete | 100% |
+| v0.0.7 | FS Watcher + Tray | 3d | ✅ Complete | 100% |
 | v0.0.8 | History & Trends | 3d | Not started | 0% |
 | v0.0.9 | System Integration | 3d | Not started | 0% |
 | v0.1.0 | Release Candidate | 4d | Not started | 0% |
-| **Total** | | **30d** | | **~40%** |
+| **Total** | | **30d** | | **~62%** |
 
 ### Git Commits
 
@@ -131,6 +131,11 @@ E:\Github Project\DiskPulse\
 | 2 | `9623ec4` | feat: v0.0.2 scanner progress callback + multi-drive + tests |
 | 3 | `2ce2510` | feat: v0.0.3 ECharts treemap + drill-down navigation |
 | 4 | `7fcad28` | feat: v0.0.4 risk classification engine |
+| 5 | `238a95b` | feat: v0.0.5 cleanup report page with risk-grouped layout |
+| 6 | `6b06d7e` | feat: v0.0.6 safe cleanup engine scaffold |
+| 7 | `b16614c` | feat: v0.0.6 safety pipeline, progress events, modals, and tests |
+| 8 | `eec76b3` | feat: v0.0.7 real-time FS watcher + live monitoring UI + Chinese README |
+| 9 | `0503c71` | feat: v0.0.6 undo_cleanup + v0.0.7 system tray integration |
 
 ### Parallel Work Tracks (after v0.0.2 done)
 
