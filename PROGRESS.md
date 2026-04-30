@@ -115,8 +115,8 @@ E:\Github Project\DiskPulse\
 | v0.0.2 | Scanner Polish | 2d | ✅ Complete | 100% |
 | v0.0.3 | Dashboard Treemap | 3d | ✅ Complete | 100% |
 | v0.0.4 | Risk Engine | 3d | ✅ Complete | 100% |
-| v0.0.5 | Cleanup Report | 3d | Not started | 0% |
-| v0.0.6 | Safe Cleanup | 4d | Not started | 0% |
+| v0.0.5 | Cleanup Report | 3d | ✅ Complete | 100% |
+| v0.0.6 | Safe Cleanup | 4d | 🚧 In Progress | 25% |
 | v0.0.7 | FS Watcher + Tray | 3d | Not started | 0% |
 | v0.0.8 | History & Trends | 3d | Not started | 0% |
 | v0.0.9 | System Integration | 3d | Not started | 0% |
