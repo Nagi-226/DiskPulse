@@ -33,6 +33,24 @@ pub struct CleanItemResult {
     pub size_bytes: u64,
     pub status: CleanItemStatus,
     pub reason: Option<String>,
+    /// Original path before deletion (for undo reference).
+    pub original_path: Option<String>,
+}
+
+/// Result of a restore operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoreResult {
+    pub attempted: usize,
+    pub restored: usize,
+    pub failed: usize,
+    pub items: Vec<RestoreItemResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoreItemResult {
+    pub original_path: String,
+    pub restored: bool,
+    pub reason: Option<String>,
 }
 
 /// Validation result before any cleanup action is allowed.
@@ -210,6 +228,7 @@ pub fn preview_cleanup(items: Vec<CleanItem>) -> CleanPreview {
                 size_bytes: item.size_bytes,
                 status: CleanItemStatus::Skipped,
                 reason: Some(reason),
+                original_path: Some(item.path.clone()),
             });
             blocked.push(item);
             continue;
@@ -318,6 +337,7 @@ where
                     size_bytes: item.size_bytes,
                     status: CleanItemStatus::Skipped,
                     reason: Some("Cancelled by user".into()),
+                    original_path: Some(item.path),
                 });
                 skipped += 1;
                 on_progress(CleanProgress {
@@ -339,12 +359,14 @@ where
 
         // Full safety check (rule + runtime) right before deletion
         if let Err(reason) = safety_check(&item) {
+            let orig_path = item.path.clone();
             item_results.push(CleanItemResult {
                 path: item.path,
                 name: item.name,
                 size_bytes: item.size_bytes,
                 status: CleanItemStatus::Skipped,
                 reason: Some(reason),
+                original_path: Some(orig_path),
             });
             skipped += 1;
             continue;
@@ -355,21 +377,25 @@ where
         if success {
             freed_bytes += item.size_bytes;
             succeeded += 1;
+            let orig_path = item.path.clone();
             item_results.push(CleanItemResult {
                 path: item.path,
                 name: item.name,
                 size_bytes: item.size_bytes,
                 status: CleanItemStatus::Success,
                 reason: None,
+                original_path: Some(orig_path),
             });
         } else {
             failed += 1;
+            let orig_path = item.path.clone();
             item_results.push(CleanItemResult {
                 path: item.path,
                 name: item.name,
                 size_bytes: item.size_bytes,
                 status: CleanItemStatus::Failed,
                 reason: Some("SHFileOperationW failed — file may be in use".into()),
+                original_path: Some(orig_path),
             });
         }
     }
@@ -382,6 +408,229 @@ where
         freed_bytes,
         items: item_results,
     }
+}
+
+// ── Restore from Recycle Bin ───────────────────────────────
+
+/// Attempt to restore items from the Recycle Bin by original path.
+/// Parses `$I` info files to find matching deleted items and moves them back.
+pub fn restore_items(original_paths: Vec<String>) -> RestoreResult {
+    let recycle_bin = match get_recycle_bin_path() {
+        Some(p) => p,
+        None => {
+            return RestoreResult {
+                attempted: original_paths.len(),
+                restored: 0,
+                failed: original_paths.len(),
+                items: original_paths
+                    .into_iter()
+                    .map(|p| RestoreItemResult {
+                        original_path: p,
+                        restored: false,
+                        reason: Some("Recycle Bin not found".into()),
+                    })
+                    .collect(),
+            };
+        }
+    };
+
+    // Build map: original_path -> $R file path
+    let index = build_recycle_bin_index(&recycle_bin);
+    let mut result = RestoreResult {
+        attempted: 0,
+        restored: 0,
+        failed: 0,
+        items: Vec::new(),
+    };
+
+    for original_path in original_paths {
+        result.attempted += 1;
+        let normalized = original_path.replace('\\', "/").to_lowercase();
+
+        if let Some(recycled_path) = index.get(&normalized) {
+            if restore_file(recycled_path, &original_path) {
+                result.restored += 1;
+                result.items.push(RestoreItemResult {
+                    original_path,
+                    restored: true,
+                    reason: None,
+                });
+            } else {
+                result.failed += 1;
+                result.items.push(RestoreItemResult {
+                    original_path,
+                    restored: false,
+                    reason: Some("Failed to restore file".into()),
+                });
+            }
+        } else {
+            result.failed += 1;
+            result.items.push(RestoreItemResult {
+                original_path,
+                restored: false,
+                reason: Some("Item not found in Recycle Bin (may have been permanently deleted)".into()),
+            });
+        }
+    }
+
+    result
+}
+
+fn get_recycle_bin_path() -> Option<String> {
+    // Get current user SID from environment or token
+    let sid = get_user_sid()?;
+    let path = format!("C:\\$Recycle.Bin\\{}", sid);
+    if std::path::Path::new(&path).exists() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn get_user_sid() -> Option<String> {
+    // Enumerate C:\$Recycle.Bin for SID-named subdirectories
+    let rb = std::path::Path::new("C:\\$Recycle.Bin");
+    if !rb.exists() {
+        return None;
+    }
+
+    if let Ok(entries) = std::fs::read_dir(rb) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    // SID folders all start with "S-1-5-21-"
+                    if name.starts_with("S-1-5-21-") {
+                        // Prefer the one that actually has $I files in it
+                        if has_recycle_entries(&path) {
+                            return Some(name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn has_recycle_entries(dir: &std::path::Path) -> bool {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        entries
+            .flatten()
+            .any(|e| e.file_name().to_str().map(|n| n.starts_with("$I")).unwrap_or(false))
+    } else {
+        false
+    }
+}
+
+/// Build an index mapping original paths (lowercase, forward slashes) to $R file paths.
+fn build_recycle_bin_index(recycle_bin: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    let dir = std::path::Path::new(recycle_bin);
+
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            // Only look at $I files
+            if !name.starts_with("$I") {
+                continue;
+            }
+
+            if let Some(original) = parse_info_file(&path) {
+                let key = original.replace('\\', "/").to_lowercase();
+                // Corresponding $R file
+                let r_name = name.replacen("$I", "$R", 1);
+                let r_path = path.parent().map(|p| p.join(&r_name)).unwrap_or(path);
+                if r_path.exists() {
+                    map.insert(key, r_path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    map
+}
+
+/// Parse a $I info file and extract the original path.
+fn parse_info_file(path: &std::path::Path) -> Option<String> {
+    let data = std::fs::read(path).ok()?;
+
+    // Need at least 28 bytes (8 header + 8 size + 8 time + min path)
+    if data.len() < 28 {
+        return None;
+    }
+
+    // The original path starts at offset 24 (after header, size, timestamp)
+    // in UTF-16LE encoding, null-terminated
+    let path_start = 24;
+    if path_start >= data.len() {
+        return None;
+    }
+
+    let remaining = &data[path_start..];
+    let mut utf16_chars: Vec<u16> = Vec::new();
+    for chunk in remaining.chunks_exact(2) {
+        let word = u16::from_le_bytes([chunk[0], chunk[1]]);
+        if word == 0 {
+            break;
+        }
+        utf16_chars.push(word);
+    }
+
+    if utf16_chars.is_empty() {
+        return None;
+    }
+
+    String::from_utf16(&utf16_chars).ok()
+}
+
+/// Move a file from the Recycle Bin back to its original location.
+fn restore_file(recycled_path: &str, original_path: &str) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::UI::Shell::{
+        SHFileOperationW, SHFILEOPSTRUCTW, FO_MOVE, FOF_NOCONFIRMATION,
+        FOF_NOERRORUI, FOF_SILENT,
+    };
+
+    // Ensure parent directory exists
+    if let Some(parent) = std::path::Path::new(original_path).parent() {
+        if !parent.exists() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+
+    let wide_src: Vec<u16> = std::ffi::OsStr::new(recycled_path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut op = SHFILEOPSTRUCTW::default();
+    op.wFunc = FO_MOVE;
+    op.pFrom = windows::core::PCWSTR(wide_src.as_ptr());
+    op.fFlags = (FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT).0 as u16;
+
+    // If FO_MOVE to the original path doesn't work (different drives?), try copy+delete
+    let op_result = unsafe { SHFileOperationW(&mut op) };
+
+    if op_result == 0 && !op.fAnyOperationsAborted.as_bool() {
+        return true;
+    }
+
+    // Fallback: use std::fs::rename (works on same drive)
+    if let Ok(()) = std::fs::rename(recycled_path, original_path) {
+        return true;
+    }
+
+    // Last resort: try to copy then delete
+    let copy_success = std::fs::copy(recycled_path, original_path).is_ok();
+    if copy_success {
+        let _ = std::fs::remove_file(recycled_path);
+        return true;
+    }
+
+    false
 }
 
 // ── Tests ──────────────────────────────────────────────────
@@ -528,5 +777,56 @@ mod tests {
     #[test]
     fn safe_check_blocks_windows() {
         assert!(!is_path_safe_for_cleanup("C:\\Windows\\some-file"));
+    }
+
+    // ── Integration tests ──
+
+    #[test]
+    fn integration_clean_temp_file_moves_to_recycle_bin() {
+        // Create a temporary test file
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("diskpulse_test_delete_me.tmp");
+
+        // Write some content
+        std::fs::write(&test_file, b"diskpulse integration test data").unwrap();
+        assert!(test_file.exists());
+
+        let path_str = test_file.to_string_lossy().to_string();
+
+        // Clean the file
+        let items = vec![make_item(&path_str, true, RiskLevel::Low)];
+        let preview = preview_cleanup(items);
+        assert!(preview.validation.allowed, "Test file should pass validation");
+
+        let result = clean_items_with_progress(preview.accepted, None, |_| {});
+        assert_eq!(result.succeeded, 1, "File should be cleaned successfully");
+        assert_eq!(result.failed, 0);
+        // freed_bytes uses the item's declared size_bytes (1024), not actual file size
+        assert_eq!(result.freed_bytes, 1024);
+
+        // Verify file no longer exists at original path
+        assert!(!test_file.exists(), "File should be moved to Recycle Bin");
+
+        // Verify the CleanItemResult has original_path set
+        let item_result = &result.items[0];
+        assert!(item_result.original_path.is_some());
+        assert_eq!(item_result.original_path.as_ref().unwrap(), &path_str);
+    }
+
+    #[test]
+    fn restore_items_finds_nothing_for_nonexistent_path() {
+        let result = restore_items(vec!["Z:\\Definitely\\Does\\Not\\Exist\\File.txt".into()]);
+        assert_eq!(result.restored, 0);
+        assert!(result.failed > 0);
+    }
+
+    #[test]
+    fn parse_info_file_returns_none_for_short_data() {
+        let tmp = std::env::temp_dir().join("diskpulse_test_short.bin");
+        // Less than 28 bytes → returns None immediately
+        std::fs::write(&tmp, b"too short").ok();
+        let result = parse_info_file(&tmp);
+        assert!(result.is_none(), "Should return None for data < 28 bytes");
+        let _ = std::fs::remove_file(&tmp);
     }
 }

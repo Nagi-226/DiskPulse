@@ -84,6 +84,20 @@ export interface CleanItemResult {
   size_bytes: number;
   status: CleanItemStatus;
   reason: string | null;
+  original_path: string | null;
+}
+
+export interface RestoreItemResult {
+  original_path: string;
+  restored: boolean;
+  reason: string | null;
+}
+
+export interface RestoreResult {
+  attempted: number;
+  restored: number;
+  failed: number;
+  items: RestoreItemResult[];
 }
 
 export interface CleanProgress {

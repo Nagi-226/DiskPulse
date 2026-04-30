@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Treemap from "./components/Treemap";
@@ -293,12 +293,33 @@ export default function App() {
     loadDrives();
     scanDrive("C");
 
+    // Refs for tray event closures to access latest state
+    const scanDriveRef = useRef(scanDrive);
+    scanDriveRef.current = scanDrive;
+    const selectedDriveRef = useRef(selectedDrive);
+    selectedDriveRef.current = selectedDrive;
+    const isWatchingRef = useRef(isWatching);
+    isWatchingRef.current = isWatching;
+
     // Listen for scan progress events
-    const unlisten = listen<ScanProgress>("scan-progress", (event) => {
+    const unlistenScan = listen<ScanProgress>("scan-progress", (event) => {
       setProgress(event.payload);
     });
+    // Listen for tray menu events (use refs for current state)
+    const unlistenTrayScan = listen("tray-quick-scan", () => {
+      scanDriveRef.current(selectedDriveRef.current);
+    });
+    const unlistenTrayMonitor = listen("tray-toggle-monitor", () => {
+      if (isWatchingRef.current) {
+        stopWatching();
+      } else {
+        startWatching();
+      }
+    });
     return () => {
-      unlisten.then((fn) => fn());
+      unlistenScan.then((fn) => fn());
+      unlistenTrayScan.then((fn) => fn());
+      unlistenTrayMonitor.then((fn) => fn());
     };
   }, []);
 

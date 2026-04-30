@@ -3,10 +3,12 @@ mod risk;
 mod scanner;
 mod watcher;
 
-use cleaner::{CleanItem, CleanPreview, CleanResult};
+use cleaner::{CleanItem, CleanPreview, CleanResult, RestoreResult};
 use scanner::DriveInfo;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
 pub const SCAN_PROGRESS_EVENT: &str = "scan-progress";
 pub const CLEAN_PROGRESS_EVENT: &str = "clean-progress";
@@ -84,6 +86,12 @@ fn clean_items(app: AppHandle, items: Vec<CleanItem>) -> Result<CleanResult, Str
     Ok(result)
 }
 
+/// Attempt to restore previously cleaned items from the Recycle Bin.
+#[tauri::command]
+fn undo_cleanup(original_paths: Vec<String>) -> Result<RestoreResult, String> {
+    Ok(cleaner::restore_items(original_paths))
+}
+
 /// Start the file system watcher on default directories.
 /// Emits `fs-event-batch` events to the frontend with aggregated changes.
 #[tauri::command]
@@ -130,6 +138,69 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            // Build tray menu
+            let quick_scan = MenuItemBuilder::with_id("quick_scan", "Quick Scan").build(app)?;
+            let open = MenuItemBuilder::with_id("open", "Open DiskPulse").build(app)?;
+            let pause = MenuItemBuilder::with_id("pause_monitor", "Pause Monitoring").build(app)?;
+            let exit = MenuItemBuilder::with_id("exit", "Exit").build(app)?;
+
+            let menu = MenuBuilder::new(app)
+                .item(&quick_scan)
+                .item(&open)
+                .item(&pause)
+                .separator()
+                .item(&exit)
+                .build()?;
+
+            let _tray = TrayIconBuilder::new()
+                .menu(&menu)
+                .tooltip("DiskPulse — Disk Monitor & Cleaner")
+                .on_menu_event(|app, event| {
+                    match event.id().0.as_str() {
+                        "quick_scan" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                // Trigger a scan via event
+                                let _ = window.emit("tray-quick-scan", ());
+                            }
+                        }
+                        "open" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "pause_monitor" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.emit("tray-toggle-monitor", ());
+                            }
+                        }
+                        "exit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             scan_drive,
             list_drives,
@@ -137,6 +208,7 @@ pub fn run() {
             classify_risks,
             preview_cleanup,
             clean_items,
+            undo_cleanup,
             start_fs_watcher,
             stop_fs_watcher,
             app_version
