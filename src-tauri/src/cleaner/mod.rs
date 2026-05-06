@@ -279,10 +279,12 @@ fn recycle_bin_delete(path: &str) -> bool {
         .chain(std::iter::once(0))
         .collect();
 
-    let mut op = SHFILEOPSTRUCTW::default();
-    op.wFunc = FO_DELETE;
-    op.pFrom = windows::core::PCWSTR(wide_path.as_ptr());
-    op.fFlags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT).0 as u16;
+    let mut op = SHFILEOPSTRUCTW {
+        wFunc: FO_DELETE,
+        pFrom: windows::core::PCWSTR(wide_path.as_ptr()),
+        fFlags: (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT).0 as u16,
+        ..Default::default()
+    };
 
     unsafe { SHFileOperationW(&mut op) == 0 && !op.fAnyOperationsAborted.as_bool() }
 }
@@ -606,12 +608,13 @@ fn restore_file(recycled_path: &str, original_path: &str) -> bool {
         .chain(std::iter::once(0))
         .collect();
 
-    let mut op = SHFILEOPSTRUCTW::default();
-    op.wFunc = FO_MOVE;
-    op.pFrom = windows::core::PCWSTR(wide_src.as_ptr());
-    op.fFlags = (FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT).0 as u16;
+    let mut op = SHFILEOPSTRUCTW {
+        wFunc: FO_MOVE,
+        pFrom: windows::core::PCWSTR(wide_src.as_ptr()),
+        fFlags: (FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT).0 as u16,
+        ..Default::default()
+    };
 
-    // If FO_MOVE to the original path doesn't work (different drives?), try copy+delete
     let op_result = unsafe { SHFileOperationW(&mut op) };
 
     if op_result == 0 && !op.fAnyOperationsAborted.as_bool() {

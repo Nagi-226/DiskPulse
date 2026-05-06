@@ -73,38 +73,23 @@ export interface CleanPreview {
   accepted: CleanItem[];
   blocked: CleanItem[];
   validation: CleanValidationResult;
-  unsafe_items: CleanItemResult[];
 }
 
-export type CleanItemStatus = "Success" | "Skipped" | "Failed";
+export interface CleanExecutionResult {
+  attempted: number;
+  executed: number;
+  blocked: number;
+  total_bytes: number;
+  messages: string[];
+}
 
 export interface CleanItemResult {
   path: string;
   name: string;
   size_bytes: number;
-  status: CleanItemStatus;
+  status: "Success" | "Skipped" | "Failed";
   reason: string | null;
   original_path: string | null;
-}
-
-export interface RestoreItemResult {
-  original_path: string;
-  restored: boolean;
-  reason: string | null;
-}
-
-export interface RestoreResult {
-  attempted: number;
-  restored: number;
-  failed: number;
-  items: RestoreItemResult[];
-}
-
-export interface CleanProgress {
-  current: number;
-  total: number;
-  current_item: string | null;
-  status: string | null;
 }
 
 export interface CleanResult {
@@ -114,4 +99,50 @@ export interface CleanResult {
   failed: number;
   freed_bytes: number;
   items: CleanItemResult[];
+}
+
+export interface CleanProgress {
+  current: number;
+  total: number;
+  current_item: string | null;
+  status: string | null;
+}
+
+export interface Snapshot {
+  id: number;
+  drive_letter: string;
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  snapshot_json: string;
+  created_at: string;
+}
+
+export interface CleanupLog {
+  id: number;
+  created_at: string;
+  item_count: number;
+  freed_bytes: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+  items_json: string;
+}
+
+export interface AppSettings {
+  default_drive: string;
+  auto_scan_on_startup: boolean;
+  auto_monitor_on_startup: boolean;
+  watcher_poll_interval_ms: number;
+  watcher_debounce_ms: number;
+}
+
+export interface RiskRule {
+  id: string;
+  patterns: string[];
+  risk_level: RiskLevel;
+  category: string;
+  explanation: string;
+  safe_to_delete: boolean;
+  name_match: string | null;
 }

@@ -26,7 +26,7 @@ export function useFsEvents() {
   useEffect(() => {
     return () => {
       if (isWatching) {
-        invoke("stop_fs_watcher").catch(() => {});
+        invoke("stop_fs_watcher").catch((e) => console.error("stop_fs_watcher cleanup:", e));
       }
     };
   }, []);

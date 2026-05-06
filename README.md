@@ -103,21 +103,44 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | v0.0.3 | ECharts treemap + drill-down | ✅ |
 | v0.0.4 | Risk classification engine (16 rules) | ✅ |
 | v0.0.5 | Cleanup report page | ✅ |
-| v0.0.6 | Safe cleanup execution | 🚧 |
-| v0.0.7 | Real-time FS watcher + system tray | 📅 |
-| v0.0.8 | History trends + SQLite snapshots | 📅 |
-| v0.0.9 | System integration (DISM, Storage Sense) | 📅 |
-| v0.1.0 | Public release candidate | 📅 |
+| v0.0.6 | Safe cleanup engine (Recycle Bin + undo) | ✅ |
+| v0.0.7 | Real-time FS watcher + system tray | ✅ |
+| v0.0.8 | History trends + SQLite snapshots | ✅ |
+| v0.0.9 | Settings page (prefs, rules, about) | ✅ |
+| v0.1.0 | Production release candidate | ✅ |
 
 ## ⌨️ IPC Commands
 
 ```rust
-scan_drive(drive: String) -> DriveInfo          // Full drive scan with progress
-list_drives() -> Vec<String>                    // Available drives
-scan_directory(path: String) -> Vec<DirInfo>    // Drill-down into subdirectory
-classify_risks(scan: DriveInfo) -> RiskReport   // Classify into risk levels
-preview_cleanup(items: Vec<CleanItem>) -> CleanPreview  // Safety validation
-clean_items(items: Vec<CleanItem>) -> CleanResult       // Recycle Bin cleanup
+// Scanner
+scan_drive(drive: String) -> DriveInfo
+list_drives() -> Vec<String>
+scan_directory(path: String) -> Vec<DirInfo>
+
+// Risk
+classify_risks(scan: DriveInfo) -> RiskReport
+
+// Cleaner
+preview_cleanup(items: Vec<CleanItem>) -> CleanPreview
+clean_items(items: Vec<CleanItem>) -> CleanResult
+undo_cleanup(original_paths: Vec<String>) -> RestoreResult
+
+// Watcher
+start_fs_watcher() -> String
+stop_fs_watcher() -> String
+
+// History
+get_snapshot_history(drive: String, days: u32) -> Vec<Snapshot>
+get_cleanup_history() -> Vec<CleanupLog>
+
+// Settings
+get_settings() -> AppSettings
+save_settings(settings: AppSettings) -> ()
+get_rules() -> Vec<RiskRule>
+save_rule_override(rule_id: String, safe_to_delete: bool) -> ()
+
+// App
+app_version() -> String
 ```
 
 ## 🤝 Contributing

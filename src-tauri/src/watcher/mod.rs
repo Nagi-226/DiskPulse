@@ -49,7 +49,7 @@ impl Default for WatcherConfig {
     }
 }
 
-fn default_watch_dirs() -> Vec<String> {
+pub fn default_watch_dirs() -> Vec<String> {
     let mut dirs = Vec::new();
     if let Ok(temp) = std::env::var("TEMP") {
         dirs.push(temp);
@@ -135,7 +135,7 @@ where
                     }
 
                     // Detect removed
-                    for (path, _) in &last_snapshot {
+                    for path in last_snapshot.keys() {
                         if !current.contains_key(path) {
                             batch_events.push(FsEvent {
                                 kind: FsEventKind::Removed,

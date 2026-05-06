@@ -103,21 +103,44 @@ npm run tauri build
 | v0.0.3 | ECharts 矩形树图 + 下钻导航 | ✅ |
 | v0.0.4 | 风险分类引擎（16 条规则） | ✅ |
 | v0.0.5 | 清理报告页面 | ✅ |
-| v0.0.6 | 安全清理执行（进行中 75%） | 🚧 |
-| v0.0.7 | 实时文件系统监控 + 系统托盘 | 📅 |
-| v0.0.8 | 历史趋势图 + SQLite 快照 | 📅 |
-| v0.0.9 | 系统集成（DISM、存储感知） | 📅 |
-| v0.1.0 | 公开发布候选版 | 📅 |
+| v0.0.6 | 安全清理引擎（回收站 + 撤销） | ✅ |
+| v0.0.7 | 实时文件监控 + 系统托盘 | ✅ |
+| v0.0.8 | 历史趋势图 + SQLite 快照 | ✅ |
+| v0.0.9 | 设置页面（偏好、规则、关于） | ✅ |
+| v0.1.0 | 正式发布候选版 | ✅ |
 
 ## ⌨️ IPC 命令
 
 ```rust
-scan_drive(drive: String) -> DriveInfo          // 全盘扫描（含进度事件）
-list_drives() -> Vec<String>                    // 可用驱动器列表
-scan_directory(path: String) -> Vec<DirInfo>    // 子目录下钻扫描
-classify_risks(scan: DriveInfo) -> RiskReport   // 风险等级分类
-preview_cleanup(items: Vec<CleanItem>) -> CleanPreview  // 安全验证
-clean_items(items: Vec<CleanItem>) -> CleanResult       // 回收站清理
+// 扫描器
+scan_drive(drive: String) -> DriveInfo
+list_drives() -> Vec<String>
+scan_directory(path: String) -> Vec<DirInfo>
+
+// 风险分类
+classify_risks(scan: DriveInfo) -> RiskReport
+
+// 清理器
+preview_cleanup(items: Vec<CleanItem>) -> CleanPreview
+clean_items(items: Vec<CleanItem>) -> CleanResult
+undo_cleanup(original_paths: Vec<String>) -> RestoreResult
+
+// 文件监控
+start_fs_watcher() -> String
+stop_fs_watcher() -> String
+
+// 历史记录
+get_snapshot_history(drive: String, days: u32) -> Vec<Snapshot>
+get_cleanup_history() -> Vec<CleanupLog>
+
+// 设置
+get_settings() -> AppSettings
+save_settings(settings: AppSettings) -> ()
+get_rules() -> Vec<RiskRule>
+save_rule_override(rule_id: String, safe_to_delete: bool) -> ()
+
+// 应用
+app_version() -> String
 ```
 
 ## 🤝 参与贡献

@@ -1,6 +1,6 @@
 [package]
 name = "diskpulse"
-version = "0.0.1"
+version = "0.1.0"
 description = "Real-time disk space monitor & safe cleanup tool for Windows 11"
 authors = ["FJL03"]
 edition = "2021"

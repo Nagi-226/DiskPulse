@@ -360,6 +360,21 @@ fn normalize_match_text(input: &str) -> String {
         .to_string()
 }
 
+/// Get all rules with user overrides applied.
+pub fn get_rules_with_overrides(
+    overrides: &std::collections::HashMap<String, bool>,
+) -> Vec<RiskRule> {
+    default_rules()
+        .into_iter()
+        .map(|mut rule| {
+            if let Some(&safe) = overrides.get(&rule.id) {
+                rule.safe_to_delete = safe;
+            }
+            rule
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

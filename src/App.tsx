@@ -4,9 +4,11 @@ import { listen } from "@tauri-apps/api/event";
 import Treemap from "./components/Treemap";
 import CleanupPage from "./pages/Cleanup";
 import CleanupPreview from "./components/CleanupPreview";
+import HistoryPage from "./pages/History";
+import SettingsPage from "./pages/Settings";
 import { formatSize } from "./utils/format";
 import { useFsEvents } from "./hooks/useFsEvents";
-import type { DirInfo, DriveInfo, RiskReport, ScanProgress } from "./types";
+import type { CleanProgress, DirInfo, DriveInfo, RiskReport, ScanProgress } from "./types";
 
 // --- Drive ring chart ---
 function DriveRing({
@@ -272,6 +274,7 @@ export default function App() {
   const [driveInfo, setDriveInfo] = useState<DriveInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
+  const [cleanProgress, setCleanProgress] = useState<CleanProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -288,24 +291,22 @@ export default function App() {
   // File system watcher
   const { isWatching, lastBatch, eventCount, startWatching, stopWatching } = useFsEvents();
 
+  // Refs for tray event closures to access latest state
+  const scanDriveRef = useRef(scanDrive);
+  const selectedDriveRef = useRef(selectedDrive);
+  const isWatchingRef = useRef(isWatching);
+  scanDriveRef.current = scanDrive;
+  selectedDriveRef.current = selectedDrive;
+  isWatchingRef.current = isWatching;
+
   useEffect(() => {
     invoke<string>("app_version").then(setVersion);
     loadDrives();
     scanDrive("C");
 
-    // Refs for tray event closures to access latest state
-    const scanDriveRef = useRef(scanDrive);
-    scanDriveRef.current = scanDrive;
-    const selectedDriveRef = useRef(selectedDrive);
-    selectedDriveRef.current = selectedDrive;
-    const isWatchingRef = useRef(isWatching);
-    isWatchingRef.current = isWatching;
-
-    // Listen for scan progress events
     const unlistenScan = listen<ScanProgress>("scan-progress", (event) => {
       setProgress(event.payload);
     });
-    // Listen for tray menu events (use refs for current state)
     const unlistenTrayScan = listen("tray-quick-scan", () => {
       scanDriveRef.current(selectedDriveRef.current);
     });
@@ -316,10 +317,18 @@ export default function App() {
         startWatching();
       }
     });
+    const unlistenAutoScan = listen<string>("auto-scan", (event) => {
+      scanDriveRef.current(event.payload);
+    });
+    const unlistenCleanProgress = listen<CleanProgress>("clean-progress", (event) => {
+      setCleanProgress(event.payload);
+    });
     return () => {
       unlistenScan.then((fn) => fn());
       unlistenTrayScan.then((fn) => fn());
       unlistenTrayMonitor.then((fn) => fn());
+      unlistenAutoScan.then((fn) => fn());
+      unlistenCleanProgress.then((fn) => fn());
     };
   }, []);
 
@@ -446,7 +455,7 @@ export default function App() {
         <div className="px-4 py-4 border-t border-aurora-border/40 space-y-3">
           <div className="flex items-center gap-2 text-xs text-text-muted">
             <span className={`${isWatching ? "live-dot" : ""} w-2 h-2 rounded-full ${isWatching ? "bg-success" : "bg-aurora-border"}`} />
-            <span>{loading ? "Scanning..." : isWatching ? `Live · ${eventCount} events` : "Monitor paused"}</span>
+            <span>{loading ? (cleanProgress ? "Cleaning..." : "Scanning...") : isWatching ? `Live · ${eventCount} events` : "Monitor paused"}</span>
           </div>
           <button
             className={`w-full px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
@@ -564,6 +573,39 @@ export default function App() {
             <div className="p-8 space-y-8">
               {/* Scan progress */}
               {progress && <ScanProgressBar progress={progress} />}
+
+              {/* Cleanup progress */}
+              {cleanProgress && (
+                <div className="glass-card p-4 mb-6 animate-in fade-in">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" />
+                      </svg>
+                      <span className="text-text-primary font-medium">
+                        Cleaning... {cleanProgress.current}/{cleanProgress.total}
+                      </span>
+                    </div>
+                    <span className="text-xs text-text-muted font-mono">
+                      {cleanProgress.status ?? ""}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-aurora-border/60 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-300 ease-out"
+                      style={{
+                        width: `${Math.max(cleanProgress.total > 0 ? (cleanProgress.current / cleanProgress.total) * 100 : 0, 2)}%`,
+                        background: "linear-gradient(90deg, var(--color-warning), var(--color-danger))",
+                      }}
+                    />
+                  </div>
+                  {cleanProgress.current_item && (
+                    <p className="mt-1.5 text-xs text-text-muted truncate">
+                      {cleanProgress.current_item}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Live event feed */}
               {isWatching && lastBatch && (
@@ -701,28 +743,8 @@ export default function App() {
               {riskReport && <CleanupPreview items={riskReport.items} />}
             </div>
           )}
-          {activeTab === "history" && (
-            <div className="flex items-center justify-center py-32">
-              <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-aurora-elevated border border-aurora-border/40 flex items-center justify-center">
-                  <HistoryIcon />
-                </div>
-                <p className="text-text-secondary text-sm">History & Trends — Coming in v0.0.8</p>
-                <p className="text-text-muted text-xs mt-1">SQLite snapshots + ECharts trend charts</p>
-              </div>
-            </div>
-          )}
-          {activeTab === "settings" && (
-            <div className="flex items-center justify-center py-32">
-              <div className="text-center">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-aurora-elevated border border-aurora-border/40 flex items-center justify-center">
-                  <SettingsIcon />
-                </div>
-                <p className="text-text-secondary text-sm">Settings — Coming in v0.0.9</p>
-                <p className="text-text-muted text-xs mt-1">Preferences, rules config, about</p>
-              </div>
-            </div>
-          )}
+          {activeTab === "history" && <HistoryPage />}
+          {activeTab === "settings" && <SettingsPage />}
         </div>
       </main>
     </div>

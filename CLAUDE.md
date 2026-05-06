@@ -1,7 +1,7 @@
 # CLAUDE.md — DiskPulse Project Context
 
-> This file prevents context loss during long development sessions.
-> Read this FIRST when resuming work on DiskPulse.
+> Context sync order: `PROGRESS.md` → `CLAUDE.md` → `CHANGELOG.md`
+> Read PROGRESS.md first for version status, then this file for architecture/details.
 
 ## Project Identity
 
@@ -9,7 +9,7 @@
 - **Tagline**: Real-time disk space monitor & safe cleanup tool for Windows 11
 - **Type**: Open source desktop application (MIT License)
 - **Repository**: E:\Github Project\DiskPulse
-- **Current Version**: v0.0.1 (initial scaffold)
+- **Current Version**: v0.1.0
 
 ## Tech Stack (LOCKED — do not change without explicit user approval)
 
@@ -38,18 +38,18 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 ### Rust Module Structure (src-tauri/src/)
 - `main.rs` — App entry, Tauri setup, command registration
 - `scanner/` — Parallel directory traversal, drive info collection
-- `watcher/` — ReadDirectoryChangesW real-time FS monitoring
-- `risk/` — Risk classification engine (rule-based)
+- `watcher/` — Polling-based FS monitoring with configurable interval/debounce
+- `risk/` — Risk classification engine (rule-based, 16 rules)
 - `cleaner/` — Safe cleanup orchestration (Recycle Bin integration)
-- `db/` — SQLite storage (snapshots, cleanup logs, config)
+- `db/` — SQLite storage (snapshots, cleanup logs, settings, rule overrides)
 
 ### Frontend Structure (src/)
-- `pages/Dashboard` — Treemap visualization + drive overview
+- `App.tsx` — Dashboard UI (treemap, ring chart, live feed, nav sidebar)
 - `pages/Cleanup` — Risk-grouped cleanup report + one-click clean
-- `pages/History` — Cleanup history + trend charts
-- `pages/Settings` — Preferences, risk rules config, about
-- `components/` — Shared UI components
-- `hooks/` — Custom React hooks (useTauriCommand, useFsEvents)
+- `pages/History` — Trend charts + snapshot history + cleanup timeline
+- `pages/Settings` — Preferences, risk rules configuration, about
+- `components/` — Shared UI components (Treemap, CleanupPreview)
+- `hooks/` — Custom React hooks (useFsEvents)
 
 ## Critical Safety Rules (NEVER VIOLATE)
 
@@ -73,95 +73,93 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 
 - **Branch naming**: `feature/v0.0.X-description` or `fix/description`
 - **Commit format**: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`
-- **Rust style**: `rustfmt` + `clippy` must pass, no `unwrap()` in production code
+- **Rust style**: `rustfmt` + `clippy` must pass (0 warnings), no `unwrap()` in production code
 - **TypeScript style**: Strict mode, no `any` types, ESLint + Prettier
-- **Testing**: Rust unit tests in each module, React Testing Library for UI
+- **Testing**: Rust unit tests in each module (36 tests, all passing)
 - **Performance target**: Scan 500GB drive in < 5 seconds
 
 ## Key Tauri Commands (IPC API)
 
 ```rust
-#[tauri::command]
-fn scan_drive(drive: String) -> Result<DriveInfo, String>
+// Scanner
+fn scan_drive(app: AppHandle, drive: String) -> Result<DriveInfo, String>
+fn list_drives() -> Result<Vec<String>, String>
+fn scan_directory(path: String) -> Result<Vec<DirInfo>, String>
 
-#[tauri::command]
+// Risk
 fn classify_risks(scan: DriveInfo) -> Result<RiskReport, String>
 
-#[tauri::command]
-fn clean_items(items: Vec<CleanItem>) -> Result<CleanResult, String>
+// Cleaner
+fn preview_cleanup(items: Vec<CleanItem>) -> Result<CleanPreview, String>
+fn clean_items(app: AppHandle, items: Vec<CleanItem>) -> Result<CleanResult, String>
+fn undo_cleanup(original_paths: Vec<String>) -> Result<RestoreResult, String>
 
-#[tauri::command]
-fn get_snapshot_history(days: u32) -> Result<Vec<Snapshot>, String>
+// Watcher
+fn start_fs_watcher(app: AppHandle) -> Result<String, String>
+fn stop_fs_watcher() -> Result<String, String>
 
-#[tauri::command]
+// History
+fn get_snapshot_history(drive: String, days: u32) -> Result<Vec<Snapshot>, String>
 fn get_cleanup_history() -> Result<Vec<CleanupLog>, String>
+
+// Settings
+fn get_settings() -> Result<AppSettings, String>
+fn save_settings(settings: AppSettings) -> Result<(), String>
+fn get_rules() -> Result<Vec<RiskRule>, String>
+fn save_rule_override(rule_id: String, safe_to_delete: bool) -> Result<(), String>
+
+// App
+fn app_version() -> String
 ```
+
+### IPC Events (Frontend Listeners)
+
+| Event | Payload | Emitted By |
+|-------|---------|------------|
+| `scan-progress` | `ScanProgress` | `scan_drive` |
+| `clean-progress` | `CleanProgress` | `clean_items` |
+| `fs-event-batch` | `FsChangeBatch` | `start_fs_watcher` |
+| `auto-scan` | `String` (drive letter) | auto-startup |
+| `tray-quick-scan` | `()` | tray menu |
+| `tray-toggle-monitor` | `()` | tray menu |
 
 ## Current Development State
 
-- **Phase**: v0.0.1 — Project Scaffold (~70% complete)
-- **Last Updated**: 2026-04-28 19:58
-- **Overall Progress**: v0.0.1 at ~70% | Cross-version total at ~8%
+- **Phase**: v0.1.0 released → v0.2.0 planning
+- **Last Updated**: 2026-05-06
 
-### What EXISTS and WORKS
+### All Features Complete (v0.0.1 — v0.1.0)
+| Version | Feature | Status |
+|---------|---------|--------|
+| v0.0.1 | Project scaffold, scanner, Aurora design system | ✅ |
+| v0.0.2 | Scanner progress callback, multi-drive, tests | ✅ |
+| v0.0.3 | ECharts treemap, drill-down navigation | ✅ |
+| v0.0.4 | Risk classification engine (16 rules) | ✅ |
+| v0.0.5 | Cleanup report page, risk-grouped layout | ✅ |
+| v0.0.6 | Safety pipeline, progress events, modals, undo | ✅ |
+| v0.0.7 | FS watcher, live monitoring, system tray | ✅ |
+| v0.0.8 | SQLite history, trend charts, cleanup timeline | ✅ |
+| v0.0.9 | Settings page, preferences, rules config, about | ✅ |
+| v0.1.0 | Production release: build verified, MSI + NSIS generated | ✅ |
 
-#### Rust Backend (src-tauri/)
-| File | Status | Description |
-|------|--------|-------------|
-| `src/main.rs` | ✅ Working | App entry point |
-| `src/lib.rs` | ✅ Working | Registers `scan_drive` + `app_version` Tauri commands; inits dialog/notification plugins |
-| `src/scanner/mod.rs` | ✅ Working | Core scanner: `DriveInfo`/`DirInfo` structs, `scan_drive()` using `GetDiskFreeSpaceExW` + walkdir+rayon parallel traversal; skips `$Recycle.Bin` and `System Volume Information` |
-| `Cargo.toml` | ✅ Compiled | tauri 2, walkdir 2, rusqlite 0.31 (bundled), rayon 1, windows 0.58 (Win32_Storage_FileSystem, Win32_Foundation), anyhow 1, serde/serde_json 1, tauri-plugin-dialog/notification/opener 2 |
+### v0.2.0 — Performance & UX Optimization (PLANNING)
+> Full plan: `docs/v0.2.0-plan.md`
 
-#### Frontend (src/)
-| File | Status | Description |
-|------|--------|-------------|
-| `src/App.tsx` | ✅ Written | React dashboard with SVG ring chart for drive usage %, top-20 directory bar chart, scan button, `formatSize()` helper |
-| `src/App.css` | ✅ Written | Dark theme matching original HTML report (`--bg: #0f1117`, `--accent: #6c5ce7`) |
-| `src/main.tsx` | ✅ Default | Vite React entry point |
-| `package.json` | ✅ Installed | v0.0.1; @tauri-apps/api 2.10.1, @tauri-apps/cli 2.10.1, react 19.2.5, typescript 5.8.3, vite 7.3.2 |
+**Problem**: Startup takes 10–30s due to full recursive `WalkDir` scan of C: drive on mount.
 
-#### Compilation
-- `cargo check` ✅ passes
-- `tsc --noEmit` ✅ passes
+**Strategy**: Split scan into fast meta (50ms) + lazy dirs (background), SQLite cache, parallel scanning.
 
-### What is MISSING (v0.0.1 blockers)
+| Sprint | Focus | Key Deliverables |
+|--------|-------|-----------------|
+| Sprint 1 | Instant Startup | `scan_drive_meta` command, lazy loading, ring chart in <500ms |
+| Sprint 2 | Scanner Performance | Parallel top-level dirs, incremental results, jwalk evaluation |
+| Sprint 3 | Caching & Refresh | SQLite drive_cache, freshness badges, background refresh |
+| Sprint 4 | UI Polish | Skeleton loading, progressive display, cancel support |
 
-| # | Task | Priority | Details |
-|---|------|----------|---------|
-| 1 | Install frontend viz deps | 🟡 Medium | `echarts`, `d3`, `tailwindcss`, `lucide-react` not in package.json yet. Current UI uses raw SVG. Run: `npm install echarts d3 @types/d3 tailwindcss @tailwindcss/vite lucide-react` |
-| 2 | `npm run tauri dev` verification | 🔴 High | App has NEVER been launched. Need to verify window opens, frontend renders, `scan_drive` IPC works end-to-end |
-| 3 | `npm run tauri build` verification | 🔴 High | Production build never tested. Need to confirm .msi/.exe generation |
-| 4 | Git init + first commit | 🔴 High | `.gitignore` exists but `git init` never run. No version control baseline |
-
-### What is ALREADY DONE from v0.0.2 (bonus)
-
-The scanner module (`src/scanner/mod.rs`) already implements v0.0.2's core deliverable:
-- ✅ Parallel directory traversal with walkdir + rayon
-- ✅ `scan_drive(drive_letter) -> DriveInfo` Tauri command
-- ✅ `DriveInfo` struct with total/used/free + top-level dir sizes
-- ✅ JSON serialization to frontend
-
-Still missing from v0.0.2:
-- [ ] Progress callback for large scans
-- [ ] Unit tests for scanner module
-
-### Next Agent: What to do FIRST
-
-1. `cd "E:/Github Project/DiskPulse"`
-2. `npm install echarts d3 @types/d3 tailwindcss @tailwindcss/vite lucide-react`
-3. Configure Tailwind in `vite.config.ts`
-4. Run `npm run tauri dev` — fix any runtime errors
-5. Verify scan C: drive works in the running app
-6. `git init && git add . && git commit -m "feat: v0.0.1 project scaffold with working scanner"`
-
-### Known Issues & Pitfalls
-
-- **PowerShell `$` variable swallowing**: When writing .ps1 scripts from Bash, `$` gets interpreted. Write .ps1 files instead of inline commands.
-- **Chinese characters garbled in PowerShell**: Use English-only output in scripts.
-- **DISM needs admin**: `DISM /Online` requires elevation — deferred to v0.0.9.
-- **File edit EBUSY on Cargo.toml**: If Edit tool fails, use Write tool to overwrite entire file.
-- **`encode_wide()` import**: Requires `use std::os::windows::ffi::OsStrExt` — already in scanner/mod.rs.
+**Performance Targets**:
+- First paint → ring chart: **< 500ms** (was 5–30s)
+- Subsequent launch (cached): **< 500ms** (was 10–30s)
+- Full scan (500GB): **5–15s** (was 10–30s)
 
 ## Environment
 
