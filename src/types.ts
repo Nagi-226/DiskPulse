@@ -15,11 +15,24 @@ export interface DriveInfo {
   top_dirs: DirInfo[];
 }
 
+export interface DriveMeta {
+  drive_letter: string;
+  total_bytes: number;
+  used_bytes: number;
+  free_bytes: number;
+  cached_top_dirs: DirInfo[] | null;
+  cache_age_ms: number | null;
+}
+
+export type ScanPhase = "walking" | "measuring" | "complete";
+
 export interface ScanProgress {
   drive_letter: string;
   processed: number;
   total: number;
   current_path: string | null;
+  phase: ScanPhase;
+  partial_results: DirInfo[] | null;
 }
 
 export type RiskLevel = "low" | "medium" | "high";

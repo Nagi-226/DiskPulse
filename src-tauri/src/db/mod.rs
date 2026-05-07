@@ -15,6 +15,13 @@ pub struct Snapshot {
     pub created_at: String,
 }
 
+/// Latest cached snapshot with an age computed by SQLite.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CachedSnapshot {
+    pub snapshot: Snapshot,
+    pub cache_age_ms: u64,
+}
+
 /// A stored cleanup operation log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CleanupLog {
@@ -69,11 +76,9 @@ fn get_db_path() -> Result<String, String> {
 fn open_connection() -> Result<rusqlite::Connection, String> {
     let path = get_db_path()?;
     if let Some(parent) = std::path::Path::new(&path).parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("Cannot create DB dir: {}", e))?;
+        std::fs::create_dir_all(parent).map_err(|e| format!("Cannot create DB dir: {}", e))?;
     }
-    let conn = rusqlite::Connection::open(&path)
-        .map_err(|e| format!("Cannot open DB: {}", e))?;
+    let conn = rusqlite::Connection::open(&path).map_err(|e| format!("Cannot open DB: {}", e))?;
     conn.execute_batch("PRAGMA journal_mode=WAL;").ok();
     Ok(conn)
 }
@@ -114,11 +119,15 @@ fn ensure_tables_with(conn: &rusqlite::Connection) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS rule_overrides (
             rule_id TEXT PRIMARY KEY,
             safe_to_delete INTEGER NOT NULL
-        );"
-    ).map_err(|e| format!("Cannot create tables: {}", e))
+        );",
+    )
+    .map_err(|e| format!("Cannot create tables: {}", e))
 }
 
-fn save_snapshot_with(conn: &rusqlite::Connection, drive_info: &scanner::DriveInfo) -> Result<(), String> {
+fn save_snapshot_with(
+    conn: &rusqlite::Connection,
+    drive_info: &scanner::DriveInfo,
+) -> Result<(), String> {
     let top_dirs_json = serde_json::to_string(&drive_info.top_dirs)
         .map_err(|e| format!("JSON serialize error: {}", e))?;
     conn.execute(
@@ -131,13 +140,17 @@ fn save_snapshot_with(conn: &rusqlite::Connection, drive_info: &scanner::DriveIn
             drive_info.free_bytes as i64,
             top_dirs_json,
         ],
-    ).map_err(|e| format!("Insert snapshot error: {}", e))?;
+    )
+    .map_err(|e| format!("Insert snapshot error: {}", e))?;
     Ok(())
 }
 
-fn save_cleanup_log_with(conn: &rusqlite::Connection, result: &cleaner::CleanResult) -> Result<(), String> {
-    let items_json = serde_json::to_string(&result.items)
-        .map_err(|e| format!("JSON serialize error: {}", e))?;
+fn save_cleanup_log_with(
+    conn: &rusqlite::Connection,
+    result: &cleaner::CleanResult,
+) -> Result<(), String> {
+    let items_json =
+        serde_json::to_string(&result.items).map_err(|e| format!("JSON serialize error: {}", e))?;
     conn.execute(
         "INSERT INTO cleanup_logs (item_count, freed_bytes, succeeded, skipped, failed, items_json)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -149,11 +162,16 @@ fn save_cleanup_log_with(conn: &rusqlite::Connection, result: &cleaner::CleanRes
             result.failed as i64,
             items_json,
         ],
-    ).map_err(|e| format!("Insert cleanup log error: {}", e))?;
+    )
+    .map_err(|e| format!("Insert cleanup log error: {}", e))?;
     Ok(())
 }
 
-fn get_snapshot_history_with(conn: &rusqlite::Connection, drive: &str, days: u32) -> Result<Vec<Snapshot>, String> {
+fn get_snapshot_history_with(
+    conn: &rusqlite::Connection,
+    drive: &str,
+    days: u32,
+) -> Result<Vec<Snapshot>, String> {
     let mut stmt = conn.prepare(
         "SELECT id, drive_letter, total_bytes, used_bytes, free_bytes, snapshot_json, created_at
          FROM snapshots
@@ -162,10 +180,43 @@ fn get_snapshot_history_with(conn: &rusqlite::Connection, drive: &str, days: u32
          ORDER BY created_at DESC"
     ).map_err(|e| format!("Query error: {}", e))?;
 
-    let rows = stmt.query_map(
-        rusqlite::params![drive.to_uppercase(), format!("-{} days", days)],
-        |row| {
-            Ok(Snapshot {
+    let rows = stmt
+        .query_map(
+            rusqlite::params![drive.to_uppercase(), format!("-{} days", days)],
+            |row| {
+                Ok(Snapshot {
+                    id: row.get(0)?,
+                    drive_letter: row.get(1)?,
+                    total_bytes: row.get::<_, i64>(2)? as u64,
+                    used_bytes: row.get::<_, i64>(3)? as u64,
+                    free_bytes: row.get::<_, i64>(4)? as u64,
+                    snapshot_json: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            },
+        )
+        .map_err(|e| format!("Query error: {}", e))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Row error: {}", e))
+}
+
+fn get_latest_snapshot_for_drive_with(
+    conn: &rusqlite::Connection,
+    drive: &str,
+) -> Result<Option<CachedSnapshot>, String> {
+    let mut stmt = conn.prepare(
+        "SELECT id, drive_letter, total_bytes, used_bytes, free_bytes, snapshot_json, created_at,
+                CAST(MAX(0, (julianday('now') - julianday(created_at)) * 86400000) AS INTEGER) AS cache_age_ms
+         FROM snapshots
+         WHERE drive_letter = ?1
+         ORDER BY created_at DESC
+         LIMIT 1"
+    ).map_err(|e| format!("Query error: {}", e))?;
+
+    match stmt.query_row(rusqlite::params![drive.to_uppercase()], |row| {
+        Ok(CachedSnapshot {
+            snapshot: Snapshot {
                 id: row.get(0)?,
                 drive_letter: row.get(1)?,
                 total_bytes: row.get::<_, i64>(2)? as u64,
@@ -173,33 +224,39 @@ fn get_snapshot_history_with(conn: &rusqlite::Connection, drive: &str, days: u32
                 free_bytes: row.get::<_, i64>(4)? as u64,
                 snapshot_json: row.get(5)?,
                 created_at: row.get(6)?,
-            })
-        },
-    ).map_err(|e| format!("Query error: {}", e))?;
-
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Row error: {}", e))
+            },
+            cache_age_ms: row.get::<_, i64>(7)? as u64,
+        })
+    }) {
+        Ok(snapshot) => Ok(Some(snapshot)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("Row error: {}", e)),
+    }
 }
 
 fn get_cleanup_history_with(conn: &rusqlite::Connection) -> Result<Vec<CleanupLog>, String> {
-    let mut stmt = conn.prepare(
-        "SELECT id, item_count, freed_bytes, succeeded, skipped, failed, items_json, created_at
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, item_count, freed_bytes, succeeded, skipped, failed, items_json, created_at
          FROM cleanup_logs
-         ORDER BY created_at DESC"
-    ).map_err(|e| format!("Query error: {}", e))?;
+         ORDER BY created_at DESC",
+        )
+        .map_err(|e| format!("Query error: {}", e))?;
 
-    let rows = stmt.query_map([], |row| {
-        Ok(CleanupLog {
-            id: row.get(0)?,
-            item_count: row.get::<_, i64>(1)? as usize,
-            freed_bytes: row.get::<_, i64>(2)? as u64,
-            succeeded: row.get::<_, i64>(3)? as usize,
-            skipped: row.get::<_, i64>(4)? as usize,
-            failed: row.get::<_, i64>(5)? as usize,
-            items_json: row.get(6)?,
-            created_at: row.get(7)?,
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(CleanupLog {
+                id: row.get(0)?,
+                item_count: row.get::<_, i64>(1)? as usize,
+                freed_bytes: row.get::<_, i64>(2)? as u64,
+                succeeded: row.get::<_, i64>(3)? as usize,
+                skipped: row.get::<_, i64>(4)? as usize,
+                failed: row.get::<_, i64>(5)? as usize,
+                items_json: row.get(6)?,
+                created_at: row.get(7)?,
+            })
         })
-    }).map_err(|e| format!("Query error: {}", e))?;
+        .map_err(|e| format!("Query error: {}", e))?;
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Row error: {}", e))
@@ -323,6 +380,11 @@ pub fn get_snapshot_history(drive: &str, days: u32) -> Result<Vec<Snapshot>, Str
     get_snapshot_history_with(&conn, drive, days)
 }
 
+pub fn get_latest_snapshot_for_drive(drive: &str) -> Result<Option<CachedSnapshot>, String> {
+    let conn = open_connection()?;
+    get_latest_snapshot_for_drive_with(&conn, drive)
+}
+
 pub fn get_cleanup_history() -> Result<Vec<CleanupLog>, String> {
     let conn = open_connection()?;
     get_cleanup_history_with(&conn)
@@ -357,8 +419,7 @@ mod tests {
     use crate::scanner::{DirInfo, DriveInfo};
 
     fn setup_test_conn() -> rusqlite::Connection {
-        let conn = rusqlite::Connection::open_in_memory()
-            .expect("in-memory DB");
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory DB");
         ensure_tables_with(&conn).unwrap();
         conn
     }
@@ -449,6 +510,24 @@ mod tests {
         let history_d = get_snapshot_history_with(&conn, "D", 365).unwrap();
         assert_eq!(history_d.len(), 1);
         assert_eq!(history_d[0].drive_letter, "D");
+    }
+
+    #[test]
+    fn latest_snapshot_returns_cache_age() {
+        let conn = setup_test_conn();
+        let mut old = make_drive_info();
+        old.used_bytes = 250_000_000_000;
+        save_snapshot_with(&conn, &old).unwrap();
+
+        let mut latest = make_drive_info();
+        latest.used_bytes = 300_000_000_000;
+        save_snapshot_with(&conn, &latest).unwrap();
+
+        let cached = get_latest_snapshot_for_drive_with(&conn, "C")
+            .unwrap()
+            .expect("latest snapshot");
+        assert_eq!(cached.snapshot.used_bytes, 300_000_000_000);
+        assert_eq!(cached.snapshot.drive_letter, "C");
     }
 
     // ── Settings tests ────────────────────────────────────

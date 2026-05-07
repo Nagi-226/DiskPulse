@@ -20,6 +20,7 @@ pub struct FsEvent {
     pub path: String,
     pub is_directory: bool,
     pub size_bytes: u64,
+    pub previous_size_bytes: Option<u64>,
 }
 
 /// Aggregated changes for a batch window.
@@ -119,6 +120,7 @@ where
                                     path: path.clone(),
                                     is_directory: is_dir,
                                     size_bytes: size,
+                                    previous_size_bytes: None,
                                 });
                             }
                             Some(&(old_size, _, old_mtime)) => {
@@ -128,6 +130,7 @@ where
                                         path: path.clone(),
                                         is_directory: is_dir,
                                         size_bytes: size,
+                                        previous_size_bytes: Some(old_size),
                                     });
                                 }
                             }
@@ -135,13 +138,14 @@ where
                     }
 
                     // Detect removed
-                    for path in last_snapshot.keys() {
+                    for (path, &(old_size, is_dir, _)) in &last_snapshot {
                         if !current.contains_key(path) {
                             batch_events.push(FsEvent {
                                 kind: FsEventKind::Removed,
                                 path: path.clone(),
-                                is_directory: false,
+                                is_directory: is_dir,
                                 size_bytes: 0,
+                                previous_size_bytes: Some(old_size),
                             });
                         }
                     }
@@ -171,10 +175,11 @@ where
 
                 // Final flush
                 if !pending_events.is_empty() {
+                    let count = pending_events.len();
                     let batch = FsChangeBatch {
                         watched_dir: dir_clone,
                         events: pending_events,
-                        event_count: 0,
+                        event_count: count,
                         timestamp_ms: now_ms(),
                     };
                     on_batch(batch);
@@ -288,6 +293,7 @@ mod tests {
             path: "C:\\Temp\\test.txt".into(),
             is_directory: false,
             size_bytes: 128,
+            previous_size_bytes: None,
         };
         let json = serde_json::to_string(&event).unwrap();
         assert!(json.contains("Added"));
@@ -302,6 +308,7 @@ mod tests {
                 path: "C:\\Temp\\new.txt".into(),
                 is_directory: false,
                 size_bytes: 256,
+                previous_size_bytes: None,
             }],
             event_count: 1,
             timestamp_ms: 1700000000000,

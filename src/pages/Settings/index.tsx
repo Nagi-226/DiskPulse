@@ -72,24 +72,24 @@ function GeneralTab({
   message: string | null;
 }) {
   return (
-    <div className="glass-card p-6 rounded-3xl border border-aurora-border/50 space-y-6">
+    <div className="glass-card p-8 rounded-3xl border border-aurora-border/50 space-y-8">
       {/* Default Drive */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between py-1">
         <div>
           <div className="text-sm text-text-primary font-medium">默认驱动器</div>
-          <p className="text-xs text-text-muted mt-0.5">启动时自动扫描的目标驱动器</p>
+          <p className="text-xs text-text-muted mt-1">启动时自动扫描的目标驱动器</p>
         </div>
         <select
           value={settings.default_drive}
           onChange={(e) => onUpdate({ ...settings, default_drive: e.target.value })}
-          className="px-3 py-2 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
+          className="px-4 py-2.5 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
                      focus:outline-none focus:border-accent/50 appearance-none cursor-pointer"
           style={{
             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
-            backgroundPosition: "right 8px center",
+            backgroundPosition: "right 10px center",
             backgroundRepeat: "no-repeat",
             backgroundSize: "14px",
-            paddingRight: "30px",
+            paddingRight: "34px",
           }}
         >
           {drives.map((d) => (
@@ -101,10 +101,10 @@ function GeneralTab({
       <hr className="border-aurora-border/40" />
 
       {/* Auto Scan on Startup */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between py-1">
         <div>
           <div className="text-sm text-text-primary font-medium">启动时自动扫描</div>
-          <p className="text-xs text-text-muted mt-0.5">应用启动后自动扫描默认驱动器</p>
+          <p className="text-xs text-text-muted mt-1">应用启动后自动扫描默认驱动器</p>
         </div>
         <Toggle
           checked={settings.auto_scan_on_startup}
@@ -115,10 +115,10 @@ function GeneralTab({
       <hr className="border-aurora-border/40" />
 
       {/* Auto Monitor on Startup */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between py-1">
         <div>
           <div className="text-sm text-text-primary font-medium">启动时自动监控</div>
-          <p className="text-xs text-text-muted mt-0.5">应用启动后自动开启文件系统监控</p>
+          <p className="text-xs text-text-muted mt-1">应用启动后自动开启文件系统监控</p>
         </div>
         <Toggle
           checked={settings.auto_monitor_on_startup}
@@ -130,12 +130,12 @@ function GeneralTab({
 
       {/* Poll Interval */}
       <div>
-        <div className="text-sm text-text-primary font-medium mb-3">监控轮询间隔</div>
+        <div className="text-sm text-text-primary font-medium mb-4">监控轮询间隔</div>
         <div className="flex items-center gap-2">
           {POLL_PRESETS.map((p) => (
             <button
               key={p.value}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              className={`px-4 py-2 rounded-lg text-xs font-medium border transition-colors ${
                 settings.watcher_poll_interval_ms === p.value
                   ? "bg-accent/15 border-accent/30 text-accent-light"
                   : "bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-text-primary"
@@ -153,12 +153,12 @@ function GeneralTab({
 
       {/* Debounce */}
       <div>
-        <div className="text-sm text-text-primary font-medium mb-3">变更去抖窗口</div>
+        <div className="text-sm text-text-primary font-medium mb-4">变更去抖窗口</div>
         <div className="flex items-center gap-2">
           {DEBOUNCE_PRESETS.map((p) => (
             <button
               key={p.value}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              className={`px-4 py-2 rounded-lg text-xs font-medium border transition-colors ${
                 settings.watcher_debounce_ms === p.value
                   ? "bg-accent/15 border-accent/30 text-accent-light"
                   : "bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-text-primary"
@@ -175,8 +175,8 @@ function GeneralTab({
       </div>
 
       {/* Save Button */}
-      <div className="flex items-center gap-3 pt-2">
-        <button className="btn-primary" onClick={onSave} disabled={saving}>
+      <div className="flex items-center gap-3 pt-4">
+        <button className="btn-primary py-2.5 px-6" onClick={onSave} disabled={saving}>
           {saving ? "保存中..." : "保存设置"}
         </button>
         {message && (
@@ -243,20 +243,20 @@ function RulesTab() {
   });
 
   return (
-    <div className="glass-card p-6 rounded-3xl border border-aurora-border/50 space-y-4">
+    <div className="glass-card p-8 rounded-3xl border border-aurora-border/50 space-y-5">
       {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-4">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索规则名称或类别..."
-          className="flex-1 min-w-48 rounded-xl bg-aurora-elevated/70 border border-aurora-border/60 px-4 py-2 text-sm text-text-primary outline-none focus:border-accent/60"
+          className="flex-1 min-w-48 rounded-xl bg-aurora-elevated/70 border border-aurora-border/60 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60"
         />
         <div className="flex gap-2">
           {(["all", "low", "medium", "high"] as const).map((f) => (
             <button
               key={f}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-medium border transition-colors ${
                 filter === f
                   ? f === "all"
                     ? "bg-accent/15 border-accent/30 text-accent-light"
@@ -270,7 +270,7 @@ function RulesTab() {
           ))}
         </div>
         <button
-          className="px-3 py-1.5 rounded-lg text-xs border bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-accent-light"
+          className="px-3.5 py-2 rounded-lg text-xs border bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-accent-light"
           onClick={loadRules}
         >
           刷新
@@ -295,10 +295,10 @@ function RulesTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-text-muted uppercase tracking-wider border-b border-aurora-border/40">
-                <th className="text-left p-2 font-medium">规则 ID</th>
-                <th className="text-left p-2 font-medium">类别</th>
-                <th className="text-left p-2 font-medium">风险等级</th>
-                <th className="text-center p-2 font-medium w-20">可安全删除</th>
+                <th className="text-left px-4 py-3 font-medium">规则 ID</th>
+                <th className="text-left px-4 py-3 font-medium">类别</th>
+                <th className="text-left px-4 py-3 font-medium">风险等级</th>
+                <th className="text-center px-4 py-3 font-medium w-24">可安全删除</th>
               </tr>
             </thead>
             <tbody>
@@ -313,18 +313,18 @@ function RulesTab() {
                       }`}
                       onClick={() => setExpandedId(isExpanded ? null : rule.id)}
                     >
-                      <td className="p-2 font-mono text-xs text-text-primary">{rule.id}</td>
-                      <td className="p-2 text-text-secondary">{rule.category}</td>
-                      <td className="p-2">
+                      <td className="px-4 py-3 font-mono text-xs text-text-primary">{rule.id}</td>
+                      <td className="px-4 py-3 text-text-secondary">{rule.category}</td>
+                      <td className="px-4 py-3">
                         <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${
+                          className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium border ${
                             RISK_STYLES[rule.risk_level]
                           }`}
                         >
                           {rule.risk_level === "low" ? "低" : rule.risk_level === "medium" ? "中" : "高"}
                         </span>
                       </td>
-                      <td className="p-2 text-center">
+                      <td className="px-4 py-3 text-center">
                         <Toggle
                           checked={rule.safe_to_delete}
                           onChange={() => handleToggle(rule.id, rule.safe_to_delete)}
@@ -333,8 +333,8 @@ function RulesTab() {
                     </tr>
                     {isExpanded && (
                       <tr key={`${rule.id}-detail`} className="border-b border-aurora-border/20">
-                        <td colSpan={4} className="p-4 bg-aurora-elevated/20">
-                          <div className="space-y-3">
+                        <td colSpan={4} className="px-6 py-5 bg-aurora-elevated/20">
+                          <div className="space-y-4">
                             <div>
                               <span className="text-xs text-text-muted">匹配模式：</span>
                               <span className="text-xs text-text-primary font-mono ml-1">
@@ -405,27 +405,27 @@ function AboutTab() {
   ];
 
   return (
-    <div className="glass-card p-6 rounded-3xl border border-aurora-border/50">
+    <div className="glass-card p-10 rounded-3xl border border-aurora-border/50">
       {/* Logo + Name */}
-      <div className="flex flex-col items-center pt-6 pb-8">
+      <div className="flex flex-col items-center pt-8 pb-10">
         <div
-          className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+          className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5"
           style={{
             background: "linear-gradient(135deg, var(--color-accent), #7c3aed)",
             boxShadow: "0 8px 30px var(--color-accent-glow)",
           }}
         >
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
             <circle cx="12" cy="12" r="10" />
             <circle cx="12" cy="12" r="4" />
             <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
           </svg>
         </div>
-        <h2 className="text-2xl font-bold text-text-primary">DiskPulse</h2>
-        <p className="text-sm text-text-muted mt-1 font-mono">
-          v{version || "0.0.1"}
+        <h2 className="text-3xl font-bold text-text-primary">DiskPulse</h2>
+        <p className="text-sm text-text-muted mt-2 font-mono">
+          v{version || "0.1.0"}
         </p>
-        <p className="text-xs text-text-secondary mt-3 text-center max-w-xs leading-5">
+        <p className="text-sm text-text-secondary mt-4 text-center max-w-xs leading-6">
           实时磁盘空间监控与安全清理工具
           <br />
           专为 Windows 11 设计
@@ -433,15 +433,15 @@ function AboutTab() {
       </div>
 
       {/* Tech Stack Grid */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
+      <div className="grid grid-cols-2 gap-4 mb-8">
         {techStack.map((tech) => (
           <div
             key={tech.name}
-            className="rounded-2xl bg-aurora-elevated/60 border border-aurora-border/40 p-4"
+            className="rounded-2xl bg-aurora-elevated/60 border border-aurora-border/40 p-5"
           >
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-3 mb-3">
               <span
-                className="w-2 h-2 rounded-full flex-shrink-0"
+                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                 style={{ backgroundColor: tech.color }}
               />
               <span className="text-sm font-semibold text-text-primary">{tech.name}</span>
@@ -452,8 +452,8 @@ function AboutTab() {
       </div>
 
       {/* Footer */}
-      <div className="pt-4 border-t border-aurora-border/40 text-center">
-        <p className="text-xs text-text-muted">
+      <div className="pt-5 border-t border-aurora-border/40 text-center">
+        <p className="text-sm text-text-muted">
           Built by FJL03 &nbsp;|&nbsp; MIT License &nbsp;|&nbsp; © 2026
         </p>
       </div>

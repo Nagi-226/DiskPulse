@@ -108,6 +108,7 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | v0.0.8 | History trends + SQLite snapshots | ✅ |
 | v0.0.9 | Settings page (prefs, rules, about) | ✅ |
 | v0.1.0 | Production release candidate | ✅ |
+| v0.2.0 | Performance & UX optimization | 🔄 |
 
 ## ⌨️ IPC Commands
 

@@ -140,8 +140,8 @@ fn check_file_locked(path: &str) -> bool {
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::Storage::FileSystem::{
-        CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_SHARE_READ,
-        FILE_SHARE_WRITE, FILE_SHARE_DELETE, OPEN_EXISTING,
+        CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_SHARE_DELETE, FILE_SHARE_READ,
+        FILE_SHARE_WRITE, OPEN_EXISTING,
     };
 
     let wide: Vec<u16> = std::ffi::OsStr::new(path)
@@ -269,8 +269,8 @@ pub fn preview_cleanup(items: Vec<CleanItem>) -> CleanPreview {
 fn recycle_bin_delete(path: &str) -> bool {
     use std::os::windows::ffi::OsStrExt;
     use windows::Win32::UI::Shell::{
-        SHFileOperationW, SHFILEOPSTRUCTW, FO_DELETE, FOF_ALLOWUNDO,
-        FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT,
+        SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FO_DELETE,
+        SHFILEOPSTRUCTW,
     };
 
     let wide_path: Vec<u16> = std::ffi::OsStr::new(path)
@@ -470,7 +470,9 @@ pub fn restore_items(original_paths: Vec<String>) -> RestoreResult {
             result.items.push(RestoreItemResult {
                 original_path,
                 restored: false,
-                reason: Some("Item not found in Recycle Bin (may have been permanently deleted)".into()),
+                reason: Some(
+                    "Item not found in Recycle Bin (may have been permanently deleted)".into(),
+                ),
             });
         }
     }
@@ -517,9 +519,12 @@ fn get_user_sid() -> Option<String> {
 
 fn has_recycle_entries(dir: &std::path::Path) -> bool {
     if let Ok(entries) = std::fs::read_dir(dir) {
-        entries
-            .flatten()
-            .any(|e| e.file_name().to_str().map(|n| n.starts_with("$I")).unwrap_or(false))
+        entries.flatten().any(|e| {
+            e.file_name()
+                .to_str()
+                .map(|n| n.starts_with("$I"))
+                .unwrap_or(false)
+        })
     } else {
         false
     }
@@ -591,8 +596,7 @@ fn parse_info_file(path: &std::path::Path) -> Option<String> {
 fn restore_file(recycled_path: &str, original_path: &str) -> bool {
     use std::os::windows::ffi::OsStrExt;
     use windows::Win32::UI::Shell::{
-        SHFileOperationW, SHFILEOPSTRUCTW, FO_MOVE, FOF_NOCONFIRMATION,
-        FOF_NOERRORUI, FOF_SILENT,
+        SHFileOperationW, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FO_MOVE, SHFILEOPSTRUCTW,
     };
 
     // Ensure parent directory exists
@@ -757,19 +761,26 @@ mod tests {
 
         let result = clean_items_with_progress(items, Some(cancel.clone()), |_| {});
         assert_eq!(result.succeeded, 0);
-        assert!(result.items.iter().any(|r| r.reason.as_deref() == Some("Cancelled by user")));
+        assert!(result
+            .items
+            .iter()
+            .any(|r| r.reason.as_deref() == Some("Cancelled by user")));
     }
 
     // ── is_path_allowed / is_path_safe ──
 
     #[test]
     fn whitelist_matches_temp_paths() {
-        assert!(is_path_allowed("C:\\Users\\me\\AppData\\Local\\Temp\\stuff"));
+        assert!(is_path_allowed(
+            "C:\\Users\\me\\AppData\\Local\\Temp\\stuff"
+        ));
     }
 
     #[test]
     fn whitelist_matches_cache_paths() {
-        assert!(is_path_allowed("C:\\Users\\me\\AppData\\Local\\npm-cache\\lodash"));
+        assert!(is_path_allowed(
+            "C:\\Users\\me\\AppData\\Local\\npm-cache\\lodash"
+        ));
     }
 
     #[test]
@@ -799,7 +810,10 @@ mod tests {
         // Clean the file
         let items = vec![make_item(&path_str, true, RiskLevel::Low)];
         let preview = preview_cleanup(items);
-        assert!(preview.validation.allowed, "Test file should pass validation");
+        assert!(
+            preview.validation.allowed,
+            "Test file should pass validation"
+        );
 
         let result = clean_items_with_progress(preview.accepted, None, |_| {});
         assert_eq!(result.succeeded, 1, "File should be cleaned successfully");

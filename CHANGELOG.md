@@ -2,15 +2,22 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
-## [0.2.0] — PLANNING
+## [0.2.0] — 2026-05-07
 
-### Planned
-- **Startup optimization**: split `scan_drive` into fast meta + lazy dirs (ring chart < 500ms target)
-- **Parallel scanning**: rayon-parallel top-level directory traversal (50–70% scan time reduction)
-- **SQLite cache**: instant cached display on subsequent launches, freshness badges
-- **Incremental results**: treemap tiles update progressively as directories complete
-- **Skeleton UI**: animated loading placeholders instead of blank spinner
-- **Cancel support**: user-abortable scans via cancellation token
+### Performance & UX Optimization
+
+**Completed**:
+- Split scan: `scan_drive_meta` (<50ms) + `scan_drive_dirs` (background) commands
+- `useDriveScan` lazy loading hook with request cancellation
+- Rayon-parallel top-level directory scanning with incremental `partial_results`
+- Phase-based scan progress (Walking → Measuring → Complete)
+- SQLite `DriveMeta` caching with freshness badges (Live / Cached / Metadata)
+- Skeleton treemap placeholder during background scan
+- `cancel_scan` command with AtomicBool cancellation token + UI cancel button
+- Watcher cache refresh: detect FS changes → selective dirty top-level directory re-scan → refreshed treemap cache event
+
+**Deferred**:
+- jwalk parallel walkdir evaluation (optional)
 
 ## [0.0.9] — 2026-05-05
 

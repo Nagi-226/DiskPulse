@@ -7,6 +7,7 @@ export interface FsEventItem {
   path: string;
   is_directory: boolean;
   size_bytes: number;
+  previous_size_bytes: number | null;
 }
 
 export interface FsChangeBatch {

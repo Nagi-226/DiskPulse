@@ -7,8 +7,9 @@ import CleanupPreview from "./components/CleanupPreview";
 import HistoryPage from "./pages/History";
 import SettingsPage from "./pages/Settings";
 import { formatSize } from "./utils/format";
+import { useDriveScan } from "./hooks/useDriveScan";
 import { useFsEvents } from "./hooks/useFsEvents";
-import type { CleanProgress, DirInfo, DriveInfo, RiskReport, ScanProgress } from "./types";
+import type { CleanProgress, DirInfo, ScanProgress } from "./types";
 
 // --- Drive ring chart ---
 function DriveRing({
@@ -136,6 +137,46 @@ function StatRow({
   );
 }
 
+function formatCacheAge(ageMs: number | null) {
+  if (ageMs == null) return "";
+  const minutes = Math.floor(ageMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m old`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h old`;
+  return `${Math.floor(hours / 24)}d old`;
+}
+
+function CacheBadge({
+  dataSource,
+  cacheAgeMs,
+}: {
+  dataSource: "empty" | "meta" | "cached" | "fresh";
+  cacheAgeMs: number | null;
+}) {
+  if (dataSource === "empty") return null;
+
+  const label =
+    dataSource === "fresh"
+      ? "Live"
+      : dataSource === "cached"
+        ? `Cached ${formatCacheAge(cacheAgeMs)}`
+        : "Metadata loaded";
+
+  const tone =
+    dataSource === "fresh"
+      ? "border-success/25 bg-risk-low-bg text-success"
+      : dataSource === "cached"
+        ? "border-warning/25 bg-risk-medium-bg text-warning"
+        : "border-accent/25 bg-accent/10 text-accent-light";
+
+  return (
+    <span className={`px-2.5 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider border ${tone}`}>
+      {label}
+    </span>
+  );
+}
+
 // --- Navigation Sidebar ---
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: DashboardIcon },
@@ -237,6 +278,12 @@ function ScanProgressBar({ progress }: { progress: ScanProgress }) {
   const dirName = progress.current_path
     ? progress.current_path.split("\\").pop() || progress.current_path
     : "";
+  const phaseLabel =
+    progress.phase === "walking"
+      ? "Discovering directories"
+      : progress.phase === "measuring"
+        ? "Measuring space"
+        : "Updating treemap";
 
   return (
     <div className="glass-card p-4 mb-6 animate-in fade-in">
@@ -245,7 +292,7 @@ function ScanProgressBar({ progress }: { progress: ScanProgress }) {
           <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
             <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" />
           </svg>
-          <span className="text-text-primary font-medium">Scanning {progress.drive_letter}: Drive</span>
+          <span className="text-text-primary font-medium">{phaseLabel} on {progress.drive_letter}: Drive</span>
         </div>
         <span className="text-xs text-text-muted font-mono">
           {progress.processed}/{progress.total} dirs
@@ -271,42 +318,57 @@ function ScanProgressBar({ progress }: { progress: ScanProgress }) {
 
 // --- Main App ---
 export default function App() {
-  const [driveInfo, setDriveInfo] = useState<DriveInfo | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [cleanProgress, setCleanProgress] = useState<CleanProgress | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
   const [drives, setDrives] = useState<string[]>([]);
-  const [selectedDrive, setSelectedDrive] = useState("C");
-  const [riskReport, setRiskReport] = useState<RiskReport | null>(null);
+  const {
+    driveInfo,
+    loading,
+    progress,
+    error,
+    setError,
+    selectedDrive,
+    setSelectedDrive,
+    riskReport,
+    dataSource,
+    cacheAgeMs,
+    scanDrive,
+    cancelScan,
+  } = useDriveScan("C");
 
   // Drill-down state
   interface Breadcrumb { name: string; path: string }
   const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([]);
   const [drillData, setDrillData] = useState<DirInfo[] | null>(null);
   const [drillTotal, setDrillTotal] = useState(0);
+  const [drillLoading, setDrillLoading] = useState(false);
 
   // File system watcher
   const { isWatching, lastBatch, eventCount, startWatching, stopWatching } = useFsEvents();
 
+  const startDriveScan = useCallback(
+    (drive: string) => {
+      setBreadcrumbs([]);
+      setDrillData(null);
+      return scanDrive(drive);
+    },
+    [scanDrive],
+  );
+
   // Refs for tray event closures to access latest state
-  const scanDriveRef = useRef(scanDrive);
+  const scanDriveRef = useRef(startDriveScan);
   const selectedDriveRef = useRef(selectedDrive);
   const isWatchingRef = useRef(isWatching);
-  scanDriveRef.current = scanDrive;
+  scanDriveRef.current = startDriveScan;
   selectedDriveRef.current = selectedDrive;
   isWatchingRef.current = isWatching;
 
   useEffect(() => {
     invoke<string>("app_version").then(setVersion);
     loadDrives();
-    scanDrive("C");
+    startDriveScan("C");
 
-    const unlistenScan = listen<ScanProgress>("scan-progress", (event) => {
-      setProgress(event.payload);
-    });
     const unlistenTrayScan = listen("tray-quick-scan", () => {
       scanDriveRef.current(selectedDriveRef.current);
     });
@@ -324,7 +386,6 @@ export default function App() {
       setCleanProgress(event.payload);
     });
     return () => {
-      unlistenScan.then((fn) => fn());
       unlistenTrayScan.then((fn) => fn());
       unlistenTrayMonitor.then((fn) => fn());
       unlistenAutoScan.then((fn) => fn());
@@ -345,33 +406,8 @@ export default function App() {
     }
   }
 
-  async function scanDrive(drive: string) {
-    setLoading(true);
-    setError(null);
-    setProgress(null);
-    setSelectedDrive(drive);
-    setBreadcrumbs([]);
-    setDrillData(null);
-    setRiskReport(null);
-    try {
-      const info = await invoke<DriveInfo>("scan_drive", { drive });
-      setDriveInfo(info);
-      try {
-        const report = await invoke<RiskReport>("classify_risks", { scan: info });
-        setRiskReport(report);
-      } catch {
-        setRiskReport(null);
-      }
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-      setProgress(null);
-    }
-  }
-
   const handleDrillDown = useCallback(async (path: string, name: string) => {
-    setLoading(true);
+    setDrillLoading(true);
     try {
       const dirs = await invoke<DirInfo[]>("scan_directory", { path });
       setDrillData(dirs);
@@ -382,9 +418,9 @@ export default function App() {
     } catch (e) {
       setError(String(e));
     } finally {
-      setLoading(false);
+      setDrillLoading(false);
     }
-  }, []);
+  }, [setError]);
 
   function handleBreadcrumbClick(index: number) {
     if (index === -1) {
@@ -403,7 +439,7 @@ export default function App() {
   }
 
   const usedPercent = driveInfo
-    ? (driveInfo.used_bytes / driveInfo.total_bytes) * 100
+    ? (driveInfo.used_bytes / Math.max(driveInfo.total_bytes, 1)) * 100
     : 0;
 
   const currentData = drillData ?? driveInfo?.top_dirs ?? [];
@@ -429,7 +465,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="text-base font-bold text-text-primary tracking-tight">DiskPulse</h1>
-              <p className="text-[10px] text-text-muted uppercase tracking-wider">v{version || "0.0.1"}</p>
+              <p className="text-[10px] text-text-muted uppercase tracking-wider">v{version || "0.1.0"}</p>
             </div>
           </div>
         </div>
@@ -455,7 +491,7 @@ export default function App() {
         <div className="px-4 py-4 border-t border-aurora-border/40 space-y-3">
           <div className="flex items-center gap-2 text-xs text-text-muted">
             <span className={`${isWatching ? "live-dot" : ""} w-2 h-2 rounded-full ${isWatching ? "bg-success" : "bg-aurora-border"}`} />
-            <span>{loading ? (cleanProgress ? "Cleaning..." : "Scanning...") : isWatching ? `Live · ${eventCount} events` : "Monitor paused"}</span>
+            <span>{loading ? (cleanProgress ? "Cleaning..." : "Scanning...") : drillLoading ? "Loading folder..." : isWatching ? `Live · ${eventCount} events` : "Monitor paused"}</span>
           </div>
           <button
             className={`w-full px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
@@ -475,9 +511,14 @@ export default function App() {
         {/* Header */}
         <header className="flex items-center justify-between px-8 py-4 border-b border-aurora-border/40 bg-aurora-surface/30 backdrop-blur-lg">
           <div>
-            <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-              {activeTab === "dashboard" ? "Drive Overview" : activeTab}
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
+                {activeTab === "dashboard" ? "Drive Overview" : activeTab}
+              </h2>
+              {activeTab === "dashboard" && (
+                <CacheBadge dataSource={dataSource} cacheAgeMs={cacheAgeMs} />
+              )}
+            </div>
             <p className="text-xs text-text-muted mt-0.5">
               {driveInfo
                 ? `${driveInfo.drive_letter}: Drive — ${formatSize(driveInfo.total_bytes)} total`
@@ -490,7 +531,7 @@ export default function App() {
             {drives.length > 0 && (
               <select
                 value={selectedDrive}
-                onChange={(e) => scanDrive(e.target.value)}
+                onChange={(e) => startDriveScan(e.target.value)}
                 disabled={loading}
                 className="px-3 py-2 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
                            focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30
@@ -526,7 +567,7 @@ export default function App() {
 
             <button
               className="btn-primary"
-              onClick={() => scanDrive(selectedDrive)}
+              onClick={() => startDriveScan(selectedDrive)}
               disabled={loading}
             >
               <span className="flex items-center gap-2">
@@ -548,6 +589,14 @@ export default function App() {
                 )}
               </span>
             </button>
+            {loading && (
+              <button
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-danger/30 bg-risk-high-bg text-danger hover:bg-risk-high-bg/80 transition-colors"
+                onClick={cancelScan}
+              >
+                Stop Scan
+              </button>
+            )}
           </div>
         </header>
 
@@ -650,6 +699,31 @@ export default function App() {
                     usedBytes={driveInfo.used_bytes}
                     freeBytes={driveInfo.free_bytes}
                   />
+
+                  {loading && currentData.length === 0 && (
+                    <div className="glass-card p-6">
+                      <div className="flex items-center justify-between mb-5">
+                        <div>
+                          <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
+                            Preparing Treemap
+                          </h3>
+                          <p className="text-xs text-text-muted mt-0.5">
+                            Capacity is ready; top-level folders are filling in as they complete.
+                          </p>
+                        </div>
+                        <span className="text-xs text-accent-light font-mono">background scan</span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-3 h-64">
+                        {Array.from({ length: 12 }).map((_, i) => (
+                          <div
+                            key={i}
+                            className="rounded-xl bg-aurora-elevated/60 border border-aurora-border/40 progress-shimmer"
+                            style={{ opacity: 0.35 + (i % 4) * 0.1 }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Breadcrumb navigation */}
                   {breadcrumbs.length > 0 && (

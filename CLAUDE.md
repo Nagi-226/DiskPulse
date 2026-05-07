@@ -49,7 +49,7 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 - `pages/History` — Trend charts + snapshot history + cleanup timeline
 - `pages/Settings` — Preferences, risk rules configuration, about
 - `components/` — Shared UI components (Treemap, CleanupPreview)
-- `hooks/` — Custom React hooks (useFsEvents)
+- `hooks/` — Custom React hooks (useDriveScan, useFsEvents)
 
 ## Critical Safety Rules (NEVER VIOLATE)
 
@@ -83,6 +83,9 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 ```rust
 // Scanner
 fn scan_drive(app: AppHandle, drive: String) -> Result<DriveInfo, String>
+fn scan_drive_meta(drive: String) -> Result<DriveMeta, String>
+fn scan_drive_dirs(app: AppHandle, drive: String) -> Result<Vec<DirInfo>, String>
+fn cancel_scan() -> Result<(), String>
 fn list_drives() -> Result<Vec<String>, String>
 fn scan_directory(path: String) -> Result<Vec<DirInfo>, String>
 
@@ -116,7 +119,7 @@ fn app_version() -> String
 
 | Event | Payload | Emitted By |
 |-------|---------|------------|
-| `scan-progress` | `ScanProgress` | `scan_drive` |
+| `scan-progress` | `ScanProgress` | `scan_drive`, `scan_drive_dirs` |
 | `clean-progress` | `CleanProgress` | `clean_items` |
 | `fs-event-batch` | `FsChangeBatch` | `start_fs_watcher` |
 | `auto-scan` | `String` (drive letter) | auto-startup |
@@ -125,7 +128,7 @@ fn app_version() -> String
 
 ## Current Development State
 
-- **Phase**: v0.1.0 released → v0.2.0 planning
+- **Phase**: v0.2.0 — Performance & UX Optimization
 - **Last Updated**: 2026-05-06
 
 ### All Features Complete (v0.0.1 — v0.1.0)
@@ -142,19 +145,33 @@ fn app_version() -> String
 | v0.0.9 | Settings page, preferences, rules config, about | ✅ |
 | v0.1.0 | Production release: build verified, MSI + NSIS generated | ✅ |
 
-### v0.2.0 — Performance & UX Optimization (PLANNING)
+### v0.2.0 — Performance & UX Optimization (CODE COMPLETE)
 > Full plan: `docs/v0.2.0-plan.md`
 
 **Problem**: Startup takes 10–30s due to full recursive `WalkDir` scan of C: drive on mount.
 
-**Strategy**: Split scan into fast meta (50ms) + lazy dirs (background), SQLite cache, parallel scanning.
+**Strategy**: Split scan into fast meta (50ms) + lazy dirs (background), SQLite cache, parallel scanning, cancel support.
 
-| Sprint | Focus | Key Deliverables |
-|--------|-------|-----------------|
-| Sprint 1 | Instant Startup | `scan_drive_meta` command, lazy loading, ring chart in <500ms |
-| Sprint 2 | Scanner Performance | Parallel top-level dirs, incremental results, jwalk evaluation |
-| Sprint 3 | Caching & Refresh | SQLite drive_cache, freshness badges, background refresh |
-| Sprint 4 | UI Polish | Skeleton loading, progressive display, cancel support |
+| Sprint | Focus | Key Deliverables | Status |
+|--------|-------|-----------------|--------|
+| Sprint 1 | Instant Startup | `scan_drive_meta`, `useDriveScan`, ring in <500ms | ✅ |
+| Sprint 2 | Scanner Performance | Rayon parallel dirs, incremental results, phase progress | ✅ |
+| Sprint 3 | Caching & Refresh | SQLite cache, freshness badges, background refresh | ✅ |
+| Sprint 4 | UI Polish | Skeleton loading, progressive display, cancel scan | ✅ |
+
+**Completed**:
+- `scan_drive_meta` + `scan_drive_dirs` split commands
+- `useDriveScan` lazy loading hook (meta → cache → background scan)
+- Rayon parallel top-level directory scanning with partial_results
+- ScanPhase progress (Walking/Measuring/Complete)
+- SQLite cache with freshness badges (Live/Cached/Metadata)
+- Watcher cache refresh (detect changes → re-scan dirty dirs → emit refreshed cache)
+- Skeleton treemap placeholder during background scan
+- `cancel_scan` command with AtomicBool cancellation token
+- Scan cancel button in UI
+
+**Deferred**:
+- jwalk evaluation (optional)
 
 **Performance Targets**:
 - First paint → ring chart: **< 500ms** (was 5–30s)

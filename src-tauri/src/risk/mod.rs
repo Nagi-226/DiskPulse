@@ -96,13 +96,18 @@ fn default_rules() -> Vec<RiskRule> {
             patterns: vec!["temp".into(), "tmp".into()],
             risk_level: RiskLevel::Low,
             category: "temporary_files".into(),
-            explanation: "Temporary files — safe to delete, automatically recreated as needed".into(),
+            explanation: "Temporary files — safe to delete, automatically recreated as needed"
+                .into(),
             safe_to_delete: true,
             name_match: None,
         },
         RiskRule {
             id: "browser-cache".into(),
-            patterns: vec!["chrome/user data".into(), "firefox/profiles".into(), "edge/user data".into()],
+            patterns: vec![
+                "chrome/user data".into(),
+                "firefox/profiles".into(),
+                "edge/user data".into(),
+            ],
             risk_level: RiskLevel::Low,
             category: "browser_cache".into(),
             explanation: "Browser cache files — safe to delete, will be re-downloaded".into(),
@@ -141,7 +146,8 @@ fn default_rules() -> Vec<RiskRule> {
             patterns: vec![".cargo/registry".into(), ".cargo/git".into()],
             risk_level: RiskLevel::Low,
             category: "developer_cache".into(),
-            explanation: "Cargo registry cache — safe to delete, re-downloaded on next build".into(),
+            explanation: "Cargo registry cache — safe to delete, re-downloaded on next build"
+                .into(),
             safe_to_delete: true,
             name_match: Some(".cargo".into()),
         },
@@ -195,7 +201,8 @@ fn default_rules() -> Vec<RiskRule> {
             patterns: vec!["windows/installer".into()],
             risk_level: RiskLevel::High,
             category: "system_installer".into(),
-            explanation: "Windows Installer database — DO NOT DELETE, required for uninstalls".into(),
+            explanation: "Windows Installer database — DO NOT DELETE, required for uninstalls"
+                .into(),
             safe_to_delete: false,
             name_match: Some("installer".into()),
         },
@@ -219,7 +226,11 @@ fn default_rules() -> Vec<RiskRule> {
         },
         RiskRule {
             id: "wechat-qq-data".into(),
-            patterns: vec!["wechat files".into(), "tencent files".into(), "qq files".into()],
+            patterns: vec![
+                "wechat files".into(),
+                "tencent files".into(),
+                "qq files".into(),
+            ],
             risk_level: RiskLevel::High,
             category: "chat_user_data".into(),
             explanation: "Chat application user data — contains personal files and history".into(),
@@ -244,8 +255,7 @@ pub fn classify_risks(drive_info: &DriveInfo) -> RiskReport {
     let mut items: Vec<RiskItem> = Vec::new();
 
     for dir in &drive_info.top_dirs {
-        let (risk_level, category, explanation, safe_to_delete) =
-            match_rule(dir, &rules);
+        let (risk_level, category, explanation, safe_to_delete) = match_rule(dir, &rules);
 
         items.push(RiskItem {
             name: dir.name.clone(),
@@ -353,11 +363,7 @@ fn is_developer_project(path: &str) -> bool {
 }
 
 fn normalize_match_text(input: &str) -> String {
-    input
-        .replace('\\', "/")
-        .to_lowercase()
-        .trim()
-        .to_string()
+    input.replace('\\', "/").to_lowercase().trim().to_string()
 }
 
 /// Get all rules with user overrides applied.
