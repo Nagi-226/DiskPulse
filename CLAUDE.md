@@ -2,6 +2,7 @@
 
 > Context sync order: `PROGRESS.md` → `CLAUDE.md` → `CHANGELOG.md`
 > Read PROGRESS.md first for version status, then this file for architecture/details.
+> **Codex agent**: See `CODEX.md` for implementation tasks. You (Claude) own planning, architecture, review, and release. Codex owns feature implementation.
 
 ## Project Identity
 
