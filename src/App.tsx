@@ -7,10 +7,15 @@ import CleanupPreview from "./components/CleanupPreview";
 import HistoryPage from "./pages/History";
 import SettingsPage from "./pages/Settings";
 import PredictionCard from "./components/PredictionCard";
+import LargeFileFinder from "./components/LargeFileFinder";
+import AutoCleanupStatus from "./components/AutoCleanupStatus";
+import { NavIcons } from "./components/Icons";
 import { formatSize } from "./utils/format";
 import { useDriveScan } from "./hooks/useDriveScan";
 import { useFsEvents } from "./hooks/useFsEvents";
-import type { CleanProgress, DirInfo, DiskSpaceAlertPayload, ScanProgress } from "./types";
+import type { AutoCleanupStatus as AutoCleanupStatusType, CleanItem, CleanProgress, CleanResult, DirInfo, DiskSpaceAlertPayload, RiskItem, ScanProgress } from "./types";
+
+const EMPTY_RISK_ITEMS: RiskItem[] = [];
 
 // --- Drive ring chart ---
 function DriveRing({
@@ -187,49 +192,12 @@ function CacheBadge({
 
 // --- Navigation Sidebar ---
 const NAV_ITEMS = [
-  { id: "dashboard", label: "Dashboard", icon: DashboardIcon },
-  { id: "cleanup", label: "Cleanup Report", icon: CleanupIcon },
-  { id: "history", label: "History", icon: HistoryIcon },
-  { id: "settings", label: "Settings", icon: SettingsIcon },
+  { id: "dashboard", label: "Dashboard", Icon: NavIcons.Dashboard },
+  { id: "cleanup", label: "Cleanup Report", Icon: NavIcons.Cleanup },
+  { id: "large-files", label: "Large Files", Icon: NavIcons.LargeFiles },
+  { id: "history", label: "History", Icon: NavIcons.History },
+  { id: "settings", label: "Settings", Icon: NavIcons.Settings },
 ] as const;
-
-function DashboardIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="3" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
-    </svg>
-  );
-}
-function CleanupIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 6h18" />
-      <path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
-      <path d="M10 11v6" />
-      <path d="M14 11v6" />
-    </svg>
-  );
-}
-function HistoryIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="1 4 1 10 7 10" />
-      <path d="M3.5 17.5A9 9 0 102 12" />
-    </svg>
-  );
-}
-function SettingsIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-    </svg>
-  );
-}
 
 // --- Directory bar item ---
 function DirBarItem({
@@ -328,9 +296,11 @@ function ScanProgressBar({ progress }: { progress: ScanProgress }) {
 export default function App() {
   const [cleanProgress, setCleanProgress] = useState<CleanProgress | null>(null);
   const [alertToast, setAlertToast] = useState<DiskSpaceAlertPayload | null>(null);
+  const [autoCleanupToast, setAutoCleanupToast] = useState<string | null>(null);
   const [version, setVersion] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
   const [drives, setDrives] = useState<string[]>([]);
+  const [largeFileCleanupItems, setLargeFileCleanupItems] = useState<CleanItem[]>([]);
   const {
     driveInfo,
     loading,
@@ -369,6 +339,8 @@ export default function App() {
   const scanDriveRef = useRef(startDriveScan);
   const selectedDriveRef = useRef(selectedDrive);
   const isWatchingRef = useRef(isWatching);
+  const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   scanDriveRef.current = startDriveScan;
   selectedDriveRef.current = selectedDrive;
   isWatchingRef.current = isWatching;
@@ -395,15 +367,35 @@ export default function App() {
       setCleanProgress(event.payload);
     });
     const unlistenAlert = listen<DiskSpaceAlertPayload>("disk-space-alert", (event) => {
+      if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
       setAlertToast(event.payload);
-      setTimeout(() => setAlertToast(null), 8000);
+      alertTimerRef.current = setTimeout(() => setAlertToast(null), 8000);
+    });
+    const unlistenAutoCleanupComplete = listen<CleanResult>("auto-cleanup-complete", (event) => {
+      if (autoCleanupTimerRef.current) clearTimeout(autoCleanupTimerRef.current);
+      setAutoCleanupToast(
+        `Auto-cleanup complete: ${event.payload.succeeded} cleaned, ${formatSize(event.payload.freed_bytes)} freed.`
+      );
+      autoCleanupTimerRef.current = setTimeout(() => setAutoCleanupToast(null), 8000);
+    });
+    const unlistenAutoCleanupScheduled = listen<AutoCleanupStatusType>("auto-cleanup-scheduled", (event) => {
+      const nextRun = event.payload.next_run_epoch_ms
+        ? new Date(event.payload.next_run_epoch_ms).toLocaleString()
+        : "not scheduled";
+      if (autoCleanupTimerRef.current) clearTimeout(autoCleanupTimerRef.current);
+      setAutoCleanupToast(`Auto-cleanup scheduled: next run ${nextRun}.`);
+      autoCleanupTimerRef.current = setTimeout(() => setAutoCleanupToast(null), 8000);
     });
     return () => {
+      if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
+      if (autoCleanupTimerRef.current) clearTimeout(autoCleanupTimerRef.current);
       unlistenTrayScan.then((fn) => fn());
       unlistenTrayMonitor.then((fn) => fn());
       unlistenAutoScan.then((fn) => fn());
       unlistenCleanProgress.then((fn) => fn());
       unlistenAlert.then((fn) => fn());
+      unlistenAutoCleanupComplete.then((fn) => fn());
+      unlistenAutoCleanupScheduled.then((fn) => fn());
     };
   }, []);
 
@@ -452,6 +444,17 @@ export default function App() {
     }
   }
 
+  function handleAddLargeFilesToCleanup(items: CleanItem[]) {
+    setLargeFileCleanupItems((current) => {
+      const byPath = new Map(current.map((item) => [item.path, item]));
+      for (const item of items) {
+        byPath.set(item.path, item);
+      }
+      return Array.from(byPath.values());
+    });
+    setActiveTab("cleanup");
+  }
+
   const usedPercent = driveInfo
     ? (driveInfo.used_bytes / Math.max(driveInfo.total_bytes, 1)) * 100
     : 0;
@@ -491,7 +494,7 @@ export default function App() {
               className={`nav-item w-full text-left ${activeTab === item.id ? "active" : ""}`}
               onClick={() => setActiveTab(item.id)}
             >
-              <item.icon />
+              <item.Icon />
               <span>{item.label}</span>
               {activeTab === item.id && (
                 <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent"
@@ -527,7 +530,7 @@ export default function App() {
           <div>
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-                {activeTab === "dashboard" ? "Drive Overview" : activeTab}
+                {activeTab === "dashboard" ? "Drive Overview" : activeTab === "large-files" ? "Large Files" : activeTab}
               </h2>
               {activeTab === "dashboard" && (
                 <CacheBadge dataSource={dataSource} cacheAgeMs={cacheAgeMs} />
@@ -634,6 +637,23 @@ export default function App() {
         <div className="flex-1 overflow-y-auto page-enter">
           {activeTab === "dashboard" && (
             <div className="p-8 space-y-8">
+              {/* Alert toast */}
+              {autoCleanupToast && (
+                <div className="glass-card p-4 border border-success/25 bg-risk-low-bg/10 animate-in fade-in">
+                  <div className="flex items-start gap-3">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2" className="mt-0.5 flex-shrink-0">
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                    <div className="flex-1 text-sm text-text-secondary">{autoCleanupToast}</div>
+                    <button className="text-text-muted hover:text-text-primary" onClick={() => setAutoCleanupToast(null)}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Alert toast */}
               {alertToast && (
                 <div className="glass-card p-4 border border-warning/30 bg-risk-medium-bg/10 animate-in fade-in">
@@ -744,6 +764,8 @@ export default function App() {
                   />
 
                   <PredictionCard drive={driveInfo.drive_letter} />
+
+                  <AutoCleanupStatus />
 
                   {loading && currentData.length === 0 && (
                     <div className="glass-card p-6">
@@ -859,8 +881,36 @@ export default function App() {
           {activeTab === "cleanup" && (
             <div className="space-y-6">
               <CleanupPage report={riskReport} />
-              {riskReport && <CleanupPreview items={riskReport.items} />}
+              {(riskReport || largeFileCleanupItems.length > 0) && (
+                <div className="px-8 pb-8">
+                  {largeFileCleanupItems.length > 0 && (
+                    <div className="mb-4 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-text-secondary">
+                      <span className="font-semibold text-accent-light">
+                        {largeFileCleanupItems.length} large file candidate(s)
+                      </span>{" "}
+                      added to this safety preview.
+                      <button
+                        className="ml-3 text-text-muted hover:text-text-primary"
+                        onClick={() => setLargeFileCleanupItems([])}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
+                  <CleanupPreview
+                    items={riskReport?.items ?? EMPTY_RISK_ITEMS}
+                    additionalItems={largeFileCleanupItems}
+                  />
+                </div>
+              )}
             </div>
+          )}
+          {activeTab === "large-files" && (
+            <LargeFileFinder
+              drives={drives}
+              selectedDrive={selectedDrive}
+              onAddToCleanup={handleAddLargeFilesToCleanup}
+            />
           )}
           {activeTab === "history" && <HistoryPage />}
           {activeTab === "settings" && <SettingsPage />}

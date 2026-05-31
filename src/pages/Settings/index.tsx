@@ -1,6 +1,10 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AppSettings, RiskRule, RiskLevel } from "../../types";
+import type { AppSettings, AutoCleanupStatus, CleanResult, RiskLevel, RiskRule } from "../../types";
+import { formatSize } from "../../utils/format";
+
+type SettingsTab = "general" | "rules" | "alerts" | "automation" | "about";
 
 const RISK_STYLES: Record<RiskLevel, string> = {
   low: "bg-risk-low-bg text-success border-success/20",
@@ -8,33 +12,26 @@ const RISK_STYLES: Record<RiskLevel, string> = {
   high: "bg-risk-high-bg text-danger border-danger/20",
 };
 
-const POLL_PRESETS = [
-  { label: "1s", value: 1000 },
-  { label: "2s", value: 2000 },
-  { label: "5s", value: 5000 },
-  { label: "10s", value: 10000 },
-];
+const DEFAULT_SETTINGS: AppSettings = {
+  default_drive: "C",
+  auto_scan_on_startup: false,
+  auto_monitor_on_startup: false,
+  watcher_poll_interval_ms: 2000,
+  watcher_debounce_ms: 1500,
+  alert_enabled: false,
+  alert_threshold_type: "percentage",
+  alert_threshold_value: 10,
+  alert_growth_enabled: false,
+  alert_growth_percent: 5,
+  alert_growth_minutes: 15,
+  auto_cleanup_enabled: false,
+  auto_cleanup_frequency: "weekly",
+  auto_cleanup_time: "03:00",
+  auto_cleanup_risk_levels: "low",
+  auto_cleanup_min_free_gb: 50,
+};
 
-const DEBOUNCE_PRESETS = [
-  { label: "0.5s", value: 500 },
-  { label: "1.5s", value: 1500 },
-  { label: "3s", value: 3000 },
-  { label: "5s", value: 5000 },
-];
-
-type SettingsTab = "general" | "rules" | "alerts" | "about";
-
-// ─── Toggle Switch ──────────────────────────────────────────
-
-function Toggle({
-  checked,
-  onChange,
-  disabled,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
+function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
     <button
       type="button"
@@ -42,154 +39,114 @@ function Toggle({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200
-        ${checked ? "bg-accent" : "bg-aurora-border"}
-        ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:opacity-90"}`}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${
+        checked ? "bg-accent" : "bg-aurora-border"
+      } ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:opacity-90"}`}
     >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200
-          ${checked ? "translate-x-6" : "translate-x-1"}`}
-      />
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${checked ? "translate-x-6" : "translate-x-1"}`} />
     </button>
   );
 }
 
-// ─── General Tab ────────────────────────────────────────────
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="space-y-2">
+      <span className="block text-xs font-medium uppercase tracking-wider text-text-muted">{label}</span>
+      {children}
+    </label>
+  );
+}
 
-function GeneralTab({
-  settings,
-  drives,
-  saving,
-  onUpdate,
-  onSave,
-  message,
-}: {
+type SaveHandler = () => Promise<boolean>;
+
+function SaveRow({ saving, message, onSave, label = "Save Settings" }: { saving: boolean; message: string | null; onSave: SaveHandler; label?: string }) {
+  return (
+    <div className="flex items-center gap-3 pt-4">
+      <button className="btn-primary py-2.5 px-6" onClick={() => void onSave()} disabled={saving}>
+        <span>{saving ? "Saving..." : label}</span>
+      </button>
+      {message && <span className={`text-xs ${message.startsWith("Saved") ? "text-success" : "text-danger"}`}>{message}</span>}
+    </div>
+  );
+}
+
+function GeneralTab({ settings, drives, saving, onUpdate, onSave, message }: {
   settings: AppSettings;
   drives: string[];
   saving: boolean;
   onUpdate: (s: AppSettings) => void;
-  onSave: () => void;
+  onSave: SaveHandler;
   message: string | null;
 }) {
+  const pollPresets = [1000, 2000, 5000, 10000];
+  const debouncePresets = [500, 1500, 3000, 5000];
+
   return (
     <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-6">
-      {/* Default Drive */}
-      <div className="flex items-center justify-between py-3">
+      <div className="flex items-center justify-between gap-4 py-3">
         <div>
-          <div className="text-sm text-text-primary font-medium">默认驱动器</div>
-          <p className="text-xs text-text-muted mt-1">启动时自动扫描的目标驱动器</p>
+          <div className="text-sm font-medium text-text-primary">Default drive</div>
+          <p className="mt-1 text-xs text-text-muted">Drive used for startup scans and scheduled jobs.</p>
         </div>
         <select
           value={settings.default_drive}
           onChange={(e) => onUpdate({ ...settings, default_drive: e.target.value })}
-          className="px-4 py-2.5 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
-                     focus:outline-none focus:border-accent/50 appearance-none cursor-pointer"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,
-            backgroundPosition: "right 10px center",
-            backgroundRepeat: "no-repeat",
-            backgroundSize: "14px",
-            paddingRight: "34px",
-          }}
+          className="rounded-lg border border-aurora-border/50 bg-aurora-elevated px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/50"
         >
-          {drives.map((d) => (
-            <option key={d} value={d}>{d}: Drive</option>
+          {drives.map((drive) => (
+            <option key={drive} value={drive}>{drive}: Drive</option>
           ))}
         </select>
       </div>
 
       <hr className="border-aurora-border/40" />
 
-      {/* Auto Scan on Startup */}
-      <div className="flex items-center justify-between py-3">
-        <div>
-          <div className="text-sm text-text-primary font-medium">启动时自动扫描</div>
-          <p className="text-xs text-text-muted mt-1">应用启动后自动扫描默认驱动器</p>
-        </div>
-        <Toggle
-          checked={settings.auto_scan_on_startup}
-          onChange={(v) => onUpdate({ ...settings, auto_scan_on_startup: v })}
-        />
-      </div>
+      <ToggleRow title="Auto scan on startup" detail="Scan the default drive when DiskPulse starts." checked={settings.auto_scan_on_startup} onChange={(v) => onUpdate({ ...settings, auto_scan_on_startup: v })} />
+      <ToggleRow title="Auto monitor on startup" detail="Start file-system monitoring when DiskPulse starts." checked={settings.auto_monitor_on_startup} onChange={(v) => onUpdate({ ...settings, auto_monitor_on_startup: v })} />
 
-      <hr className="border-aurora-border/40" />
+      <PresetRow title="Watcher poll interval" value={settings.watcher_poll_interval_ms} presets={pollPresets} onChange={(v) => onUpdate({ ...settings, watcher_poll_interval_ms: v })} />
+      <PresetRow title="Debounce window" value={settings.watcher_debounce_ms} presets={debouncePresets} onChange={(v) => onUpdate({ ...settings, watcher_debounce_ms: v })} />
 
-      {/* Auto Monitor on Startup */}
-      <div className="flex items-center justify-between py-3">
-        <div>
-          <div className="text-sm text-text-primary font-medium">启动时自动监控</div>
-          <p className="text-xs text-text-muted mt-1">应用启动后自动开启文件系统监控</p>
-        </div>
-        <Toggle
-          checked={settings.auto_monitor_on_startup}
-          onChange={(v) => onUpdate({ ...settings, auto_monitor_on_startup: v })}
-        />
-      </div>
-
-      <hr className="border-aurora-border/40" />
-
-      {/* Poll Interval */}
-      <div>
-        <div className="text-sm text-text-primary font-medium mb-4">监控轮询间隔</div>
-        <div className="flex items-center gap-2">
-          {POLL_PRESETS.map((p) => (
-            <button
-              key={p.value}
-              className={`px-4 py-2 rounded-lg text-xs font-medium border transition-colors ${
-                settings.watcher_poll_interval_ms === p.value
-                  ? "bg-accent/15 border-accent/30 text-accent-light"
-                  : "bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-text-primary"
-              }`}
-              onClick={() => onUpdate({ ...settings, watcher_poll_interval_ms: p.value })}
-            >
-              {p.label}
-            </button>
-          ))}
-          <span className="ml-2 text-xs text-text-muted font-mono">
-            {settings.watcher_poll_interval_ms}ms
-          </span>
-        </div>
-      </div>
-
-      {/* Debounce */}
-      <div>
-        <div className="text-sm text-text-primary font-medium mb-4">变更去抖窗口</div>
-        <div className="flex items-center gap-2">
-          {DEBOUNCE_PRESETS.map((p) => (
-            <button
-              key={p.value}
-              className={`px-4 py-2 rounded-lg text-xs font-medium border transition-colors ${
-                settings.watcher_debounce_ms === p.value
-                  ? "bg-accent/15 border-accent/30 text-accent-light"
-                  : "bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-text-primary"
-              }`}
-              onClick={() => onUpdate({ ...settings, watcher_debounce_ms: p.value })}
-            >
-              {p.label}
-            </button>
-          ))}
-          <span className="ml-2 text-xs text-text-muted font-mono">
-            {settings.watcher_debounce_ms}ms
-          </span>
-        </div>
-      </div>
-
-      {/* Save Button */}
-      <div className="flex items-center gap-3 pt-4">
-        <button className="btn-primary py-2.5 px-6" onClick={onSave} disabled={saving}>
-          {saving ? "保存中..." : "保存设置"}
-        </button>
-        {message && (
-          <span className={`text-xs ${message.startsWith("✓") ? "text-success" : "text-danger"}`}>
-            {message}
-          </span>
-        )}
-      </div>
+      <SaveRow saving={saving} message={message} onSave={onSave} />
     </div>
   );
 }
 
-// ─── Rules Tab ──────────────────────────────────────────────
+function ToggleRow({ title, detail, checked, onChange }: { title: string; detail: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <div>
+        <div className="text-sm font-medium text-text-primary">{title}</div>
+        <p className="mt-1 text-xs text-text-muted">{detail}</p>
+      </div>
+      <Toggle checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+function PresetRow({ title, value, presets, onChange }: { title: string; value: number; presets: number[]; onChange: (v: number) => void }) {
+  return (
+    <div>
+      <div className="mb-4 text-sm font-medium text-text-primary">{title}</div>
+      <div className="flex flex-wrap items-center gap-2">
+        {presets.map((preset) => (
+          <button
+            key={preset}
+            className={`rounded-lg border px-4 py-2 text-xs font-medium transition-colors ${
+              value === preset
+                ? "border-accent/30 bg-accent/15 text-accent-light"
+                : "border-aurora-border/60 bg-aurora-elevated/70 text-text-secondary hover:text-text-primary"
+            }`}
+            onClick={() => onChange(preset)}
+          >
+            {preset >= 1000 ? `${preset / 1000}s` : `${preset}ms`}
+          </button>
+        ))}
+        <span className="ml-2 font-mono text-xs text-text-muted">{value}ms</span>
+      </div>
+    </div>
+  );
+}
 
 function RulesTab() {
   const [rules, setRules] = useState<RiskRule[]>([]);
@@ -199,16 +156,11 @@ function RulesTab() {
   const [filter, setFilter] = useState<RiskLevel | "all">("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadRules();
-  }, []);
-
   async function loadRules() {
     setLoading(true);
     setError(null);
     try {
-      const list = await invoke<RiskRule[]>("get_rules");
-      setRules(list);
+      setRules(await invoke<RiskRule[]>("get_rules"));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -216,521 +168,354 @@ function RulesTab() {
     }
   }
 
-  async function handleToggle(ruleId: string, currentVal: boolean) {
-    const newVal = !currentVal;
-    // Optimistic update
-    setRules((prev) =>
-      prev.map((r) => (r.id === ruleId ? { ...r, safe_to_delete: newVal } : r))
-    );
+  useEffect(() => {
+    loadRules();
+  }, []);
+
+  async function handleToggle(ruleId: string, currentValue: boolean) {
+    const nextValue = !currentValue;
+    setRules((prev) => prev.map((rule) => (rule.id === ruleId ? { ...rule, safe_to_delete: nextValue } : rule)));
     try {
-      await invoke("save_rule_override", { ruleId, safeToDelete: newVal });
+      await invoke("save_rule_override", { ruleId, safeToDelete: nextValue });
     } catch (e) {
       setError(String(e));
-      // Revert on failure
-      setRules((prev) =>
-        prev.map((r) => (r.id === ruleId ? { ...r, safe_to_delete: currentVal } : r))
-      );
+      setRules((prev) => prev.map((rule) => (rule.id === ruleId ? { ...rule, safe_to_delete: currentValue } : rule)));
     }
   }
 
-  const filtered = rules.filter((r) => {
-    if (filter !== "all" && r.risk_level !== filter) return false;
-    if (query.trim()) {
-      const q = query.toLowerCase();
-      return [r.id, r.category, r.explanation].some((v) => v.toLowerCase().includes(q));
-    }
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rules.filter((rule) => {
+      if (filter !== "all" && rule.risk_level !== filter) return false;
+      if (!q) return true;
+      return [rule.id, rule.category, rule.explanation].some((value) => value.toLowerCase().includes(q));
+    });
+  }, [filter, query, rules]);
 
   return (
     <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-5">
-      {/* Controls */}
       <div className="flex flex-wrap items-center gap-4">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索规则名称或类别..."
-          className="flex-1 min-w-48 rounded-xl bg-aurora-elevated/70 border border-aurora-border/60 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60"
+          placeholder="Search rules"
+          className="min-w-48 flex-1 rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60"
         />
         <div className="flex gap-2">
-          {(["all", "low", "medium", "high"] as const).map((f) => (
+          {(["all", "low", "medium", "high"] as const).map((item) => (
             <button
-              key={f}
-              className={`px-3.5 py-2 rounded-lg text-xs font-medium border transition-colors ${
-                filter === f
-                  ? f === "all"
-                    ? "bg-accent/15 border-accent/30 text-accent-light"
-                    : `${RISK_STYLES[f]}`
-                  : "bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-text-primary"
+              key={item}
+              className={`rounded-lg border px-3.5 py-2 text-xs font-medium transition-colors ${
+                filter === item
+                  ? item === "all"
+                    ? "border-accent/30 bg-accent/15 text-accent-light"
+                    : RISK_STYLES[item]
+                  : "border-aurora-border/60 bg-aurora-elevated/70 text-text-secondary hover:text-text-primary"
               }`}
-              onClick={() => setFilter(f)}
+              onClick={() => setFilter(item)}
             >
-              {f === "all" ? "全部" : f === "low" ? "低" : f === "medium" ? "中" : "高"}
+              {item}
             </button>
           ))}
         </div>
-        <button
-          className="px-3.5 py-2 rounded-lg text-xs border bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-accent-light"
-          onClick={loadRules}
-        >
-          刷新
+        <button className="rounded-lg border border-aurora-border/60 bg-aurora-elevated/70 px-3.5 py-2 text-xs text-text-secondary hover:text-accent-light" onClick={loadRules}>
+          Refresh
         </button>
       </div>
 
-      {error && (
-        <div className="p-3 rounded-xl bg-risk-high-bg/20 border border-red-500/20 text-sm text-danger">
-          {error}
-        </div>
-      )}
+      {error && <div className="rounded-xl border border-red-500/20 bg-risk-high-bg/20 p-3 text-sm text-danger">{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center py-36">
-          <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "var(--color-accent)" }}>
-            <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" />
-          </svg>
-          <span className="ml-3 text-sm text-text-muted">加载规则...</span>
-        </div>
+        <div className="py-24 text-center text-sm text-text-muted">Loading rules...</div>
       ) : (
         <div className="max-h-[55vh] overflow-y-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs text-text-muted uppercase tracking-wider border-b border-aurora-border/40">
-                <th className="text-left px-4 py-3 font-medium">规则 ID</th>
-                <th className="text-left px-4 py-3 font-medium">类别</th>
-                <th className="text-left px-4 py-3 font-medium">风险等级</th>
-                <th className="text-center px-4 py-3 font-medium w-24">可安全删除</th>
+              <tr className="border-b border-aurora-border/40 text-xs uppercase tracking-wider text-text-muted">
+                <th className="px-4 py-3 text-left font-medium">Rule ID</th>
+                <th className="px-4 py-3 text-left font-medium">Category</th>
+                <th className="px-4 py-3 text-left font-medium">Risk</th>
+                <th className="w-24 px-4 py-3 text-center font-medium">Safe</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((rule) => {
-                const isExpanded = expandedId === rule.id;
+                const expanded = expandedId === rule.id;
                 return (
-                  <>
-                    <tr
-                      key={rule.id}
-                      className={`border-b border-aurora-border/20 cursor-pointer transition-colors hover:bg-aurora-elevated/40 ${
-                        isExpanded ? "bg-aurora-elevated/30" : ""
-                      }`}
-                      onClick={() => setExpandedId(isExpanded ? null : rule.id)}
-                    >
+                  <Fragment key={rule.id}>
+                    <tr className="cursor-pointer border-b border-aurora-border/20 transition-colors hover:bg-aurora-elevated/40" onClick={() => setExpandedId(expanded ? null : rule.id)}>
                       <td className="px-4 py-3 font-mono text-xs text-text-primary">{rule.id}</td>
                       <td className="px-4 py-3 text-text-secondary">{rule.category}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-block px-2.5 py-3 rounded-full text-xs font-medium border ${
-                            RISK_STYLES[rule.risk_level]
-                          }`}
-                        >
-                          {rule.risk_level === "low" ? "低" : rule.risk_level === "medium" ? "中" : "高"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <Toggle
-                          checked={rule.safe_to_delete}
-                          onChange={() => handleToggle(rule.id, rule.safe_to_delete)}
-                        />
-                      </td>
+                      <td className="px-4 py-3"><span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${RISK_STYLES[rule.risk_level]}`}>{rule.risk_level}</span></td>
+                      <td className="px-4 py-3 text-center"><Toggle checked={rule.safe_to_delete} onChange={() => handleToggle(rule.id, rule.safe_to_delete)} /></td>
                     </tr>
-                    {isExpanded && (
+                    {expanded && (
                       <tr key={`${rule.id}-detail`} className="border-b border-aurora-border/20">
-                        <td colSpan={4} className="px-6 py-5 bg-aurora-elevated/20">
-                          <div className="space-y-4">
-                            <div>
-                              <span className="text-xs text-text-muted">匹配模式：</span>
-                              <span className="text-xs text-text-primary font-mono ml-1">
-                                {rule.patterns.join(", ")}
-                              </span>
-                            </div>
-                            {rule.name_match && (
-                              <div>
-                                <span className="text-xs text-text-muted">名称匹配：</span>
-                                <span className="text-xs text-text-primary font-mono ml-1">
-                                  {rule.name_match}
-                                </span>
-                              </div>
-                            )}
-                            <p className="text-sm text-text-secondary leading-6">
-                              {rule.explanation}
-                            </p>
+                        <td colSpan={4} className="bg-aurora-elevated/20 px-6 py-5">
+                          <div className="space-y-3 text-sm text-text-secondary">
+                            <div><span className="text-text-muted">Patterns:</span> <span className="font-mono text-text-primary">{rule.patterns.join(", ")}</span></div>
+                            {rule.name_match && <div><span className="text-text-muted">Name match:</span> <span className="font-mono text-text-primary">{rule.name_match}</span></div>}
+                            <p className="leading-6">{rule.explanation}</p>
                           </div>
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
-          {filtered.length === 0 && (
-            <div className="text-center py-32 text-text-muted text-sm">
-              没有匹配的规则
-            </div>
-          )}
+          {filtered.length === 0 && <div className="py-24 text-center text-sm text-text-muted">No matching rules.</div>}
         </div>
       )}
     </div>
   );
 }
 
-// ─── Alerts Tab ─────────────────────────────────────────────
-
-function AlertsTab({
-  settings,
-  saving,
-  onUpdate,
-  onSave,
-  message,
-}: {
+function AlertsTab({ settings, saving, onUpdate, onSave, message }: {
   settings: AppSettings;
   saving: boolean;
   onUpdate: (s: AppSettings) => void;
-  onSave: () => void;
+  onSave: SaveHandler;
   message: string | null;
 }) {
   return (
     <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-6">
-      {/* Alert Enabled */}
-      <div className="flex items-center justify-between py-3">
-        <div>
-          <div className="text-sm text-text-primary font-medium">磁盘空间告警</div>
-          <p className="text-xs text-text-muted mt-1">当磁盘空间低于阈值时发出系统通知</p>
-        </div>
-        <Toggle
-          checked={settings.alert_enabled}
-          onChange={(v) => onUpdate({ ...settings, alert_enabled: v })}
-        />
-      </div>
+      <ToggleRow title="Disk space alerts" detail="Send notifications when free space is below the configured threshold." checked={settings.alert_enabled} onChange={(v) => onUpdate({ ...settings, alert_enabled: v })} />
 
       {settings.alert_enabled && (
         <>
           <hr className="border-aurora-border/40" />
-
-          {/* Threshold Type */}
-          <div>
-            <div className="text-sm text-text-primary font-medium mb-3">阈值类型</div>
-            <div className="flex gap-2">
-              {[
-                { label: "使用百分比", value: "percentage" },
-                { label: "绝对剩余空间 (GB)", value: "absolute_gb" },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  className={`px-4 py-2 rounded-lg text-xs font-medium border transition-colors ${
-                    settings.alert_threshold_type === opt.value
-                      ? "bg-accent/15 border-accent/30 text-accent-light"
-                      : "bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-text-primary"
-                  }`}
-                  onClick={() => onUpdate({ ...settings, alert_threshold_type: opt.value })}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <Field label="Threshold type">
+              <select value={settings.alert_threshold_type} onChange={(e) => onUpdate({ ...settings, alert_threshold_type: e.target.value })} className="w-full rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60">
+                <option value="percentage">Free percentage</option>
+                <option value="absolute_gb">Free GB</option>
+              </select>
+            </Field>
+            <Field label="Threshold value">
+              <input type="number" value={settings.alert_threshold_value} onChange={(e) => onUpdate({ ...settings, alert_threshold_value: Number(e.target.value) })} className="w-full rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
+            </Field>
+            <Field label="Growth window minutes">
+              <input type="number" value={settings.alert_growth_minutes} onChange={(e) => onUpdate({ ...settings, alert_growth_minutes: Number(e.target.value) })} className="w-full rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
+            </Field>
           </div>
-
-          <hr className="border-aurora-border/40" />
-
-          {/* Threshold Value */}
-          <div className="flex items-center justify-between py-3">
-            <div>
-              <div className="text-sm text-text-primary font-medium">
-                {settings.alert_threshold_type === "percentage" ? "使用率阈值" : "剩余空间阈值"}
-              </div>
-              <p className="text-xs text-text-muted mt-1">
-                {settings.alert_threshold_type === "percentage"
-                  ? `当使用率超过此百分比时触发告警（当前: ${settings.alert_threshold_value}%）`
-                  : `当剩余空间低于此值时触发告警（当前: ${settings.alert_threshold_value} GB）`}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={settings.alert_threshold_type === "percentage" ? 1 : 1}
-                max={settings.alert_threshold_type === "percentage" ? 99 : 999}
-                step={settings.alert_threshold_type === "percentage" ? 1 : 5}
-                value={settings.alert_threshold_value}
-                onChange={(e) => {
-                  const v = parseFloat(e.target.value);
-                  if (!isNaN(v)) onUpdate({ ...settings, alert_threshold_value: v });
-                }}
-                className="w-20 px-3 py-2 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
-                           text-center font-mono outline-none focus:border-accent/50"
-              />
-              <span className="text-xs text-text-muted">
-                {settings.alert_threshold_type === "percentage" ? "%" : "GB"}
-              </span>
-            </div>
-          </div>
-
-          <hr className="border-aurora-border/40" />
-
-          {/* Sudden Growth Detection */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between py-3">
-              <div>
-                <div className="text-sm text-text-primary font-medium">突发增长检测</div>
-                <p className="text-xs text-text-muted mt-1">在短时间内磁盘用量快速增长时发出告警</p>
-              </div>
-              <Toggle
-                checked={settings.alert_growth_enabled}
-                onChange={(v) => onUpdate({ ...settings, alert_growth_enabled: v })}
-              />
-            </div>
-
-            {settings.alert_growth_enabled && (
-              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-aurora-elevated/40 border border-aurora-border/40">
-                <div>
-                  <label className="block text-xs text-text-muted mb-2">增长百分比阈值</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      step={1}
-                      value={settings.alert_growth_percent}
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        if (!isNaN(v)) onUpdate({ ...settings, alert_growth_percent: v });
-                      }}
-                      className="w-16 px-3 py-2 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
-                                 text-center font-mono outline-none focus:border-accent/50"
-                    />
-                    <span className="text-xs text-text-muted">%</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs text-text-muted mb-2">监控时间窗口</label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={5}
-                      max={240}
-                      step={5}
-                      value={settings.alert_growth_minutes}
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value, 10);
-                        if (!isNaN(v)) onUpdate({ ...settings, alert_growth_minutes: v });
-                      }}
-                      className="w-16 px-3 py-2 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
-                                 text-center font-mono outline-none focus:border-accent/50"
-                    />
-                    <span className="text-xs text-text-muted">分钟</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <ToggleRow title="Sudden growth detection" detail="Warn when used space grows quickly within the configured window." checked={settings.alert_growth_enabled} onChange={(v) => onUpdate({ ...settings, alert_growth_enabled: v })} />
+          {settings.alert_growth_enabled && (
+            <Field label="Growth percent">
+              <input type="number" value={settings.alert_growth_percent} onChange={(e) => onUpdate({ ...settings, alert_growth_percent: Number(e.target.value) })} className="w-40 rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
+            </Field>
+          )}
         </>
       )}
 
-      {/* Save Button */}
-      <div className="flex items-center gap-3 pt-4">
-        <button className="btn-primary py-2.5 px-6" onClick={onSave} disabled={saving}>
-          {saving ? "保存中..." : "保存设置"}
-        </button>
-        {message && (
-          <span className={`text-xs ${message.startsWith("✓") ? "text-success" : "text-danger"}`}>
-            {message}
-          </span>
-        )}
-      </div>
+      <SaveRow saving={saving} message={message} onSave={onSave} />
     </div>
   );
 }
 
-// ─── About Tab ──────────────────────────────────────────────
+function AutomationTab({ settings, saving, onUpdate, onSave, message }: {
+  settings: AppSettings;
+  saving: boolean;
+  onUpdate: (s: AppSettings) => void;
+  onSave: SaveHandler;
+  message: string | null;
+}) {
+  const [running, setRunning] = useState(false);
+  const [runMessage, setRunMessage] = useState<string | null>(null);
+  const [status, setStatus] = useState<AutoCleanupStatus | null>(null);
+
+  useEffect(() => {
+    invoke<AutoCleanupStatus>("get_auto_cleanup_status").then(setStatus).catch((e) => setRunMessage(String(e)));
+  }, []);
+
+  async function refreshStatus() {
+    setStatus(await invoke<AutoCleanupStatus>("get_auto_cleanup_status"));
+  }
+
+  async function handleSaveAutomation() {
+    const saved = await onSave();
+    if (!saved) return;
+
+    try {
+      await refreshStatus();
+      setRunMessage("Scheduler updated.");
+      setTimeout(() => setRunMessage(null), 3000);
+    } catch (e) {
+      setRunMessage(`Status refresh failed: ${String(e)}`);
+    }
+  }
+
+  async function handleRunNow() {
+    if (!window.confirm("Run auto-cleanup now? Only LOW-risk, whitelisted items are eligible and deletion still goes to Recycle Bin.")) return;
+    setRunning(true);
+    setRunMessage(null);
+    try {
+      const result = await invoke<CleanResult>("run_auto_cleanup_now");
+      setRunMessage(`Run complete: ${result.succeeded} cleaned, ${result.skipped} skipped, ${result.failed} failed.`);
+      await refreshStatus();
+    } catch (e) {
+      setRunMessage(`Run failed: ${String(e)}`);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-6">
+      <ToggleRow title="Scheduled auto-cleanup" detail="Runs the existing safe cleanup pipeline for LOW-risk candidates only." checked={settings.auto_cleanup_enabled} onChange={(v) => onUpdate({ ...settings, auto_cleanup_enabled: v })} />
+
+      <hr className="border-aurora-border/40" />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Field label="Frequency">
+          <select value={settings.auto_cleanup_frequency} onChange={(e) => onUpdate({ ...settings, auto_cleanup_frequency: e.target.value })} className="w-full rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60">
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </Field>
+        <Field label="Time">
+          <input type="time" value={settings.auto_cleanup_time} onChange={(e) => onUpdate({ ...settings, auto_cleanup_time: e.target.value })} className="w-full rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
+        </Field>
+        <Field label="Skip if free space is above">
+          <div className="flex items-center gap-2">
+            <input type="number" min={0} step={5} value={settings.auto_cleanup_min_free_gb} onChange={(e) => onUpdate({ ...settings, auto_cleanup_min_free_gb: Number(e.target.value) })} className="w-full rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
+            <span className="text-xs text-text-muted">GB</span>
+          </div>
+        </Field>
+      </div>
+
+      <div className="rounded-2xl border border-success/15 bg-risk-low-bg/10 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-success">Eligible risk levels</div>
+            <p className="mt-1 text-xs text-text-muted">Auto-cleanup is locked to LOW risk only. Medium and High risk items are never cleaned automatically.</p>
+          </div>
+          <span className="rounded-full border border-success/20 bg-risk-low-bg px-3 py-1 text-xs font-semibold text-success">LOW only</span>
+        </div>
+      </div>
+
+      {status && (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <StatusTile label="State" value={status.enabled ? "Enabled" : "Disabled"} />
+          <StatusTile label="Next run" value={status.next_run_epoch_ms ? new Date(status.next_run_epoch_ms).toLocaleString() : "Not scheduled"} />
+          <StatusTile label="Last freed" value={formatSize(status.last_freed_bytes)} />
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3 pt-4">
+        <button className="btn-primary py-2.5 px-6" onClick={() => void handleSaveAutomation()} disabled={saving}><span>{saving ? "Saving..." : "Save Automation"}</span></button>
+        <button className="rounded-xl border border-warning/25 bg-risk-medium-bg px-4 py-2.5 text-sm font-semibold text-warning transition-colors hover:bg-risk-medium-bg/80" onClick={handleRunNow} disabled={running}>{running ? "Running..." : "Run Now"}</button>
+        {message && <span className={`text-xs ${message.startsWith("Saved") ? "text-success" : "text-danger"}`}>{message}</span>}
+        {runMessage && <span className={`text-xs ${runMessage.includes("failed") ? "text-danger" : "text-success"}`}>{runMessage}</span>}
+      </div>
+
+      <p className="text-xs text-text-muted">Note: scheduler changes are applied immediately after saving. Run Now uses the latest saved settings.</p>
+    </div>
+  );
+}
+
+function StatusTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/60 p-4">
+      <div className="text-xs text-text-muted">{label}</div>
+      <div className="mt-2 text-sm font-semibold text-text-primary">{value}</div>
+    </div>
+  );
+}
 
 function AboutTab() {
   const [version, setVersion] = useState("");
-
   useEffect(() => {
     invoke<string>("app_version").then(setVersion);
   }, []);
 
-  const techStack = [
-    {
-      name: "Tauri 2",
-      desc: "Rust 驱动的轻量级桌面框架",
-      color: "#6366f1",
-    },
-    {
-      name: "React 19",
-      desc: "TypeScript 前端用户界面",
-      color: "#06b6d4",
-    },
-    {
-      name: "SQLite",
-      desc: "本地历史记录与设置存储",
-      color: "#10b981",
-    },
-    {
-      name: "ECharts",
-      desc: "交互式数据可视化图表",
-      color: "#f59e0b",
-    },
-  ];
-
   return (
     <div className="glass-card p-8 rounded-2xl border border-aurora-border/50">
-      {/* Logo + Name */}
-      <div className="flex flex-col items-center pt-8 pb-10">
-        <div
-          className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5"
-          style={{
-            background: "linear-gradient(135deg, var(--color-accent), #7c3aed)",
-            boxShadow: "0 8px 30px var(--color-accent-glow)",
-          }}
-        >
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round">
-            <circle cx="12" cy="12" r="10" />
-            <circle cx="12" cy="12" r="4" />
-            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
-          </svg>
-        </div>
+      <div className="flex flex-col items-center py-8 text-center">
+        <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-accent/20 text-3xl text-accent-light">DP</div>
         <h2 className="text-3xl font-bold text-text-primary">DiskPulse</h2>
-        <p className="text-sm text-text-muted mt-2 font-mono">
-          v{version || "0.1.0"}
-        </p>
-        <p className="text-sm text-text-secondary mt-4 text-center max-w-xs leading-6">
-          实时磁盘空间监控与安全清理工具
-          <br />
-          专为 Windows 11 设计
-        </p>
+        <p className="mt-2 font-mono text-sm text-text-muted">v{version || "0.3.0"}</p>
+        <p className="mt-4 max-w-sm text-sm leading-6 text-text-secondary">Real-time disk space monitoring, risk classification, and safe cleanup for Windows 11.</p>
       </div>
-
-      {/* Tech Stack Grid */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        {techStack.map((tech) => (
-          <div
-            key={tech.name}
-            className="rounded-2xl bg-aurora-elevated/60 border border-aurora-border/40 p-5"
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <span
-                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                style={{ backgroundColor: tech.color }}
-              />
-              <span className="text-sm font-semibold text-text-primary">{tech.name}</span>
-            </div>
-            <p className="text-xs text-text-muted leading-5">{tech.desc}</p>
+      <div className="grid grid-cols-2 gap-4">
+        {[
+          ["Tauri 2", "Rust-powered desktop shell"],
+          ["React 19", "TypeScript UI"],
+          ["SQLite", "Local history and settings"],
+          ["ECharts", "Interactive data visualization"],
+        ].map(([name, desc]) => (
+          <div key={name} className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/60 p-5">
+            <div className="text-sm font-semibold text-text-primary">{name}</div>
+            <p className="mt-2 text-xs leading-5 text-text-muted">{desc}</p>
           </div>
         ))}
-      </div>
-
-      {/* Footer */}
-      <div className="pt-5 border-t border-aurora-border/40 text-center">
-        <p className="text-sm text-text-muted">
-          Built by FJL03 &nbsp;|&nbsp; MIT License &nbsp;|&nbsp; © 2026
-        </p>
       </div>
     </div>
   );
 }
 
-// ─── Main Settings Page ─────────────────────────────────────
-
 export default function SettingsPage() {
   const [tab, setTab] = useState<SettingsTab>("general");
-  const [settings, setSettings] = useState<AppSettings>({
-    default_drive: "C",
-    auto_scan_on_startup: false,
-    auto_monitor_on_startup: false,
-    watcher_poll_interval_ms: 2000,
-    watcher_debounce_ms: 1500,
-    alert_enabled: false,
-    alert_threshold_type: "percentage",
-    alert_threshold_value: 10,
-    alert_growth_enabled: false,
-    alert_growth_percent: 5,
-    alert_growth_minutes: 15,
-  });
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [drives, setDrives] = useState<string[]>(["C"]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    invoke<AppSettings>("get_settings")
-      .then(setSettings)
-      .catch((e) => console.error("get_settings:", e));
-    invoke<string[]>("list_drives")
-      .then((list) => {
-        setDrives(list);
-        if (list.length > 0 && !list.includes("C")) {
-          setSettings((prev) => ({ ...prev, default_drive: list[0] }));
-        }
-      })
-      .catch((e) => console.error("list_drives:", e));
+    invoke<AppSettings>("get_settings").then((loaded) => setSettings({ ...DEFAULT_SETTINGS, ...loaded })).catch((e) => console.error("get_settings:", e));
+    invoke<string[]>("list_drives").then((list) => {
+      setDrives(list);
+      if (list.length > 0 && !list.includes("C")) {
+        setSettings((prev) => ({ ...prev, default_drive: list[0] }));
+      }
+    }).catch(() => setDrives(["C"]));
   }, []);
 
-  async function handleSave() {
+  async function handleSave(): Promise<boolean> {
     setSaving(true);
     setMessage(null);
     try {
       await invoke("save_settings", { settings });
-      setMessage("✓ 设置已保存");
+      setMessage("Saved settings.");
       setTimeout(() => setMessage(null), 3000);
+      return true;
     } catch (e) {
-      setMessage(`✗ 保存失败: ${String(e)}`);
+      setMessage(`Save failed: ${String(e)}`);
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
-  const TABS: { id: SettingsTab; label: string }[] = [
-    { id: "general", label: "通用" },
-    { id: "rules", label: "规则" },
-    { id: "alerts", label: "告警" },
-    { id: "about", label: "关于" },
+  const tabs: { id: SettingsTab; label: string }[] = [
+    { id: "general", label: "General" },
+    { id: "rules", label: "Rules" },
+    { id: "alerts", label: "Alerts" },
+    { id: "automation", label: "Automation" },
+    { id: "about", label: "About" },
   ];
 
   return (
     <div className="p-8 space-y-6">
-      {/* Header */}
       <div>
-        <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-          设置
-        </h2>
-        <p className="text-xs text-text-muted mt-1">偏好设置、规则配置与应用信息</p>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-text-primary">Settings</h2>
+        <p className="mt-1 text-xs text-text-muted">Preferences, safety rules, alerts, and automation.</p>
       </div>
 
-      {/* Tab Bar */}
-      <div className="flex gap-1 rounded-xl bg-aurora-elevated/70 border border-aurora-border/50 p-1 w-fit">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              tab === t.id
-                ? "bg-accent/20 text-accent-light"
-                : "text-text-secondary hover:text-text-primary"
-            }`}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
+      <div className="flex w-fit gap-1 rounded-xl border border-aurora-border/50 bg-aurora-elevated/70 p-1">
+        {tabs.map((item) => (
+          <button key={item.id} className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${tab === item.id ? "bg-accent/20 text-accent-light" : "text-text-secondary hover:text-text-primary"}`} onClick={() => setTab(item.id)}>
+            {item.label}
           </button>
         ))}
       </div>
 
-      {/* Tab Content */}
-      {tab === "general" && (
-        <GeneralTab
-          settings={settings}
-          drives={drives}
-          saving={saving}
-          onUpdate={setSettings}
-          onSave={handleSave}
-          message={message}
-        />
-      )}
+      {tab === "general" && <GeneralTab settings={settings} drives={drives} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
       {tab === "rules" && <RulesTab />}
-      {tab === "alerts" && (
-        <AlertsTab
-          settings={settings}
-          saving={saving}
-          onUpdate={setSettings}
-          onSave={handleSave}
-          message={message}
-        />
-      )}
+      {tab === "alerts" && <AlertsTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
+      {tab === "automation" && <AutomationTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
       {tab === "about" && <AboutTab />}
     </div>
   );

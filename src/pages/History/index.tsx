@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+﻿import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as echarts from "echarts";
 import { formatSize } from "../../utils/format";
-import type { Snapshot, CleanupLog, DirInfo, CleanItemResult, Prediction } from "../../types";
+import type { AutoCleanupReport, Snapshot, CleanupLog, DirInfo, CleanItemResult, Prediction } from "../../types";
 
 const TIME_RANGES = [
   { label: "7d", value: 7 },
@@ -31,7 +31,7 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleString();
 }
 
-// ─── Trend Chart Component ──────────────────────────────────
+// 鈹€鈹€鈹€ Trend Chart Component 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 function TrendChart({ snapshots, prediction }: { snapshots: Snapshot[]; prediction: Prediction | null }) {
   const chartRef = useRef<HTMLDivElement>(null);
@@ -182,7 +182,7 @@ function TrendChart({ snapshots, prediction }: { snapshots: Snapshot[]; predicti
   );
 }
 
-// ─── Snapshot Table ─────────────────────────────────────────
+// 鈹€鈹€鈹€ Snapshot Table 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 function SnapshotTable({ snapshots }: { snapshots: Snapshot[] }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -295,7 +295,7 @@ function SnapshotTable({ snapshots }: { snapshots: Snapshot[] }) {
   );
 }
 
-// ─── Cleanup Timeline ───────────────────────────────────────
+// 鈹€鈹€鈹€ Cleanup Timeline 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 function ForecastStat({ label, value }: { label: string; value: string }) {
   return (
@@ -429,11 +429,101 @@ function CleanupTimeline({ logs }: { logs: CleanupLog[] }) {
   );
 }
 
-// ─── Main History Page ──────────────────────────────────────
+function AutoCleanupTimeline({ reports }: { reports: AutoCleanupReport[] }) {
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  if (reports.length === 0) {
+    return (
+      <div className="glass-card p-6 text-center">
+        <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider mb-3">
+          Auto-Cleanup History
+        </h3>
+        <p className="text-xs text-text-muted">No auto-cleanup runs recorded yet.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
+        Auto-Cleanup History
+      </h3>
+
+      {reports.map((report) => {
+        const isExpanded = expandedId === report.id;
+        const items = parseItemsJson(report.items_json);
+        const success = report.status === "completed";
+
+        return (
+          <div key={report.id} className="glass-card p-5 transition-colors">
+            <div
+              className="flex flex-wrap items-center justify-between gap-3 cursor-pointer"
+              onClick={() => setExpandedId(isExpanded ? null : report.id)}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-2 h-2 rounded-full ${success ? "bg-success" : "bg-danger"}`} />
+                <div>
+                  <div className="text-sm text-text-primary font-medium">
+                    {formatDate(report.created_at)} · {report.drive_letter}:
+                  </div>
+                  <div className="text-xs text-text-muted mt-0.5">{report.message}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 text-xs">
+                <span className={success ? "text-success" : "text-danger"}>{report.status}</span>
+                <span className="text-success font-semibold">{formatSize(report.freed_bytes)} freed</span>
+                <span className="text-text-muted">{report.succeeded} ok / {report.skipped} skip / {report.failed} fail</span>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  className={`text-text-muted transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+            </div>
+
+            {isExpanded && (
+              <div className="mt-4 pt-4 border-t border-aurora-border/40 space-y-2 max-h-64 overflow-y-auto">
+                {items.length === 0 ? (
+                  <p className="text-xs text-text-muted text-center">No item details available.</p>
+                ) : (
+                  items.map((item, i) => (
+                    <div
+                      key={`${item.path}-${i}`}
+                      className="flex items-center gap-3 rounded-lg bg-aurora-elevated/60 px-3 py-2 text-xs"
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                          item.status === "Success" ? "bg-success" : item.status === "Skipped" ? "bg-warning" : "bg-danger"
+                        }`}
+                      />
+                      <span className="text-text-primary font-medium truncate">{item.name}</span>
+                      <span className="text-text-muted font-mono flex-shrink-0">{formatSize(item.size_bytes)}</span>
+                      <span className="ml-auto text-text-secondary">{item.status}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+// 鈹€鈹€鈹€ Main History Page 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 export default function HistoryPage() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [cleanupLogs, setCleanupLogs] = useState<CleanupLog[]>([]);
+  const [autoCleanupReports, setAutoCleanupReports] = useState<AutoCleanupReport[]>([]);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -457,13 +547,15 @@ export default function HistoryPage() {
     setError(null);
     setPrediction(null);
     try {
-      const [snaps, logs, predicted] = await Promise.all([
+      const [snaps, logs, autoReports, predicted] = await Promise.all([
         invoke<Snapshot[]>("get_snapshot_history", { drive, days }),
         invoke<CleanupLog[]>("get_cleanup_history"),
+        invoke<AutoCleanupReport[]>("get_auto_cleanup_history"),
         invoke<Prediction>("predict_disk_usage", { drive, days }).catch(() => null),
       ]);
       setSnapshots(snaps);
       setCleanupLogs(logs);
+      setAutoCleanupReports(autoReports);
       setPrediction(predicted);
     } catch (e) {
       setError(String(e));
@@ -477,7 +569,7 @@ export default function HistoryPage() {
     loadHistory(selectedDrive, timeRange);
   }, [selectedDrive, timeRange, loadHistory]);
 
-  const hasData = snapshots.length > 0 || cleanupLogs.length > 0;
+  const hasData = snapshots.length > 0 || cleanupLogs.length > 0 || autoCleanupReports.length > 0;
 
   return (
     <div className="p-8 space-y-8">
@@ -595,7 +687,7 @@ export default function HistoryPage() {
                   Disk Usage Trend
                 </h3>
                 <p className="text-xs text-text-muted mt-1">
-                  {selectedDrive}: Drive — last {timeRange} days · {snapshots.length} snapshot
+                  {selectedDrive}: Drive 鈥?last {timeRange} days 路 {snapshots.length} snapshot
                   {snapshots.length !== 1 ? "s" : ""}
                 </p>
               </div>
@@ -639,6 +731,9 @@ export default function HistoryPage() {
 
           {/* Cleanup Timeline */}
           <CleanupTimeline logs={cleanupLogs} />
+
+          {/* Auto-Cleanup Timeline */}
+          <AutoCleanupTimeline reports={autoCleanupReports} />
         </>
       )}
     </div>

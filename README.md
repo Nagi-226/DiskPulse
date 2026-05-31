@@ -110,6 +110,11 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | v0.1.0 | Production release candidate | ✅ |
 | v0.2.0 | Performance & UX optimization | ✅ |
 | v0.2.5 | Intelligent insights — alerts & prediction | ✅ |
+| v0.2.6 | Large file finder backend | ✅ |
+| v0.2.7 | Large file finder frontend | ✅ |
+| v0.2.8 | Auto-cleanup backend | ✅ |
+| v0.2.9 | Auto-cleanup frontend | ✅ |
+| v0.3.0 | Production release | ✅ |
 
 ## ⌨️ IPC Commands
 
@@ -119,6 +124,8 @@ scan_drive(drive: String) -> DriveInfo
 scan_drive_meta(drive: String) -> DriveMeta
 scan_drive_dirs(drive: String) -> Vec<DirInfo>
 cancel_scan() -> ()
+find_large_files(drive: String, min_size: u64, limit: usize) -> Vec<FileEntry>
+cancel_large_file_scan() -> ()
 list_drives() -> Vec<String>
 scan_directory(path: String) -> Vec<DirInfo>
 
@@ -129,6 +136,9 @@ classify_risks(scan: DriveInfo) -> RiskReport
 preview_cleanup(items: Vec<CleanItem>) -> CleanPreview
 clean_items(items: Vec<CleanItem>) -> CleanResult
 undo_cleanup(original_paths: Vec<String>) -> RestoreResult
+run_auto_cleanup_now() -> CleanResult
+get_auto_cleanup_status() -> AutoCleanupStatus
+get_auto_cleanup_history() -> Vec<AutoCleanupReport>
 
 // Watcher
 start_fs_watcher() -> String

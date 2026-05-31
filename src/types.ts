@@ -35,6 +35,21 @@ export interface ScanProgress {
   partial_results: DirInfo[] | null;
 }
 
+export interface FileEntry {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_epoch_ms: number;
+}
+
+export interface LargeFileProgress {
+  drive_letter: string;
+  dirs_processed: number;
+  dirs_total: number;
+  files_found: number;
+  current_path: string | null;
+}
+
 export type RiskLevel = "low" | "medium" | "high";
 
 export interface RiskItem {
@@ -114,6 +129,18 @@ export interface CleanResult {
   items: CleanItemResult[];
 }
 
+export interface RestoreItemResult {
+  original_path: string;
+  restored: boolean;
+  reason: string | null;
+}
+
+export interface RestoreResult {
+  restored: number;
+  failed: number;
+  items: RestoreItemResult[];
+}
+
 export interface CleanProgress {
   current: number;
   total: number;
@@ -177,6 +204,11 @@ export interface AppSettings {
   alert_growth_enabled: boolean;
   alert_growth_percent: number;
   alert_growth_minutes: number;
+  auto_cleanup_enabled: boolean;
+  auto_cleanup_frequency: string;
+  auto_cleanup_time: string;
+  auto_cleanup_risk_levels: string;
+  auto_cleanup_min_free_gb: number;
 }
 
 export interface DiskSpaceAlertPayload {
@@ -187,6 +219,30 @@ export interface DiskSpaceAlertPayload {
   total_bytes: number;
   usage_percent: number;
   timestamp_ms: number;
+}
+
+export interface AutoCleanupStatus {
+  enabled: boolean;
+  running: boolean;
+  drive_letter: string;
+  frequency: string;
+  next_run_epoch_ms: number | null;
+  last_run_at: string | null;
+  last_freed_bytes: number;
+  message: string;
+}
+
+export interface AutoCleanupReport {
+  id: number;
+  drive_letter: string;
+  freed_bytes: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+  status: string;
+  message: string;
+  items_json: string;
+  created_at: string;
 }
 
 export interface RiskRule {

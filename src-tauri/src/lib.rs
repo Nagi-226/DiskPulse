@@ -4,6 +4,7 @@ mod db;
 mod prediction;
 mod risk;
 mod scanner;
+mod scheduler;
 mod watcher;
 
 use cleaner::{CleanItem, CleanPreview, CleanResult, RestoreResult};
@@ -17,6 +18,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager};
 
 pub const SCAN_PROGRESS_EVENT: &str = "scan-progress";
+pub const LARGE_FILE_PROGRESS_EVENT: &str = "large-file-progress";
 pub const CLEAN_PROGRESS_EVENT: &str = "clean-progress";
 pub const FS_EVENT_BATCH: &str = "fs-event-batch";
 pub const DRIVE_CACHE_REFRESHED_EVENT: &str = "drive-cache-refreshed";
@@ -26,6 +28,7 @@ pub const DISK_SPACE_ALERT: &str = "disk-space-alert";
 /// Global watcher guard so we can stop it from another command.
 static WATCHER: Mutex<Option<watcher::WatcherGuard>> = Mutex::new(None);
 static SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+static LARGE_FILE_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 
 fn begin_scan_token() -> Arc<AtomicBool> {
     let token = Arc::new(AtomicBool::new(false));
@@ -39,6 +42,27 @@ fn begin_scan_token() -> Arc<AtomicBool> {
 
 fn finish_scan_token(token: &Arc<AtomicBool>) {
     if let Ok(mut guard) = SCAN_CANCEL.lock() {
+        if guard
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, token))
+        {
+            *guard = None;
+        }
+    }
+}
+
+fn begin_large_file_scan_token() -> Arc<AtomicBool> {
+    let token = Arc::new(AtomicBool::new(false));
+    if let Ok(mut guard) = LARGE_FILE_SCAN_CANCEL.lock() {
+        if let Some(previous) = guard.replace(token.clone()) {
+            previous.store(true, Ordering::Relaxed);
+        }
+    }
+    token
+}
+
+fn finish_large_file_scan_token(token: &Arc<AtomicBool>) {
+    if let Ok(mut guard) = LARGE_FILE_SCAN_CANCEL.lock() {
         if guard
             .as_ref()
             .is_some_and(|current| Arc::ptr_eq(current, token))
@@ -107,6 +131,40 @@ fn cancel_scan() -> Result<(), String> {
     let mut guard = SCAN_CANCEL
         .lock()
         .map_err(|e| format!("Scan lock error: {}", e))?;
+    if let Some(token) = guard.take() {
+        token.store(true, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+/// Scan a drive for the largest individual files and emit progress events.
+#[tauri::command]
+fn find_large_files(
+    app: AppHandle,
+    drive: String,
+    min_size: u64,
+    limit: usize,
+) -> Result<Vec<scanner::FileEntry>, String> {
+    let token = begin_large_file_scan_token();
+    let result = scanner::find_large_files_with_progress_and_cancel(
+        &drive,
+        min_size,
+        limit,
+        |progress| {
+            let _ = app.emit(LARGE_FILE_PROGRESS_EVENT, progress);
+        },
+        Some(&token),
+    );
+    finish_large_file_scan_token(&token);
+    result
+}
+
+/// Cancel the active large file scan.
+#[tauri::command]
+fn cancel_large_file_scan() -> Result<(), String> {
+    let mut guard = LARGE_FILE_SCAN_CANCEL
+        .lock()
+        .map_err(|e| format!("Large file scan lock error: {}", e))?;
     if let Some(token) = guard.take() {
         token.store(true, Ordering::Relaxed);
     }
@@ -375,8 +433,9 @@ fn get_settings() -> Result<db::AppSettings, String> {
 
 /// Save application settings.
 #[tauri::command]
-fn save_settings(settings: db::AppSettings) -> Result<(), String> {
-    db::save_settings(&settings)
+fn save_settings(app: AppHandle, settings: db::AppSettings) -> Result<(), String> {
+    db::save_settings(&settings)?;
+    scheduler::apply_auto_cleanup_settings(&app, &settings)
 }
 
 /// Get all risk rules with user overrides applied.
@@ -408,6 +467,24 @@ fn get_cleanup_history() -> Result<Vec<db::CleanupLog>, String> {
 #[tauri::command]
 fn predict_disk_usage(drive: String, days: u32) -> Result<prediction::Prediction, String> {
     prediction::predict_disk_usage(&drive, days)
+}
+
+/// Run the auto-cleanup pipeline immediately using stored settings.
+#[tauri::command]
+fn run_auto_cleanup_now(app: AppHandle) -> Result<CleanResult, String> {
+    scheduler::run_auto_cleanup_now(Some(app))
+}
+
+/// Get current auto-cleanup scheduler/status summary.
+#[tauri::command]
+fn get_auto_cleanup_status() -> Result<scheduler::AutoCleanupStatus, String> {
+    scheduler::get_auto_cleanup_status()
+}
+
+/// Get previous auto-cleanup reports.
+#[tauri::command]
+fn get_auto_cleanup_history() -> Result<Vec<db::AutoCleanupReport>, String> {
+    scheduler::get_auto_cleanup_history()
 }
 
 /// Get the app version
@@ -598,6 +675,13 @@ pub fn run() {
                         let _ = alert::start_alert_monitor(&app_handle3);
                     });
                 }
+                if settings.auto_cleanup_enabled {
+                    let app_handle4 = app.handle().clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(7000));
+                        let _ = scheduler::start_auto_cleanup_scheduler(&app_handle4);
+                    });
+                }
             }
 
             Ok(())
@@ -607,6 +691,8 @@ pub fn run() {
             scan_drive_meta,
             scan_drive_dirs,
             cancel_scan,
+            find_large_files,
+            cancel_large_file_scan,
             list_drives,
             scan_directory,
             classify_risks,
@@ -618,6 +704,9 @@ pub fn run() {
             get_snapshot_history,
             get_cleanup_history,
             predict_disk_usage,
+            run_auto_cleanup_now,
+            get_auto_cleanup_status,
+            get_auto_cleanup_history,
             start_alert_monitor,
             stop_alert_monitor,
             get_settings,

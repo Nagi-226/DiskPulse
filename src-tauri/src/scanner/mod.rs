@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
+use std::cmp::{Ordering as CmpOrdering, Reverse};
+use std::collections::BinaryHeap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::SystemTime;
 
 /// Phase of the drive scan pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +55,48 @@ pub struct DirInfo {
     pub file_count: u64,
     pub dir_count: u64,
     pub risk_level: Option<String>,
+}
+
+/// Individual file candidate returned by the large file finder.
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub size_bytes: u64,
+    pub modified_epoch_ms: u64,
+}
+
+impl Ord for FileEntry {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        (
+            self.size_bytes,
+            self.modified_epoch_ms,
+            &self.path,
+            &self.name,
+        )
+            .cmp(&(
+                other.size_bytes,
+                other.modified_epoch_ms,
+                &other.path,
+                &other.name,
+            ))
+    }
+}
+
+impl PartialOrd for FileEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Progress snapshot emitted by the large file finder.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LargeFileProgress {
+    pub drive_letter: String,
+    pub dirs_processed: usize,
+    pub dirs_total: usize,
+    pub files_found: usize,
+    pub current_path: Option<String>,
 }
 
 /// Scan a drive and return its overview information (used in tests).
@@ -248,6 +293,204 @@ fn is_protected_root_dir(name: &str) -> bool {
     matches!(name, "System Volume Information" | "$Recycle.Bin")
 }
 
+/// Scan a drive for the largest individual files above a minimum size.
+pub fn find_large_files_with_progress_and_cancel<F>(
+    drive_letter: &str,
+    min_size: u64,
+    limit: usize,
+    on_progress: F,
+    cancel: Option<&AtomicBool>,
+) -> Result<Vec<FileEntry>, String>
+where
+    F: Fn(LargeFileProgress),
+{
+    let drive_path = format!("{}:\\", drive_letter.to_uppercase());
+    let path = Path::new(&drive_path);
+
+    if !path.exists() {
+        return Err(format!("Drive {} does not exist", drive_letter));
+    }
+
+    find_large_files_under_root(path, drive_letter, min_size, limit, on_progress, cancel)
+}
+
+fn find_large_files_under_root<F>(
+    root: &Path,
+    drive_letter: &str,
+    min_size: u64,
+    limit: usize,
+    on_progress: F,
+    cancel: Option<&AtomicBool>,
+) -> Result<Vec<FileEntry>, String>
+where
+    F: Fn(LargeFileProgress),
+{
+    if limit == 0 {
+        return Ok(Vec::new());
+    }
+    if !root.exists() {
+        return Err(format!("Directory does not exist: {}", root.display()));
+    }
+    if !root.is_dir() {
+        return Err(format!("Not a directory: {}", root.display()));
+    }
+
+    let mut top_dirs = Vec::new();
+    let mut root_files = Vec::new();
+    for entry in std::fs::read_dir(root).map_err(|e| format!("Cannot read root: {}", e))? {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let file_type = entry.file_type().ok();
+        let is_symlink = file_type
+            .as_ref()
+            .map(|ft| ft.is_symlink())
+            .unwrap_or(false);
+        if is_symlink {
+            continue;
+        }
+
+        let path = entry.path();
+        if file_type.as_ref().map(|ft| ft.is_dir()).unwrap_or(false) {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !is_protected_root_dir(&name) {
+                top_dirs.push(path);
+            }
+        } else if file_type.as_ref().map(|ft| ft.is_file()).unwrap_or(false) {
+            root_files.push(path);
+        }
+    }
+
+    let drive_letter = drive_letter.to_uppercase();
+    let dirs_total = top_dirs.len();
+    let mut dirs_processed = 0usize;
+    let mut heap: BinaryHeap<Reverse<FileEntry>> = BinaryHeap::new();
+
+    emit_large_file_progress(
+        &on_progress,
+        &drive_letter,
+        dirs_processed,
+        dirs_total,
+        heap.len(),
+        Some(root),
+    );
+    if is_cancelled(cancel) {
+        return Err("Large file scan cancelled".to_string());
+    }
+
+    for file_path in root_files {
+        if is_cancelled(cancel) {
+            return Err("Large file scan cancelled".to_string());
+        }
+        push_file_candidate(&mut heap, &file_path, min_size, limit);
+    }
+
+    emit_large_file_progress(
+        &on_progress,
+        &drive_letter,
+        dirs_processed,
+        dirs_total,
+        heap.len(),
+        Some(root),
+    );
+    if is_cancelled(cancel) {
+        return Err("Large file scan cancelled".to_string());
+    }
+
+    for top_dir in top_dirs {
+        if is_cancelled(cancel) {
+            return Err("Large file scan cancelled".to_string());
+        }
+
+        for entry in walkdir::WalkDir::new(&top_dir).follow_links(false) {
+            if is_cancelled(cancel) {
+                return Err("Large file scan cancelled".to_string());
+            }
+
+            let Ok(entry) = entry else {
+                continue;
+            };
+            if entry.file_type().is_file() {
+                push_file_candidate(&mut heap, entry.path(), min_size, limit);
+            }
+        }
+
+        dirs_processed += 1;
+        emit_large_file_progress(
+            &on_progress,
+            &drive_letter,
+            dirs_processed,
+            dirs_total,
+            heap.len(),
+            Some(&top_dir),
+        );
+        if is_cancelled(cancel) {
+            return Err("Large file scan cancelled".to_string());
+        }
+    }
+
+    let mut files: Vec<FileEntry> = heap.into_iter().map(|Reverse(entry)| entry).collect();
+    files.sort_by(|a, b| b.cmp(a));
+    Ok(files)
+}
+
+fn push_file_candidate(
+    heap: &mut BinaryHeap<Reverse<FileEntry>>,
+    path: &Path,
+    min_size: u64,
+    limit: usize,
+) {
+    let Ok(metadata) = path.metadata() else {
+        return;
+    };
+    if !metadata.is_file() || metadata.len() < min_size {
+        return;
+    }
+
+    let entry = FileEntry {
+        name: path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        path: path.to_string_lossy().to_string(),
+        size_bytes: metadata.len(),
+        modified_epoch_ms: modified_epoch_ms(&metadata),
+    };
+
+    heap.push(Reverse(entry));
+    if heap.len() > limit {
+        let _ = heap.pop();
+    }
+}
+
+fn modified_epoch_ms(metadata: &std::fs::Metadata) -> u64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn emit_large_file_progress<F>(
+    on_progress: &F,
+    drive_letter: &str,
+    dirs_processed: usize,
+    dirs_total: usize,
+    files_found: usize,
+    current_path: Option<&Path>,
+) where
+    F: Fn(LargeFileProgress),
+{
+    on_progress(LargeFileProgress {
+        drive_letter: drive_letter.to_string(),
+        dirs_processed,
+        dirs_total,
+        files_found,
+        current_path: current_path.map(|path| path.to_string_lossy().to_string()),
+    });
+}
+
 /// Re-scan one cached top-level directory without walking the whole drive.
 pub fn scan_top_level_dir(path: &str, cancel: Option<&AtomicBool>) -> Result<DirInfo, String> {
     let path = Path::new(path);
@@ -413,6 +656,82 @@ mod tests {
         assert_eq!(info.size_bytes, 8);
         assert_eq!(info.file_count, 2);
         assert_eq!(info.dir_count, 1);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn write_sized_file(path: &Path, size: usize) {
+        std::fs::write(path, vec![b'x'; size]).expect("write sized test file");
+    }
+
+    #[test]
+    fn find_large_files_returns_top_n_descending() {
+        let root =
+            std::env::temp_dir().join(format!("diskpulse-large-files-top-{}", std::process::id()));
+        let nested = root.join("nested");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&nested).expect("create test dir");
+        write_sized_file(&root.join("small.bin"), 10);
+        write_sized_file(&nested.join("medium.bin"), 20);
+        write_sized_file(&nested.join("large.bin"), 30);
+
+        let files =
+            find_large_files_under_root(&root, "T", 1, 2, |_| {}, None).expect("find large files");
+
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].name, "large.bin");
+        assert_eq!(files[0].size_bytes, 30);
+        assert_eq!(files[1].name, "medium.bin");
+        assert_eq!(files[1].size_bytes, 20);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn find_large_files_filters_by_min_size() {
+        let root =
+            std::env::temp_dir().join(format!("diskpulse-large-files-min-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create test dir");
+        write_sized_file(&root.join("below.bin"), 9);
+        write_sized_file(&root.join("at.bin"), 10);
+
+        let files = find_large_files_under_root(&root, "T", 10, 10, |_| {}, None)
+            .expect("find large files");
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].name, "at.bin");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn find_large_files_can_cancel_from_progress_callback() {
+        let root = std::env::temp_dir().join(format!(
+            "diskpulse-large-files-cancel-{}",
+            std::process::id()
+        ));
+        let nested = root.join("nested");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&nested).expect("create test dir");
+        write_sized_file(&root.join("a.bin"), 10);
+        write_sized_file(&nested.join("b.bin"), 20);
+
+        let cancel = AtomicBool::new(false);
+        let result = find_large_files_under_root(
+            &root,
+            "T",
+            1,
+            10,
+            |progress| {
+                if progress.files_found > 0 {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            },
+            Some(&cancel),
+        );
+
+        assert_eq!(result, Err("Large file scan cancelled".to_string()));
 
         let _ = std::fs::remove_dir_all(&root);
     }

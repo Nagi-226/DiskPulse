@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useMemo, useState } from "react";
-import type { CleanItem, CleanPreview, CleanResult, RiskItem } from "../types";
+import { useEffect, useMemo, useState } from "react";
+import type { CleanItem, CleanPreview, CleanResult, RestoreResult, RiskItem } from "../types";
 import { formatSize } from "../utils/format";
 
 function toCleanItems(items: RiskItem[]): CleanItem[] {
@@ -13,13 +13,27 @@ function toCleanItems(items: RiskItem[]): CleanItem[] {
   }));
 }
 
-export default function CleanupPreview({ items }: { items: RiskItem[] }) {
+export default function CleanupPreview({
+  items,
+  additionalItems = [],
+}: {
+  items: RiskItem[];
+  additionalItems?: CleanItem[];
+}) {
   const [preview, setPreview] = useState<CleanPreview | null>(null);
   const [result, setResult] = useState<CleanResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const cleanItems = useMemo(() => toCleanItems(items), [items]);
+  const cleanItems = useMemo(
+    () => [...toCleanItems(items), ...additionalItems],
+    [additionalItems, items]
+  );
+
+  useEffect(() => {
+    setPreview(null);
+    setResult(null);
+  }, [cleanItems]);
 
   async function handlePreview() {
     setLoading(true);
@@ -81,7 +95,7 @@ export default function CleanupPreview({ items }: { items: RiskItem[] }) {
     setLoading(true);
     setError(null);
     try {
-      const restoreResult = await invoke<{ restored: number; failed: number }>("undo_cleanup", {
+      const restoreResult = await invoke<RestoreResult>("undo_cleanup", {
         originalPaths: paths,
       });
       setResult(null);
@@ -103,7 +117,10 @@ export default function CleanupPreview({ items }: { items: RiskItem[] }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">Safe Cleanup Preview</h3>
-          <p className="text-xs text-text-muted mt-1">Whitelist validation only, no deletion is performed here.</p>
+          <p className="text-xs text-text-muted mt-1">
+            Whitelist validation only, no deletion is performed here.
+            {additionalItems.length > 0 && ` Includes ${additionalItems.length} selected large file candidate(s).`}
+          </p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button className="btn-primary" onClick={handlePreview} disabled={loading || cleanItems.length === 0}>

@@ -2,6 +2,80 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [0.3.0] — 2026-05-31
+
+### Production Release
+
+- Bumped app/package versions to 0.3.0 across npm, Cargo, Cargo.lock, and Tauri config.
+- Polished auto-cleanup settings integration so scheduler changes are applied immediately after saving, without requiring app restart.
+- Added scheduler cancellation/re-apply path to prevent stale auto-cleanup threads after settings changes.
+- Verified release smoke: cargo check, cargo test (56/56), cargo clippy, npm typecheck, web build, release exe launch, and Tauri bundle build.
+- Generated release artifacts: `DiskPulse_0.3.0_x64_en-US.msi` and `DiskPulse_0.3.0_x64-setup.exe`.
+
+**Artifacts:**
+- MSI SHA256: `48F124C83A1FCCCE9C175B6A5778FBCCB1E3433CABCD917134035C85F53208E4`
+- NSIS SHA256: `55589EED8D6BAABE393AB29AED081FB185CC07D7E4A46EA02F9826E65DCED094`
+
+## [0.2.9] — 2026-05-31
+
+### Auto-Cleanup — Frontend
+
+- Added Automation settings tab with enable toggle, frequency, run time, minimum-free-space threshold, LOW-only safety copy, Save Automation, and Run Now actions.
+- Added `AutoCleanupStatus` dashboard card backed by `get_auto_cleanup_status`, `run_auto_cleanup_now`, and auto-cleanup scheduler events.
+- Added dashboard toast handling for `auto-cleanup-complete` and `auto-cleanup-scheduled` events.
+- Added auto-cleanup report timeline to History via `get_auto_cleanup_history`.
+- Kept the frontend aligned with the backend safety invariant: automatic cleanup is locked to LOW-risk, whitelisted candidates and still uses Recycle Bin cleanup.
+- Verified `cargo check`, `cargo test` (56/56), `cargo clippy -- -D warnings`, `npm run typecheck`, and `npm run build:web` (chunk-size warning only).
+
+**Next:**
+- [0.3.0] — Production release: integration polish, build verified, MSI + NSIS
+
+## [0.2.8] — 2026-05-31
+
+### Auto-Cleanup — Backend
+
+- Added `scheduler` Rust module with schedule calculation, status model, run-now orchestration, and scheduler thread startup.
+- Added `auto_cleanup_reports` SQLite table plus save/query CRUD.
+- Added 5 persisted `AppSettings` fields for auto-cleanup configuration.
+- Added `run_auto_cleanup_now`, `get_auto_cleanup_status`, and `get_auto_cleanup_history` Tauri commands.
+- Added `auto-cleanup-complete` and `auto-cleanup-scheduled` event emission.
+- Enforced safety invariant: automatic cleanup only includes LOW-risk safe candidates and still uses the existing Recycle Bin cleanup pipeline.
+- Added 5 tests covering schedule calculation, LOW-risk filtering, DB report CRUD, and settings round-trip/defaults.
+
+**Next:**
+- [0.2.9] — Auto-Cleanup: Frontend UI (settings tab, status card, history)
+- [0.3.0] — Production release: integration polish, build verified, MSI + NSIS
+
+## [0.2.7] — 2026-05-31
+
+### Large File Finder — Frontend
+
+- Added `useLargeFileFinder` hook for `find_large_files`, `large-file-progress`, and cancellation lifecycle.
+- Added `LargeFileFinder` UI with drive selector, minimum-size filter, result limit, scan progress, and sortable table.
+- Added "Large Files" sidebar navigation entry.
+- Added selected-file handoff into `CleanupPreview` via `additionalItems`, keeping the existing whitelist safety pipeline.
+- Verified manual C: scan for files over 500MB: 6 files found in 76 seconds.
+
+**Next:**
+- [0.2.9] — Auto-Cleanup: Frontend UI (settings tab, status card, history)
+- [0.3.0] — Production release: integration polish, build verified, MSI + NSIS
+
+## [0.2.6] — 2026-05-31
+
+### Large File Finder — Backend
+
+- Added `FileEntry` and `LargeFileProgress` shared backend models.
+- Added large-file scanner using `walkdir` plus a bounded `BinaryHeap<Reverse<FileEntry>>` top-N selection.
+- Added `large-file-progress` IPC event emission during scans.
+- Added `find_large_files` and `cancel_large_file_scan` Tauri commands.
+- Added frontend TypeScript types for the upcoming v0.2.7 UI hook/component.
+- Added 3 scanner tests covering top-N ordering, min-size filtering, and cancellation.
+
+**Next:**
+- [0.2.8] — Auto-Cleanup: Backend scheduler (scheduler module, DB table, commands, tests)
+- [0.2.9] — Auto-Cleanup: Frontend UI (settings tab, status card, history)
+- [0.3.0] — Production release: integration polish, build verified, MSI + NSIS
+
 ## [0.2.5] — 2026-05-07
 
 ### Intelligent Insights — Alerts & Prediction
@@ -25,8 +99,6 @@ All notable changes to DiskPulse will be documented in this file.
 - 3 unit tests for date parsing, growth projection, and insufficient-history behavior
 
 **Upcoming:**
-- [0.2.6] — Large File Finder: Rust backend (scanner, types, commands, tests)
-- [0.2.7] — Large File Finder: Frontend UI (table, hook, cleanup integration)
 - [0.2.8] — Auto-Cleanup: Backend scheduler (scheduler module, DB table, commands, tests)
 - [0.2.9] — Auto-Cleanup: Frontend UI (settings tab, status card, history)
 - [0.3.0] — Production release: integration polish, build verified, MSI + NSIS

@@ -35,6 +35,34 @@ pub struct CleanupLog {
     pub created_at: String,
 }
 
+/// Stored scheduled/manual auto-cleanup execution report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoCleanupReport {
+    pub id: i64,
+    pub drive_letter: String,
+    pub freed_bytes: u64,
+    pub succeeded: usize,
+    pub skipped: usize,
+    pub failed: usize,
+    pub status: String,
+    pub message: String,
+    pub items_json: String,
+    pub created_at: String,
+}
+
+/// Input used to persist an auto-cleanup report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoCleanupReportInput {
+    pub drive_letter: String,
+    pub freed_bytes: u64,
+    pub succeeded: usize,
+    pub skipped: usize,
+    pub failed: usize,
+    pub status: String,
+    pub message: String,
+    pub items_json: String,
+}
+
 /// Application settings persisted across sessions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -49,6 +77,11 @@ pub struct AppSettings {
     pub alert_growth_enabled: bool,
     pub alert_growth_percent: f64,
     pub alert_growth_minutes: u64,
+    pub auto_cleanup_enabled: bool,
+    pub auto_cleanup_frequency: String,
+    pub auto_cleanup_time: String,
+    pub auto_cleanup_risk_levels: String,
+    pub auto_cleanup_min_free_gb: f64,
 }
 
 impl Default for AppSettings {
@@ -65,6 +98,11 @@ impl Default for AppSettings {
             alert_growth_enabled: false,
             alert_growth_percent: 5.0,
             alert_growth_minutes: 15,
+            auto_cleanup_enabled: false,
+            auto_cleanup_frequency: "weekly".into(),
+            auto_cleanup_time: "03:00".into(),
+            auto_cleanup_risk_levels: "low".into(),
+            auto_cleanup_min_free_gb: 50.0,
         }
     }
 }
@@ -120,8 +158,22 @@ fn ensure_tables_with(conn: &rusqlite::Connection) -> Result<(), String> {
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
+        CREATE TABLE IF NOT EXISTS auto_cleanup_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            drive_letter TEXT NOT NULL,
+            freed_bytes INTEGER NOT NULL,
+            succeeded INTEGER NOT NULL,
+            skipped INTEGER NOT NULL,
+            failed INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            message TEXT NOT NULL,
+            items_json TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
         CREATE INDEX IF NOT EXISTS idx_snapshots_drive ON snapshots(drive_letter, created_at);
         CREATE INDEX IF NOT EXISTS idx_cleanup_logs_time ON cleanup_logs(created_at);
+        CREATE INDEX IF NOT EXISTS idx_auto_cleanup_reports_time ON auto_cleanup_reports(created_at);
 
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -274,6 +326,62 @@ fn get_cleanup_history_with(conn: &rusqlite::Connection) -> Result<Vec<CleanupLo
         .map_err(|e| format!("Row error: {}", e))
 }
 
+fn save_auto_cleanup_report_with(
+    conn: &rusqlite::Connection,
+    report: &AutoCleanupReportInput,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO auto_cleanup_reports
+            (drive_letter, freed_bytes, succeeded, skipped, failed, status, message, items_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![
+            report.drive_letter.to_uppercase(),
+            report.freed_bytes as i64,
+            report.succeeded as i64,
+            report.skipped as i64,
+            report.failed as i64,
+            report.status,
+            report.message,
+            report.items_json,
+        ],
+    )
+    .map_err(|e| format!("Insert auto-cleanup report error: {}", e))?;
+    Ok(())
+}
+
+fn get_auto_cleanup_history_with(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<AutoCleanupReport>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, drive_letter, freed_bytes, succeeded, skipped, failed,
+                    status, message, items_json, created_at
+             FROM auto_cleanup_reports
+             ORDER BY created_at DESC",
+        )
+        .map_err(|e| format!("Query error: {}", e))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(AutoCleanupReport {
+                id: row.get(0)?,
+                drive_letter: row.get(1)?,
+                freed_bytes: row.get::<_, i64>(2)? as u64,
+                succeeded: row.get::<_, i64>(3)? as usize,
+                skipped: row.get::<_, i64>(4)? as usize,
+                failed: row.get::<_, i64>(5)? as usize,
+                status: row.get(6)?,
+                message: row.get(7)?,
+                items_json: row.get(8)?,
+                created_at: row.get(9)?,
+            })
+        })
+        .map_err(|e| format!("Query error: {}", e))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Row error: {}", e))
+}
+
 fn get_settings_with(conn: &rusqlite::Connection) -> Result<AppSettings, String> {
     let mut settings = AppSettings::default();
     let mut stmt = conn
@@ -316,6 +424,15 @@ fn get_settings_with(conn: &rusqlite::Connection) -> Result<AppSettings, String>
             "alert_growth_minutes" => {
                 if let Ok(v) = value.parse() {
                     settings.alert_growth_minutes = v;
+                }
+            }
+            "auto_cleanup_enabled" => settings.auto_cleanup_enabled = value == "true",
+            "auto_cleanup_frequency" => settings.auto_cleanup_frequency = value,
+            "auto_cleanup_time" => settings.auto_cleanup_time = value,
+            "auto_cleanup_risk_levels" => settings.auto_cleanup_risk_levels = value,
+            "auto_cleanup_min_free_gb" => {
+                if let Ok(v) = value.parse() {
+                    settings.auto_cleanup_min_free_gb = v;
                 }
             }
             _ => {}
@@ -363,6 +480,23 @@ fn save_settings_with(conn: &rusqlite::Connection, settings: &AppSettings) -> Re
         (
             "alert_growth_minutes",
             settings.alert_growth_minutes.to_string(),
+        ),
+        (
+            "auto_cleanup_enabled",
+            settings.auto_cleanup_enabled.to_string(),
+        ),
+        (
+            "auto_cleanup_frequency",
+            settings.auto_cleanup_frequency.clone(),
+        ),
+        ("auto_cleanup_time", settings.auto_cleanup_time.clone()),
+        (
+            "auto_cleanup_risk_levels",
+            settings.auto_cleanup_risk_levels.clone(),
+        ),
+        (
+            "auto_cleanup_min_free_gb",
+            settings.auto_cleanup_min_free_gb.to_string(),
         ),
     ];
     for (key, value) in &pairs {
@@ -439,6 +573,16 @@ pub fn get_latest_snapshot_for_drive(drive: &str) -> Result<Option<CachedSnapsho
 pub fn get_cleanup_history() -> Result<Vec<CleanupLog>, String> {
     let conn = open_connection()?;
     get_cleanup_history_with(&conn)
+}
+
+pub fn save_auto_cleanup_report(report: &AutoCleanupReportInput) -> Result<(), String> {
+    let conn = open_connection()?;
+    save_auto_cleanup_report_with(&conn, report)
+}
+
+pub fn get_auto_cleanup_history() -> Result<Vec<AutoCleanupReport>, String> {
+    let conn = open_connection()?;
+    get_auto_cleanup_history_with(&conn)
 }
 
 pub fn get_settings() -> Result<AppSettings, String> {
@@ -598,6 +742,11 @@ mod tests {
             alert_growth_enabled: true,
             alert_growth_percent: 10.0,
             alert_growth_minutes: 30,
+            auto_cleanup_enabled: true,
+            auto_cleanup_frequency: "daily".into(),
+            auto_cleanup_time: "04:30".into(),
+            auto_cleanup_risk_levels: "low".into(),
+            auto_cleanup_min_free_gb: 25.0,
         };
         save_settings_with(&conn, &settings).unwrap();
         let loaded = get_settings_with(&conn).unwrap();
@@ -612,6 +761,11 @@ mod tests {
         assert!(loaded.alert_growth_enabled);
         assert_eq!(loaded.alert_growth_percent, 10.0);
         assert_eq!(loaded.alert_growth_minutes, 30);
+        assert!(loaded.auto_cleanup_enabled);
+        assert_eq!(loaded.auto_cleanup_frequency, "daily");
+        assert_eq!(loaded.auto_cleanup_time, "04:30");
+        assert_eq!(loaded.auto_cleanup_risk_levels, "low");
+        assert_eq!(loaded.auto_cleanup_min_free_gb, 25.0);
     }
 
     #[test]
@@ -621,6 +775,34 @@ mod tests {
         assert_eq!(settings.default_drive, "C");
         assert!(!settings.auto_scan_on_startup);
         assert_eq!(settings.watcher_poll_interval_ms, 2000);
+        assert!(!settings.auto_cleanup_enabled);
+        assert_eq!(settings.auto_cleanup_frequency, "weekly");
+        assert_eq!(settings.auto_cleanup_time, "03:00");
+        assert_eq!(settings.auto_cleanup_risk_levels, "low");
+        assert_eq!(settings.auto_cleanup_min_free_gb, 50.0);
+    }
+
+    #[test]
+    fn save_and_query_auto_cleanup_report() {
+        let conn = setup_test_conn();
+        let report = AutoCleanupReportInput {
+            drive_letter: "C".into(),
+            freed_bytes: 1234,
+            succeeded: 2,
+            skipped: 1,
+            failed: 0,
+            status: "completed".into(),
+            message: "cleaned low-risk items".into(),
+            items_json: "[]".into(),
+        };
+
+        save_auto_cleanup_report_with(&conn, &report).unwrap();
+        let reports = get_auto_cleanup_history_with(&conn).unwrap();
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].drive_letter, "C");
+        assert_eq!(reports[0].freed_bytes, 1234);
+        assert_eq!(reports[0].status, "completed");
     }
 
     #[test]

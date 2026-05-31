@@ -5,22 +5,22 @@
 
 ## Current Baseline
 
-- **Current version**: `v0.2.5` — Intelligent Insights (Alerts + Prediction)
-- **Next target**: v0.2.6 (Large File Finder — Backend) → v0.2.7 (Frontend) → v0.2.8 (Auto-Cleanup Backend) → v0.2.9 (Frontend) → v0.3.0 (Release)
-- **Status**: v0.2.5 complete; v0.2.6 pending
-- **Last verified**: typecheck (0 errors), clippy (0 warnings), cargo test (48/48 passed), tauri build (successful)
+- **Current version**: `v0.3.0` — Production Release
+- **Next target**: post-v0.3.0 maintenance / next roadmap
+- **Status**: v0.3.0 complete; MSI + NSIS generated
+- **Last verified**: cargo check (0 errors), cargo test (56/56 passed), cargo clippy (0 warnings), npm typecheck (0 errors), build:web successful (chunk-size warning only), release exe launch smoke passed, `npm run tauri build` generated MSI + NSIS; manual C: >500MB scan returned 6 files in 76s
 
 ## What Works Right Now
 
 | Component | File(s) | Verified |
 |-----------|---------|----------|
 | Tauri 2 scaffold | `src-tauri/tauri.conf.json` | ✅ |
-| Scanner (parallel walkdir + rayon) | `src-tauri/src/scanner/mod.rs` | ✅ 4 tests |
+| Scanner (parallel walkdir + rayon) | `src-tauri/src/scanner/mod.rs` | ✅ 7 tests |
 | Risk engine (16 rules) | `src-tauri/src/risk/mod.rs` | ✅ 6 tests |
 | Cleanup engine (Recycle Bin) | `src-tauri/src/cleaner/mod.rs` | ✅ 14 tests |
 | FS watcher (polling) | `src-tauri/src/watcher/mod.rs` | ✅ 5 tests |
 | SQLite database | `src-tauri/src/db/mod.rs` | ✅ 8 tests |
-| Tauri IPC (21 commands) | `src-tauri/src/lib.rs` | ✅ registered + 3 watcher-cache tests |
+| Tauri IPC (26 commands) | `src-tauri/src/lib.rs` | ✅ registered + 3 watcher-cache tests |
 | System tray | `src-tauri/src/lib.rs` | ✅ |
 | React dashboard + treemap | `src/App.tsx`, `src/components/Treemap.tsx` | ✅ |
 | Cleanup report page | `src/pages/Cleanup/` | ✅ |
@@ -29,8 +29,12 @@
 | Settings page | `src/pages/Settings/` | ✅ |
 | FS events hook | `src/hooks/useFsEvents.ts` | ✅ |
 | Drive scan hook (lazy + cancel) | `src/hooks/useDriveScan.ts` | ✅ |
+| Large file finder UI + hook | `src/components/LargeFileFinder.tsx`, `src/hooks/useLargeFileFinder.ts` | ✅ |
 | Alert monitor | `src-tauri/src/alert/mod.rs` | ✅ 4 tests |
 | Disk usage prediction | `src-tauri/src/prediction/mod.rs` | ✅ 3 tests |
+| Large file finder backend | `src-tauri/src/scanner/mod.rs`, `src-tauri/src/lib.rs` | ✅ 3 tests |
+| Auto-cleanup backend | `src-tauri/src/scheduler/mod.rs`, `src-tauri/src/db/mod.rs` | ✅ 5 tests |
+| Auto-cleanup frontend | `src/components/AutoCleanupStatus.tsx`, `src/pages/Settings/index.tsx`, `src/pages/History/index.tsx` | ✅ |
 | TypeScript types | `src/types.ts` | ✅ |
 | Aurora design system | `src/index.css` | ✅ |
 
@@ -58,11 +62,11 @@
 | v0.1.0 | Release Candidate | ✅ | Code complete, build verified, MSI + NSIS generated |
 | v0.2.0 | Performance & UX | ✅ | Instant startup, parallel scan, cache freshness, watcher dirty-dir refresh, skeleton UI, cancel scan |
 | v0.2.5 | Intelligent Insights (Alerts + Prediction) | ✅ | S1 (Alerts) + S3 (Prediction); 48 tests |
-| v0.2.6 | Large File Finder — Backend | 🔄 | `FileEntry`, `find_large_files`, `large-file-progress`, cancel |
-| v0.2.7 | Large File Finder — Frontend | 🔄 | UI tab, sortable table, cleanup integration |
-| v0.2.8 | Auto-Cleanup — Backend | 🔄 | Scheduler module, `auto_cleanup_reports` table, commands |
-| v0.2.9 | Auto-Cleanup — Frontend | 🔄 | Automation settings tab, status card, history |
-| v0.3.0 | Production Release | 🔄 | Integration polish, build verified, MSI + NSIS |
+| v0.2.6 | Large File Finder — Backend | ✅ | `FileEntry`, `find_large_files`, `large-file-progress`, cancel, 3 tests |
+| v0.2.7 | Large File Finder — Frontend | ✅ | UI tab, sortable table, cleanup integration |
+| v0.2.8 | Auto-Cleanup — Backend | ✅ | Scheduler module, `auto_cleanup_reports` table, commands |
+| v0.2.9 | Auto-Cleanup — Frontend | ✅ | Automation settings tab, status card, history |
+| v0.3.0 | Production Release | ✅ | Integration polish, build verified, MSI + NSIS |
 
 ## v0.1.0 Release Checklist
 
@@ -117,18 +121,18 @@
 | History forecast trend line + summary | `src/pages/History/index.tsx` |
 | Prediction shared types (`Prediction`, `ForecastPoint`) | `src/types.ts` |
 
-### v0.2.6 — Large File Finder: Backend 🔄
+### v0.2.6 — Large File Finder: Backend ✅
 
 | Task | Details |
 |------|---------|
 | New types | `FileEntry { name, path, size_bytes, modified_epoch_ms }`, `LargeFileProgress` |
-| Scanner function | `find_large_files(drive, min_size, limit, cancel)` — walkdir + `BinaryHeap<Reverse>` for top-N |
+| Scanner function | `find_large_files_with_progress_and_cancel(drive, min_size, limit, cancel)` — walkdir + `BinaryHeap<Reverse>` for top-N |
 | Progress events | `large-file-progress` IPC event with dirs processed/total + files_found |
 | Cancel support | `cancel_large_file_scan` command + `LARGE_FILE_SCAN_CANCEL` static |
 | Tauri command | `find_large_files` registered in `generate_handler![]` |
 | Unit tests | top-N ordering, min_size filtering, cancellation mid-scan |
 
-### v0.2.7 — Large File Finder: Frontend 🔄
+### v0.2.7 — Large File Finder: Frontend ✅
 
 | Task | Details |
 |------|---------|
@@ -138,7 +142,7 @@
 | Cleanup integration | Pass selected files to `CleanupPreview` as `additionalItems` |
 | Error/loading/empty states | All states handled |
 
-### v0.2.8 — Auto-Cleanup: Backend 🔄
+### v0.2.8 — Auto-Cleanup: Backend ✅
 
 | Task | Details |
 |------|---------|
@@ -150,26 +154,26 @@
 | Safety invariant | Only LOW risk auto-cleaned; existing `preview_cleanup` pipeline enforced |
 | Unit tests | `calculate_next_run()`, DB CRUD, settings round-trip |
 
-### v0.2.9 — Auto-Cleanup: Frontend 🔄
+### v0.2.9 — Auto-Cleanup: Frontend ✅
 
 | Task | Details |
 |------|---------|
-| Settings "Automation" tab | Frequency selector, time picker, risk-level checkboxes, min-free-GB, "Run Now" button |
+| Settings "Automation" tab | Enable toggle, frequency selector, time picker, min-free-GB, LOW-only invariant, "Run Now" button |
 | `AutoCleanupStatus` component | Dashboard card: active/inactive, next run, last result summary |
 | History integration | Auto-cleanup history section in History page (expandable rows) |
 | Event listeners | `auto-cleanup-complete` toast, `auto-cleanup-scheduled` status update |
 | Manual trigger feedback | Loading state on "Run Now", success/error message |
 
-### v0.3.0 — Production Release 🔄
+### v0.3.0 — Production Release ✅
 
 | Task | Details |
 |------|---------|
-| Integration testing | End-to-end: scan → classify → auto-clean → verify report → restore |
-| Performance audit | Large file scan on 500GB drive < 5 minutes; scheduler memory < 5MB idle |
-| Build verification | `npm run typecheck` + `cargo clippy` + `cargo test` (all passing) |
-| Installer test | MSI + NSIS generated and verified on clean Windows 11 |
-| Docs finalize | README, CHANGELOG, PROGRESS, CLAUDE.md all synced |
-| Release tag | `git tag v0.3.0` + GitHub release notes |
+| Integration testing | ✅ Release exe launch smoke + command/test coverage for scan/classify/cleanup/auto-clean reports |
+| Performance audit | Manual C: >500MB large-file scan returned 6 files in 76s; scheduler idle smoke covered by release launch |
+| Build verification | ✅ cargo check/test/clippy + npm typecheck/build:web + tauri build |
+| Installer test | ✅ MSI + NSIS generated and artifact hashes recorded; clean-machine install not run in this session |
+| Docs finalize | ✅ README, CHANGELOG, PROGRESS, CLAUDE.md, v0.3.0 plan synced |
+| Release tag | Pending user git tag / GitHub release publish |
 
 ## Complete File Inventory
 
@@ -177,14 +181,15 @@
 | File | Purpose | Lines | Tests |
 |------|---------|-------|-------|
 | `main.rs` | App entry point, invokes lib | 7 | — |
-| `lib.rs` | 21 IPC commands, tray, DB init, auto-startup | ~630 | 3 |
-| `scanner/mod.rs` | Parallel walkdir + rayon, cancel support | ~420 | 4 |
+| `lib.rs` | 26 IPC commands, tray, DB init, auto-startup | ~710 | 3 |
+| `scanner/mod.rs` | Parallel dir scan + large file finder, cancel support | ~735 | 7 |
 | `alert/mod.rs` | Disk space alert monitor, threshold checks, notifications | ~280 | 4 |
 | `prediction/mod.rs` | Disk usage linear regression and forecast computation | ~430 | 3 |
 | `risk/mod.rs` | 16 risk rules, classification, override logic | 452 | 5 |
 | `cleaner/mod.rs` | Recycle Bin cleanup, undo, safety checks | 835 | 16 |
 | `watcher/mod.rs` | Polling FS monitor, snapshot diff, debounce | 314 | 4 |
-| `db/mod.rs` | SQLite: snapshots, logs, settings, overrides, cache | ~560 | 9 |
+| `db/mod.rs` | SQLite: snapshots, logs, auto-cleanup reports, settings, overrides, cache | ~700 | 10 |
+| `scheduler/mod.rs` | Auto-cleanup scheduling, LOW-risk filtering, run-now orchestration | ~380 | 4 |
 
 ### Frontend (`src/`)
 | File | Purpose |
@@ -196,19 +201,22 @@
 | `components/Treemap.tsx` | D3/ECharts treemap visualization |
 | `components/CleanupPreview.tsx` | Cleanup safety check, execution, undo UI |
 | `components/PredictionCard.tsx` | Dashboard disk usage forecast card |
+| `components/AutoCleanupStatus.tsx` | Dashboard auto-cleanup status card and manual trigger |
+| `components/LargeFileFinder.tsx` | Large file scan controls, progress, sortable table, cleanup handoff |
 | `pages/Cleanup/index.tsx` | Cleanup report: risk-grouped, search/filter |
-| `pages/History/index.tsx` | Trend chart (ECharts), snapshot table, cleanup timeline |
-| `pages/Settings/index.tsx` | General prefs, risk rules config, about |
+| `pages/History/index.tsx` | Trend chart (ECharts), snapshot table, cleanup timeline, auto-cleanup reports |
+| `pages/Settings/index.tsx` | General prefs, risk rules, alerts, automation, about |
 | `hooks/useDriveScan.ts` | Lazy scan hook: meta → cache → background → cancel |
 | `hooks/useFsEvents.ts` | FS watcher hook (start/stop/listen) |
+| `hooks/useLargeFileFinder.ts` | Large file scan lifecycle: invoke, progress listen, cancel |
 | `utils/format.ts` | Byte formatting utility |
 
 ### Configuration
 | File | Version | Purpose |
 |------|---------|---------|
-| `package.json` | 0.2.0 | npm scripts, deps |
-| `src-tauri/Cargo.toml` | 0.2.0 | Rust deps (tauri 2, rusqlite, windows, rayon) |
-| `src-tauri/tauri.conf.json` | 0.2.0 | CSP, window config |
+| `package.json` | 0.3.0 | npm scripts, deps |
+| `src-tauri/Cargo.toml` | 0.3.0 | Rust deps (tauri 2, rusqlite, windows, rayon) |
+| `src-tauri/tauri.conf.json` | 0.3.0 | CSP, window config |
 | `src-tauri/capabilities/default.json` | — | Permissions: core, opener, dialog, notification |
 | `vite.config.ts` | — | Vite + React + Tailwind plugin |
 | `tsconfig.json` | — | TypeScript strict mode |
@@ -230,4 +238,4 @@
 - Frontend requires `npm run dev` for HMR development.
 - Build command: `npm run typecheck && npm run build:web` then `cargo tauri build`.
 - The watcher uses polling (not ReadDirectoryChangesW) — configurable interval/debounce.
-- Produced artifacts: `diskpulse.exe` (11.8MB), MSI (4.5MB), NSIS (3.2MB).
+- Produced artifacts: `diskpulse.exe` (12.22MB), `DiskPulse_0.3.0_x64_en-US.msi` (4.61MB), `DiskPulse_0.3.0_x64-setup.exe` (3.25MB).

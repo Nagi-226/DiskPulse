@@ -110,6 +110,11 @@ npm run tauri build
 | v0.1.0 | 正式发布候选版 | ✅ |
 | v0.2.0 | 性能与用户体验优化 | ✅ |
 | v0.2.5 | 智能洞察 — 告警与预测 | ✅ |
+| v0.2.6 | 大文件查找器后端 | ✅ |
+| v0.2.7 | 大文件查找器前端 | ✅ |
+| v0.2.8 | 自动清理后端 | ✅ |
+| v0.2.9 | 自动清理前端 | ✅ |
+| v0.3.0 | 生产发布 | ✅ |
 
 ## ⌨️ IPC 命令
 
@@ -119,6 +124,8 @@ scan_drive(drive: String) -> DriveInfo
 scan_drive_meta(drive: String) -> DriveMeta
 scan_drive_dirs(drive: String) -> Vec<DirInfo>
 cancel_scan() -> ()
+find_large_files(drive: String, min_size: u64, limit: usize) -> Vec<FileEntry>
+cancel_large_file_scan() -> ()
 list_drives() -> Vec<String>
 scan_directory(path: String) -> Vec<DirInfo>
 
@@ -129,6 +136,9 @@ classify_risks(scan: DriveInfo) -> RiskReport
 preview_cleanup(items: Vec<CleanItem>) -> CleanPreview
 clean_items(items: Vec<CleanItem>) -> CleanResult
 undo_cleanup(original_paths: Vec<String>) -> RestoreResult
+run_auto_cleanup_now() -> CleanResult
+get_auto_cleanup_status() -> AutoCleanupStatus
+get_auto_cleanup_history() -> Vec<AutoCleanupReport>
 
 // 文件监控
 start_fs_watcher() -> String
