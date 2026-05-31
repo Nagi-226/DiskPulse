@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import * as echarts from "echarts";
 import { formatSize } from "../../utils/format";
-import type { Snapshot, CleanupLog, DirInfo, CleanItemResult } from "../../types";
+import type { Snapshot, CleanupLog, DirInfo, CleanItemResult, Prediction } from "../../types";
 
 const TIME_RANGES = [
   { label: "7d", value: 7 },
@@ -33,7 +33,7 @@ function formatDate(iso: string): string {
 
 // ─── Trend Chart Component ──────────────────────────────────
 
-function TrendChart({ snapshots }: { snapshots: Snapshot[] }) {
+function TrendChart({ snapshots, prediction }: { snapshots: Snapshot[]; prediction: Prediction | null }) {
   const chartRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<echarts.ECharts | null>(null);
 
@@ -53,6 +53,10 @@ function TrendChart({ snapshots }: { snapshots: Snapshot[] }) {
     const totalSeries = sorted.map((s) => toGb(s.total_bytes));
     const usedSeries = sorted.map((s) => toGb(s.used_bytes));
     const freeSeries = sorted.map((s) => toGb(s.free_bytes));
+    const forecastData =
+      prediction?.forecast
+        .filter((point) => point.is_forecast)
+        .map((point) => [point.created_at, toGb(point.used_bytes)]) ?? [];
 
     chart.setOption(
       {
@@ -133,6 +137,23 @@ function TrendChart({ snapshots }: { snapshots: Snapshot[] }) {
             smooth: true,
             data: timeData.map((t, i) => [t, freeSeries[i]]),
           },
+          ...(forecastData.length > 0
+            ? [
+                {
+                  name: "Forecast",
+                  type: "line",
+                  lineStyle: { width: 2, type: "dashed" },
+                  itemStyle: { color: "#38bdf8" },
+                  symbol: "diamond",
+                  symbolSize: 5,
+                  smooth: true,
+                  data: [
+                    [timeData[timeData.length - 1], usedSeries[usedSeries.length - 1]],
+                    ...forecastData,
+                  ],
+                },
+              ]
+            : []),
         ],
       },
       { notMerge: true }
@@ -141,7 +162,7 @@ function TrendChart({ snapshots }: { snapshots: Snapshot[] }) {
     const handleResize = () => chart.resize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [snapshots]);
+  }, [snapshots, prediction]);
 
   useEffect(() => {
     return () => {
@@ -276,6 +297,15 @@ function SnapshotTable({ snapshots }: { snapshots: Snapshot[] }) {
 
 // ─── Cleanup Timeline ───────────────────────────────────────
 
+function ForecastStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-24 rounded-xl bg-aurora-elevated/50 border border-aurora-border/35 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-text-muted">{label}</div>
+      <div className="text-sm font-semibold font-mono text-text-primary mt-0.5">{value}</div>
+    </div>
+  );
+}
+
 function CleanupTimeline({ logs }: { logs: CleanupLog[] }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -404,6 +434,7 @@ function CleanupTimeline({ logs }: { logs: CleanupLog[] }) {
 export default function HistoryPage() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [cleanupLogs, setCleanupLogs] = useState<CleanupLog[]>([]);
+  const [prediction, setPrediction] = useState<Prediction | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDrive, setSelectedDrive] = useState("C");
@@ -424,15 +455,19 @@ export default function HistoryPage() {
   const loadHistory = useCallback(async (drive: string, days: number) => {
     setLoading(true);
     setError(null);
+    setPrediction(null);
     try {
-      const [snaps, logs] = await Promise.all([
+      const [snaps, logs, predicted] = await Promise.all([
         invoke<Snapshot[]>("get_snapshot_history", { drive, days }),
         invoke<CleanupLog[]>("get_cleanup_history"),
+        invoke<Prediction>("predict_disk_usage", { drive, days }).catch(() => null),
       ]);
       setSnapshots(snaps);
       setCleanupLogs(logs);
+      setPrediction(predicted);
     } catch (e) {
       setError(String(e));
+      setPrediction(null);
     } finally {
       setLoading(false);
     }
@@ -566,13 +601,38 @@ export default function HistoryPage() {
               </div>
             </div>
             {snapshots.length > 0 ? (
-              <TrendChart snapshots={snapshots} />
+              <TrendChart snapshots={snapshots} prediction={prediction} />
             ) : (
               <div className="flex items-center justify-center h-[380px] text-text-muted text-sm">
                 No snapshots for the selected time range.
               </div>
             )}
           </div>
+
+          {prediction && (
+            <div className="glass-card p-5">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
+                    Forecast Summary
+                  </h3>
+                  <p className="text-sm text-text-secondary mt-2">{prediction.message}</p>
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-right">
+                  <ForecastStat label="Growth" value={`${formatSize(Math.abs(prediction.growth_bytes_per_day))}/day`} />
+                  <ForecastStat label="Confidence" value={`${Math.round(prediction.confidence_score * 100)}%`} />
+                  <ForecastStat
+                    label="To 95%"
+                    value={
+                      prediction.days_to_95_percent == null
+                        ? "N/A"
+                        : `${Math.round(prediction.days_to_95_percent)}d`
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Snapshot Table */}
           <SnapshotTable snapshots={snapshots} />

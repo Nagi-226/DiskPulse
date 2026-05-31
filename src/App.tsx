@@ -6,10 +6,11 @@ import CleanupPage from "./pages/Cleanup";
 import CleanupPreview from "./components/CleanupPreview";
 import HistoryPage from "./pages/History";
 import SettingsPage from "./pages/Settings";
+import PredictionCard from "./components/PredictionCard";
 import { formatSize } from "./utils/format";
 import { useDriveScan } from "./hooks/useDriveScan";
 import { useFsEvents } from "./hooks/useFsEvents";
-import type { CleanProgress, DirInfo, ScanProgress } from "./types";
+import type { CleanProgress, DirInfo, DiskSpaceAlertPayload, ScanProgress } from "./types";
 
 // --- Drive ring chart ---
 function DriveRing({
@@ -33,7 +34,14 @@ function DriveRing({
         : "var(--color-accent)";
 
   return (
-    <div className="glass-card p-8 flex items-center gap-8 min-w-[480px]">
+    <div
+      className="glass-card fluent-hover p-8 flex items-center gap-8 min-w-[480px]"
+      onMouseMove={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        e.currentTarget.style.setProperty('--mouse-x', `${((e.clientX - rect.left) / rect.width) * 100}%`);
+        e.currentTarget.style.setProperty('--mouse-y', `${((e.clientY - rect.top) / rect.height) * 100}%`);
+      }}
+    >
       {/* Ring */}
       <div className="relative flex-shrink-0">
         <svg width="140" height="140" viewBox="0 0 140 140">
@@ -319,6 +327,7 @@ function ScanProgressBar({ progress }: { progress: ScanProgress }) {
 // --- Main App ---
 export default function App() {
   const [cleanProgress, setCleanProgress] = useState<CleanProgress | null>(null);
+  const [alertToast, setAlertToast] = useState<DiskSpaceAlertPayload | null>(null);
   const [version, setVersion] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
   const [drives, setDrives] = useState<string[]>([]);
@@ -385,11 +394,16 @@ export default function App() {
     const unlistenCleanProgress = listen<CleanProgress>("clean-progress", (event) => {
       setCleanProgress(event.payload);
     });
+    const unlistenAlert = listen<DiskSpaceAlertPayload>("disk-space-alert", (event) => {
+      setAlertToast(event.payload);
+      setTimeout(() => setAlertToast(null), 8000);
+    });
     return () => {
       unlistenTrayScan.then((fn) => fn());
       unlistenTrayMonitor.then((fn) => fn());
       unlistenAutoScan.then((fn) => fn());
       unlistenCleanProgress.then((fn) => fn());
+      unlistenAlert.then((fn) => fn());
     };
   }, []);
 
@@ -620,6 +634,35 @@ export default function App() {
         <div className="flex-1 overflow-y-auto page-enter">
           {activeTab === "dashboard" && (
             <div className="p-8 space-y-8">
+              {/* Alert toast */}
+              {alertToast && (
+                <div className="glass-card p-4 border border-warning/30 bg-risk-medium-bg/10 animate-in fade-in">
+                  <div className="flex items-start gap-3">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-warning)" strokeWidth="2" className="flex-shrink-0 mt-0.5">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-warning">Disk Space Alert</div>
+                      <p className="text-sm text-text-secondary mt-1">{alertToast.message}</p>
+                      <p className="text-xs text-text-muted mt-1">
+                        {alertToast.drive_letter}: — {alertToast.usage_percent.toFixed(0)}% used
+                        &middot; {formatSize(alertToast.free_bytes)} free
+                      </p>
+                    </div>
+                    <button
+                      className="text-text-muted hover:text-text-primary flex-shrink-0"
+                      onClick={() => setAlertToast(null)}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Scan progress */}
               {progress && <ScanProgressBar progress={progress} />}
 
@@ -699,6 +742,8 @@ export default function App() {
                     usedBytes={driveInfo.used_bytes}
                     freeBytes={driveInfo.free_bytes}
                   />
+
+                  <PredictionCard drive={driveInfo.drive_letter} />
 
                   {loading && currentData.length === 0 && (
                     <div className="glass-card p-6">

@@ -22,7 +22,7 @@ const DEBOUNCE_PRESETS = [
   { label: "5s", value: 5000 },
 ];
 
-type SettingsTab = "general" | "rules" | "about";
+type SettingsTab = "general" | "rules" | "alerts" | "about";
 
 // ─── Toggle Switch ──────────────────────────────────────────
 
@@ -72,9 +72,9 @@ function GeneralTab({
   message: string | null;
 }) {
   return (
-    <div className="glass-card p-8 rounded-3xl border border-aurora-border/50 space-y-8">
+    <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-6">
       {/* Default Drive */}
-      <div className="flex items-center justify-between py-1">
+      <div className="flex items-center justify-between py-3">
         <div>
           <div className="text-sm text-text-primary font-medium">默认驱动器</div>
           <p className="text-xs text-text-muted mt-1">启动时自动扫描的目标驱动器</p>
@@ -101,7 +101,7 @@ function GeneralTab({
       <hr className="border-aurora-border/40" />
 
       {/* Auto Scan on Startup */}
-      <div className="flex items-center justify-between py-1">
+      <div className="flex items-center justify-between py-3">
         <div>
           <div className="text-sm text-text-primary font-medium">启动时自动扫描</div>
           <p className="text-xs text-text-muted mt-1">应用启动后自动扫描默认驱动器</p>
@@ -115,7 +115,7 @@ function GeneralTab({
       <hr className="border-aurora-border/40" />
 
       {/* Auto Monitor on Startup */}
-      <div className="flex items-center justify-between py-1">
+      <div className="flex items-center justify-between py-3">
         <div>
           <div className="text-sm text-text-primary font-medium">启动时自动监控</div>
           <p className="text-xs text-text-muted mt-1">应用启动后自动开启文件系统监控</p>
@@ -243,7 +243,7 @@ function RulesTab() {
   });
 
   return (
-    <div className="glass-card p-8 rounded-3xl border border-aurora-border/50 space-y-5">
+    <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-5">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-4">
         <input
@@ -284,7 +284,7 @@ function RulesTab() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-16">
+        <div className="flex items-center justify-center py-36">
           <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: "var(--color-accent)" }}>
             <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" />
           </svg>
@@ -317,7 +317,7 @@ function RulesTab() {
                       <td className="px-4 py-3 text-text-secondary">{rule.category}</td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium border ${
+                          className={`inline-block px-2.5 py-3 rounded-full text-xs font-medium border ${
                             RISK_STYLES[rule.risk_level]
                           }`}
                         >
@@ -362,12 +362,178 @@ function RulesTab() {
             </tbody>
           </table>
           {filtered.length === 0 && (
-            <div className="text-center py-12 text-text-muted text-sm">
+            <div className="text-center py-32 text-text-muted text-sm">
               没有匹配的规则
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Alerts Tab ─────────────────────────────────────────────
+
+function AlertsTab({
+  settings,
+  saving,
+  onUpdate,
+  onSave,
+  message,
+}: {
+  settings: AppSettings;
+  saving: boolean;
+  onUpdate: (s: AppSettings) => void;
+  onSave: () => void;
+  message: string | null;
+}) {
+  return (
+    <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-6">
+      {/* Alert Enabled */}
+      <div className="flex items-center justify-between py-3">
+        <div>
+          <div className="text-sm text-text-primary font-medium">磁盘空间告警</div>
+          <p className="text-xs text-text-muted mt-1">当磁盘空间低于阈值时发出系统通知</p>
+        </div>
+        <Toggle
+          checked={settings.alert_enabled}
+          onChange={(v) => onUpdate({ ...settings, alert_enabled: v })}
+        />
+      </div>
+
+      {settings.alert_enabled && (
+        <>
+          <hr className="border-aurora-border/40" />
+
+          {/* Threshold Type */}
+          <div>
+            <div className="text-sm text-text-primary font-medium mb-3">阈值类型</div>
+            <div className="flex gap-2">
+              {[
+                { label: "使用百分比", value: "percentage" },
+                { label: "绝对剩余空间 (GB)", value: "absolute_gb" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  className={`px-4 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                    settings.alert_threshold_type === opt.value
+                      ? "bg-accent/15 border-accent/30 text-accent-light"
+                      : "bg-aurora-elevated/70 border-aurora-border/60 text-text-secondary hover:text-text-primary"
+                  }`}
+                  onClick={() => onUpdate({ ...settings, alert_threshold_type: opt.value })}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <hr className="border-aurora-border/40" />
+
+          {/* Threshold Value */}
+          <div className="flex items-center justify-between py-3">
+            <div>
+              <div className="text-sm text-text-primary font-medium">
+                {settings.alert_threshold_type === "percentage" ? "使用率阈值" : "剩余空间阈值"}
+              </div>
+              <p className="text-xs text-text-muted mt-1">
+                {settings.alert_threshold_type === "percentage"
+                  ? `当使用率超过此百分比时触发告警（当前: ${settings.alert_threshold_value}%）`
+                  : `当剩余空间低于此值时触发告警（当前: ${settings.alert_threshold_value} GB）`}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={settings.alert_threshold_type === "percentage" ? 1 : 1}
+                max={settings.alert_threshold_type === "percentage" ? 99 : 999}
+                step={settings.alert_threshold_type === "percentage" ? 1 : 5}
+                value={settings.alert_threshold_value}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v)) onUpdate({ ...settings, alert_threshold_value: v });
+                }}
+                className="w-20 px-3 py-2 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
+                           text-center font-mono outline-none focus:border-accent/50"
+              />
+              <span className="text-xs text-text-muted">
+                {settings.alert_threshold_type === "percentage" ? "%" : "GB"}
+              </span>
+            </div>
+          </div>
+
+          <hr className="border-aurora-border/40" />
+
+          {/* Sudden Growth Detection */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between py-3">
+              <div>
+                <div className="text-sm text-text-primary font-medium">突发增长检测</div>
+                <p className="text-xs text-text-muted mt-1">在短时间内磁盘用量快速增长时发出告警</p>
+              </div>
+              <Toggle
+                checked={settings.alert_growth_enabled}
+                onChange={(v) => onUpdate({ ...settings, alert_growth_enabled: v })}
+              />
+            </div>
+
+            {settings.alert_growth_enabled && (
+              <div className="grid grid-cols-2 gap-4 p-4 rounded-xl bg-aurora-elevated/40 border border-aurora-border/40">
+                <div>
+                  <label className="block text-xs text-text-muted mb-2">增长百分比阈值</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      step={1}
+                      value={settings.alert_growth_percent}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        if (!isNaN(v)) onUpdate({ ...settings, alert_growth_percent: v });
+                      }}
+                      className="w-16 px-3 py-2 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
+                                 text-center font-mono outline-none focus:border-accent/50"
+                    />
+                    <span className="text-xs text-text-muted">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-text-muted mb-2">监控时间窗口</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={5}
+                      max={240}
+                      step={5}
+                      value={settings.alert_growth_minutes}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (!isNaN(v)) onUpdate({ ...settings, alert_growth_minutes: v });
+                      }}
+                      className="w-16 px-3 py-2 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
+                                 text-center font-mono outline-none focus:border-accent/50"
+                    />
+                    <span className="text-xs text-text-muted">分钟</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Save Button */}
+      <div className="flex items-center gap-3 pt-4">
+        <button className="btn-primary py-2.5 px-6" onClick={onSave} disabled={saving}>
+          {saving ? "保存中..." : "保存设置"}
+        </button>
+        {message && (
+          <span className={`text-xs ${message.startsWith("✓") ? "text-success" : "text-danger"}`}>
+            {message}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -405,7 +571,7 @@ function AboutTab() {
   ];
 
   return (
-    <div className="glass-card p-10 rounded-3xl border border-aurora-border/50">
+    <div className="glass-card p-8 rounded-2xl border border-aurora-border/50">
       {/* Logo + Name */}
       <div className="flex flex-col items-center pt-8 pb-10">
         <div
@@ -471,6 +637,12 @@ export default function SettingsPage() {
     auto_monitor_on_startup: false,
     watcher_poll_interval_ms: 2000,
     watcher_debounce_ms: 1500,
+    alert_enabled: false,
+    alert_threshold_type: "percentage",
+    alert_threshold_value: 10,
+    alert_growth_enabled: false,
+    alert_growth_percent: 5,
+    alert_growth_minutes: 15,
   });
   const [drives, setDrives] = useState<string[]>(["C"]);
   const [saving, setSaving] = useState(false);
@@ -507,6 +679,7 @@ export default function SettingsPage() {
   const TABS: { id: SettingsTab; label: string }[] = [
     { id: "general", label: "通用" },
     { id: "rules", label: "规则" },
+    { id: "alerts", label: "告警" },
     { id: "about", label: "关于" },
   ];
 
@@ -549,6 +722,15 @@ export default function SettingsPage() {
         />
       )}
       {tab === "rules" && <RulesTab />}
+      {tab === "alerts" && (
+        <AlertsTab
+          settings={settings}
+          saving={saving}
+          onUpdate={setSettings}
+          onSave={handleSave}
+          message={message}
+        />
+      )}
       {tab === "about" && <AboutTab />}
     </div>
   );

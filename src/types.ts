@@ -131,6 +131,29 @@ export interface Snapshot {
   created_at: string;
 }
 
+export interface ForecastPoint {
+  created_at: string;
+  used_bytes: number;
+  free_bytes: number;
+  usage_percent: number;
+  is_forecast: boolean;
+}
+
+export interface Prediction {
+  drive_letter: string;
+  sample_count: number;
+  window_days: number;
+  current_usage_percent: number;
+  growth_bytes_per_day: number;
+  growth_percent_per_day: number;
+  days_to_95_percent: number | null;
+  projected_95_date: string | null;
+  confidence_score: number;
+  status: "insufficient_data" | "stable" | "growing" | "shrinking" | "warning" | "critical";
+  message: string;
+  forecast: ForecastPoint[];
+}
+
 export interface CleanupLog {
   id: number;
   created_at: string;
@@ -148,6 +171,22 @@ export interface AppSettings {
   auto_monitor_on_startup: boolean;
   watcher_poll_interval_ms: number;
   watcher_debounce_ms: number;
+  alert_enabled: boolean;
+  alert_threshold_type: string;
+  alert_threshold_value: number;
+  alert_growth_enabled: boolean;
+  alert_growth_percent: number;
+  alert_growth_minutes: number;
+}
+
+export interface DiskSpaceAlertPayload {
+  alert_type: string;
+  drive_letter: string;
+  message: string;
+  free_bytes: number;
+  total_bytes: number;
+  usage_percent: number;
+  timestamp_ms: number;
 }
 
 export interface RiskRule {

@@ -2,6 +2,35 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [0.2.5] — 2026-05-07
+
+### Intelligent Insights — Alerts & Prediction
+
+> Full plan: `docs/v0.3.0-plan.md`
+
+**Sprint 1 — Disk Space Alerts:**
+- Disk space alert monitor — background thread with configurable check interval
+- Low space threshold notification via tauri-plugin-notification (percentage or absolute GB)
+- Sudden growth detection with configurable time window and growth percent
+- New `alert` Rust module with `AlertConfig`, threshold checks, 4 unit tests
+- Settings UI: new "Alerts" tab — enable/disable, threshold type/value, growth params
+- Dashboard: in-app alert toast banner with auto-dismiss
+- 6 new `AppSettings` fields for alert configuration
+
+**Sprint 3 — Disk Usage Prediction:**
+- New `prediction` Rust module with simple OLS linear regression over SQLite snapshots
+- `predict_disk_usage` IPC command returning forecast status, confidence, growth rate, and projected 95% date
+- Dashboard prediction card between drive ring and treemap
+- History trend chart extended with dashed forecast line and forecast summary
+- 3 unit tests for date parsing, growth projection, and insufficient-history behavior
+
+**Upcoming:**
+- [0.2.6] — Large File Finder: Rust backend (scanner, types, commands, tests)
+- [0.2.7] — Large File Finder: Frontend UI (table, hook, cleanup integration)
+- [0.2.8] — Auto-Cleanup: Backend scheduler (scheduler module, DB table, commands, tests)
+- [0.2.9] — Auto-Cleanup: Frontend UI (settings tab, status card, history)
+- [0.3.0] — Production release: integration polish, build verified, MSI + NSIS
+
 ## [0.2.0] — 2026-05-07
 
 ### Performance & UX Optimization

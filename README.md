@@ -108,13 +108,17 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | v0.0.8 | History trends + SQLite snapshots | ✅ |
 | v0.0.9 | Settings page (prefs, rules, about) | ✅ |
 | v0.1.0 | Production release candidate | ✅ |
-| v0.2.0 | Performance & UX optimization | 🔄 |
+| v0.2.0 | Performance & UX optimization | ✅ |
+| v0.2.5 | Intelligent insights — alerts & prediction | ✅ |
 
 ## ⌨️ IPC Commands
 
 ```rust
 // Scanner
 scan_drive(drive: String) -> DriveInfo
+scan_drive_meta(drive: String) -> DriveMeta
+scan_drive_dirs(drive: String) -> Vec<DirInfo>
+cancel_scan() -> ()
 list_drives() -> Vec<String>
 scan_directory(path: String) -> Vec<DirInfo>
 
@@ -130,9 +134,14 @@ undo_cleanup(original_paths: Vec<String>) -> RestoreResult
 start_fs_watcher() -> String
 stop_fs_watcher() -> String
 
+// Alert
+start_alert_monitor() -> String
+stop_alert_monitor() -> String
+
 // History
 get_snapshot_history(drive: String, days: u32) -> Vec<Snapshot>
 get_cleanup_history() -> Vec<CleanupLog>
+predict_disk_usage(drive: String, days: u32) -> Prediction
 
 // Settings
 get_settings() -> AppSettings

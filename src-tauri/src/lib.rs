@@ -1,5 +1,7 @@
+mod alert;
 mod cleaner;
 mod db;
+mod prediction;
 mod risk;
 mod scanner;
 mod watcher;
@@ -19,6 +21,7 @@ pub const CLEAN_PROGRESS_EVENT: &str = "clean-progress";
 pub const FS_EVENT_BATCH: &str = "fs-event-batch";
 pub const DRIVE_CACHE_REFRESHED_EVENT: &str = "drive-cache-refreshed";
 pub const AUTO_SCAN_EVENT: &str = "auto-scan";
+pub const DISK_SPACE_ALERT: &str = "disk-space-alert";
 
 /// Global watcher guard so we can stop it from another command.
 static WATCHER: Mutex<Option<watcher::WatcherGuard>> = Mutex::new(None);
@@ -352,6 +355,18 @@ fn stop_fs_watcher() -> Result<String, String> {
     }
 }
 
+/// Start the disk space alert monitor.
+#[tauri::command]
+fn start_alert_monitor(app: AppHandle) -> Result<String, String> {
+    alert::start_alert_monitor(&app)
+}
+
+/// Stop the disk space alert monitor.
+#[tauri::command]
+fn stop_alert_monitor() -> Result<String, String> {
+    alert::stop_alert_monitor()
+}
+
 /// Get application settings.
 #[tauri::command]
 fn get_settings() -> Result<db::AppSettings, String> {
@@ -387,6 +402,12 @@ fn get_snapshot_history(drive: String, days: u32) -> Result<Vec<db::Snapshot>, S
 #[tauri::command]
 fn get_cleanup_history() -> Result<Vec<db::CleanupLog>, String> {
     db::get_cleanup_history()
+}
+
+/// Predict future disk usage from saved snapshot history.
+#[tauri::command]
+fn predict_disk_usage(drive: String, days: u32) -> Result<prediction::Prediction, String> {
+    prediction::predict_disk_usage(&drive, days)
 }
 
 /// Get the app version
@@ -570,6 +591,13 @@ pub fn run() {
                         let _ = start_fs_watcher_internal(&app_handle2);
                     });
                 }
+                if settings.alert_enabled {
+                    let app_handle3 = app.handle().clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(5000));
+                        let _ = alert::start_alert_monitor(&app_handle3);
+                    });
+                }
             }
 
             Ok(())
@@ -589,6 +617,9 @@ pub fn run() {
             stop_fs_watcher,
             get_snapshot_history,
             get_cleanup_history,
+            predict_disk_usage,
+            start_alert_monitor,
+            stop_alert_monitor,
             get_settings,
             save_settings,
             get_rules,

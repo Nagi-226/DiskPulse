@@ -43,6 +43,12 @@ pub struct AppSettings {
     pub auto_monitor_on_startup: bool,
     pub watcher_poll_interval_ms: u64,
     pub watcher_debounce_ms: u64,
+    pub alert_enabled: bool,
+    pub alert_threshold_type: String,
+    pub alert_threshold_value: f64,
+    pub alert_growth_enabled: bool,
+    pub alert_growth_percent: f64,
+    pub alert_growth_minutes: u64,
 }
 
 impl Default for AppSettings {
@@ -53,6 +59,12 @@ impl Default for AppSettings {
             auto_monitor_on_startup: false,
             watcher_poll_interval_ms: 2000,
             watcher_debounce_ms: 1500,
+            alert_enabled: false,
+            alert_threshold_type: "percentage".into(),
+            alert_threshold_value: 10.0,
+            alert_growth_enabled: false,
+            alert_growth_percent: 5.0,
+            alert_growth_minutes: 15,
         }
     }
 }
@@ -288,6 +300,24 @@ fn get_settings_with(conn: &rusqlite::Connection) -> Result<AppSettings, String>
                     settings.watcher_debounce_ms = v;
                 }
             }
+            "alert_enabled" => settings.alert_enabled = value == "true",
+            "alert_threshold_type" => settings.alert_threshold_type = value,
+            "alert_threshold_value" => {
+                if let Ok(v) = value.parse() {
+                    settings.alert_threshold_value = v;
+                }
+            }
+            "alert_growth_enabled" => settings.alert_growth_enabled = value == "true",
+            "alert_growth_percent" => {
+                if let Ok(v) = value.parse() {
+                    settings.alert_growth_percent = v;
+                }
+            }
+            "alert_growth_minutes" => {
+                if let Ok(v) = value.parse() {
+                    settings.alert_growth_minutes = v;
+                }
+            }
             _ => {}
         }
     }
@@ -312,6 +342,27 @@ fn save_settings_with(conn: &rusqlite::Connection, settings: &AppSettings) -> Re
         (
             "watcher_debounce_ms",
             settings.watcher_debounce_ms.to_string(),
+        ),
+        ("alert_enabled", settings.alert_enabled.to_string()),
+        (
+            "alert_threshold_type",
+            settings.alert_threshold_type.clone(),
+        ),
+        (
+            "alert_threshold_value",
+            settings.alert_threshold_value.to_string(),
+        ),
+        (
+            "alert_growth_enabled",
+            settings.alert_growth_enabled.to_string(),
+        ),
+        (
+            "alert_growth_percent",
+            settings.alert_growth_percent.to_string(),
+        ),
+        (
+            "alert_growth_minutes",
+            settings.alert_growth_minutes.to_string(),
         ),
     ];
     for (key, value) in &pairs {
@@ -541,6 +592,12 @@ mod tests {
             auto_monitor_on_startup: false,
             watcher_poll_interval_ms: 5000,
             watcher_debounce_ms: 3000,
+            alert_enabled: true,
+            alert_threshold_type: "absolute_gb".into(),
+            alert_threshold_value: 20.0,
+            alert_growth_enabled: true,
+            alert_growth_percent: 10.0,
+            alert_growth_minutes: 30,
         };
         save_settings_with(&conn, &settings).unwrap();
         let loaded = get_settings_with(&conn).unwrap();
@@ -549,6 +606,12 @@ mod tests {
         assert!(!loaded.auto_monitor_on_startup);
         assert_eq!(loaded.watcher_poll_interval_ms, 5000);
         assert_eq!(loaded.watcher_debounce_ms, 3000);
+        assert!(loaded.alert_enabled);
+        assert_eq!(loaded.alert_threshold_type, "absolute_gb");
+        assert_eq!(loaded.alert_threshold_value, 20.0);
+        assert!(loaded.alert_growth_enabled);
+        assert_eq!(loaded.alert_growth_percent, 10.0);
+        assert_eq!(loaded.alert_growth_minutes, 30);
     }
 
     #[test]

@@ -9,7 +9,7 @@
 - **Tagline**: Real-time disk space monitor & safe cleanup tool for Windows 11
 - **Type**: Open source desktop application (MIT License)
 - **Repository**: E:\Github Project\DiskPulse
-- **Current Version**: v0.1.0
+- **Current Version**: v0.2.5
 
 ## Tech Stack (LOCKED — do not change without explicit user approval)
 
@@ -19,7 +19,7 @@
 | Backend Language | Rust | 1.94+ |
 | Frontend Framework | React | 19.x |
 | Frontend Language | TypeScript | 5.x |
-| Visualization | ECharts 5 + D3 7 | — |
+| Visualization | ECharts 6 + D3 7 | — |
 | Styling | Tailwind CSS | 4.x |
 | Local Database | SQLite (rusqlite) | 0.31+ |
 | Icons | lucide-react | — |
@@ -42,13 +42,15 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 - `risk/` — Risk classification engine (rule-based, 16 rules)
 - `cleaner/` — Safe cleanup orchestration (Recycle Bin integration)
 - `db/` — SQLite storage (snapshots, cleanup logs, settings, rule overrides)
+- `alert/` — Disk space alert monitor with configurable thresholds and notifications
+- `prediction/` — Disk usage linear regression and forecast computation
 
 ### Frontend Structure (src/)
 - `App.tsx` — Dashboard UI (treemap, ring chart, live feed, nav sidebar)
 - `pages/Cleanup` — Risk-grouped cleanup report + one-click clean
 - `pages/History` — Trend charts + snapshot history + cleanup timeline
 - `pages/Settings` — Preferences, risk rules configuration, about
-- `components/` — Shared UI components (Treemap, CleanupPreview)
+- `components/` — Shared UI components (Treemap, CleanupPreview, PredictionCard)
 - `hooks/` — Custom React hooks (useDriveScan, useFsEvents)
 
 ## Critical Safety Rules (NEVER VIOLATE)
@@ -75,7 +77,7 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 - **Commit format**: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`
 - **Rust style**: `rustfmt` + `clippy` must pass (0 warnings), no `unwrap()` in production code
 - **TypeScript style**: Strict mode, no `any` types, ESLint + Prettier
-- **Testing**: Rust unit tests in each module (36 tests, all passing)
+- **Testing**: Rust unit tests in each module (48 tests, all passing)
 - **Performance target**: Scan 500GB drive in < 5 seconds
 
 ## Key Tauri Commands (IPC API)
@@ -104,12 +106,17 @@ fn stop_fs_watcher() -> Result<String, String>
 // History
 fn get_snapshot_history(drive: String, days: u32) -> Result<Vec<Snapshot>, String>
 fn get_cleanup_history() -> Result<Vec<CleanupLog>, String>
+fn predict_disk_usage(drive: String, days: u32) -> Result<Prediction, String>
 
 // Settings
 fn get_settings() -> Result<AppSettings, String>
 fn save_settings(settings: AppSettings) -> Result<(), String>
 fn get_rules() -> Result<Vec<RiskRule>, String>
 fn save_rule_override(rule_id: String, safe_to_delete: bool) -> Result<(), String>
+
+// Alert
+fn start_alert_monitor(app: AppHandle) -> Result<String, String>
+fn stop_alert_monitor() -> Result<String, String>
 
 // App
 fn app_version() -> String
@@ -122,16 +129,17 @@ fn app_version() -> String
 | `scan-progress` | `ScanProgress` | `scan_drive`, `scan_drive_dirs` |
 | `clean-progress` | `CleanProgress` | `clean_items` |
 | `fs-event-batch` | `FsChangeBatch` | `start_fs_watcher` |
+| `disk-space-alert` | `DiskSpaceAlertPayload` | `start_alert_monitor` |
 | `auto-scan` | `String` (drive letter) | auto-startup |
 | `tray-quick-scan` | `()` | tray menu |
 | `tray-toggle-monitor` | `()` | tray menu |
 
 ## Current Development State
 
-- **Phase**: v0.2.0 — Performance & UX Optimization
-- **Last Updated**: 2026-05-06
+- **Phase**: v0.2.5 — Intelligent Insights (Alerts + Prediction)
+- **Last Updated**: 2026-05-31
 
-### All Features Complete (v0.0.1 — v0.1.0)
+### All Features Complete (v0.0.1 — v0.2.0)
 | Version | Feature | Status |
 |---------|---------|--------|
 | v0.0.1 | Project scaffold, scanner, Aurora design system | ✅ |
@@ -144,39 +152,31 @@ fn app_version() -> String
 | v0.0.8 | SQLite history, trend charts, cleanup timeline | ✅ |
 | v0.0.9 | Settings page, preferences, rules config, about | ✅ |
 | v0.1.0 | Production release: build verified, MSI + NSIS generated | ✅ |
+| v0.2.0 | Performance & UX: instant startup, parallel scan, cache, watcher refresh, cancel | ✅ |
 
-### v0.2.0 — Performance & UX Optimization (CODE COMPLETE)
-> Full plan: `docs/v0.2.0-plan.md`
+### v0.2.5–0.3.0 Roadmap
+> Full plan: `docs/v0.3.0-plan.md`
 
-**Problem**: Startup takes 10–30s due to full recursive `WalkDir` scan of C: drive on mount.
+| Version | Focus | Key Deliverables | Status |
+|---------|-------|-----------------|--------|
+| v0.2.5 | Alerts + Prediction | Alert monitor, low-space notifications, sudden growth, prediction card, forecast chart | ✅ |
+| v0.2.6 | Large Files: Backend | `FileEntry`, `find_large_files`, `large-file-progress`, cancel, 3+ tests | 🔄 |
+| v0.2.7 | Large Files: Frontend | UI tab, sortable table, `useLargeFileFinder` hook, cleanup integration | 🔄 |
+| v0.2.8 | Auto-Cleanup: Backend | `scheduler` module, `auto_cleanup_reports` table, 5 new settings, safety invariant | 🔄 |
+| v0.2.9 | Auto-Cleanup: Frontend | Automation settings tab, `AutoCleanupStatus` card, history section | 🔄 |
+| v0.3.0 | Production Release | Integration polish, build verified, MSI + NSIS generated | 🔄 |
 
-**Strategy**: Split scan into fast meta (50ms) + lazy dirs (background), SQLite cache, parallel scanning, cancel support.
-
-| Sprint | Focus | Key Deliverables | Status |
-|--------|-------|-----------------|--------|
-| Sprint 1 | Instant Startup | `scan_drive_meta`, `useDriveScan`, ring in <500ms | ✅ |
-| Sprint 2 | Scanner Performance | Rayon parallel dirs, incremental results, phase progress | ✅ |
-| Sprint 3 | Caching & Refresh | SQLite cache, freshness badges, background refresh | ✅ |
-| Sprint 4 | UI Polish | Skeleton loading, progressive display, cancel scan | ✅ |
-
-**Completed**:
-- `scan_drive_meta` + `scan_drive_dirs` split commands
-- `useDriveScan` lazy loading hook (meta → cache → background scan)
-- Rayon parallel top-level directory scanning with partial_results
-- ScanPhase progress (Walking/Measuring/Complete)
-- SQLite cache with freshness badges (Live/Cached/Metadata)
-- Watcher cache refresh (detect changes → re-scan dirty dirs → emit refreshed cache)
-- Skeleton treemap placeholder during background scan
-- `cancel_scan` command with AtomicBool cancellation token
-- Scan cancel button in UI
-
-**Deferred**:
-- jwalk evaluation (optional)
-
-**Performance Targets**:
-- First paint → ring chart: **< 500ms** (was 5–30s)
-- Subsequent launch (cached): **< 500ms** (was 10–30s)
-- Full scan (500GB): **5–15s** (was 10–30s)
+**v0.2.5 (Complete)**:
+- `alert` module with `AlertConfig`, threshold checks (percentage + absolute GB)
+- Sudden growth detection with configurable time window and growth percent
+- Windows native notification via tauri-plugin-notification
+- New `disk-space-alert` IPC event + in-app toast banner in dashboard
+- Alerts settings tab: enable/disable, threshold type/values, sudden growth params
+- `prediction` module with dependency-free linear regression over SQLite snapshot history
+- `predict_disk_usage` IPC command returns growth rate, confidence, projected 95% date
+- Dashboard `PredictionCard` between drive ring and treemap
+- History trend chart includes dashed forecast line and forecast summary
+- 7 unit tests (4 alert + 3 prediction)
 
 ## Environment
 

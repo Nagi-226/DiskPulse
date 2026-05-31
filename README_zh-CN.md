@@ -108,13 +108,17 @@ npm run tauri build
 | v0.0.8 | 历史趋势图 + SQLite 快照 | ✅ |
 | v0.0.9 | 设置页面（偏好、规则、关于） | ✅ |
 | v0.1.0 | 正式发布候选版 | ✅ |
-| v0.2.0 | 性能与用户体验优化 | 🔄 |
+| v0.2.0 | 性能与用户体验优化 | ✅ |
+| v0.2.5 | 智能洞察 — 告警与预测 | ✅ |
 
 ## ⌨️ IPC 命令
 
 ```rust
 // 扫描器
 scan_drive(drive: String) -> DriveInfo
+scan_drive_meta(drive: String) -> DriveMeta
+scan_drive_dirs(drive: String) -> Vec<DirInfo>
+cancel_scan() -> ()
 list_drives() -> Vec<String>
 scan_directory(path: String) -> Vec<DirInfo>
 
@@ -130,9 +134,14 @@ undo_cleanup(original_paths: Vec<String>) -> RestoreResult
 start_fs_watcher() -> String
 stop_fs_watcher() -> String
 
+// 告警
+start_alert_monitor() -> String
+stop_alert_monitor() -> String
+
 // 历史记录
 get_snapshot_history(drive: String, days: u32) -> Vec<Snapshot>
 get_cleanup_history() -> Vec<CleanupLog>
+predict_disk_usage(drive: String, days: u32) -> Prediction
 
 // 设置
 get_settings() -> AppSettings
