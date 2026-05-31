@@ -51,8 +51,8 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 - `pages/Cleanup` — Risk-grouped cleanup report + one-click clean
 - `pages/History` — Trend charts + snapshot history + cleanup timeline
 - `pages/Settings` — Preferences, risk rules configuration, about
-- `components/` - Shared UI components (Treemap, CleanupPreview, PredictionCard, AutoCleanupStatus)
-- `hooks/` — Custom React hooks (useDriveScan, useFsEvents)
+- `components/` — Shared UI components (Treemap, CleanupPreview, PredictionCard, LargeFileFinder, AutoCleanupStatus, Icons)
+- `hooks/` — Custom React hooks (useDriveScan, useFsEvents, useLargeFileFinder)
 
 ## Critical Safety Rules (NEVER VIOLATE)
 
