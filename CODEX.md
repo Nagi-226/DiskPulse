@@ -35,6 +35,18 @@ If documentation conflicts with source code, trust the code and note the mismatc
 - Build target: Windows desktop installers through Tauri bundling.
 - Current state from project docs: v0.4.0 production release built; MSI/NSIS generated.
 
+### v0.5.0 Known Issues — Integration Debt
+
+These were identified in the v0.4.0 post-release audit. Fix them in v0.5.0 **before** adding new features:
+
+1. **Recommendations don't use aging data**: `RecommendationInput.age_days` is always `None` — wire `aging` module output into `get_recommendations()`.
+2. **Disk health ignores duplicate/zombie data**: `get_disk_health()` passes hardcoded zeros — call `scan_duplicates()` + `analyze_file_aging()` inside.
+3. **CLI export hardcodes C: drive**: `cli/mod.rs:79-81` — add `drive` argument to `CliCommand::Export`.
+4. **Magic numbers**: Scoring weights and `min_size` constants — extract to `AppSettings` + Settings UI.
+5. **UI shell components**: `CleanupWizard` and `NotificationCenter` need core logic completion.
+
+See `docs/v0.4.0-plan.md` § "v0.5.0 Known Issues" for full details.
+
 ## Non-Negotiable Safety Rules
 
 These rules apply to every cleanup, scheduler, risk, and filesystem feature:

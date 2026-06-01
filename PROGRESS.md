@@ -98,6 +98,21 @@
 - NSIS: `src-tauri/target/release/bundle/nsis/DiskPulse_0.4.0_x64-setup.exe`
 - NSIS SHA256: `62BCE631815A70646359991F4FBD29B5FF7472D374F96950C74E3396F39D1C8C`
 - CLI smoke: `cargo run -- --cli health C --json` returned health JSON in 8326 ms including dev build overhead.
+
+## v0.5.0 — Known Issues (Deferred from v0.4.0 Audit)
+
+> These issues were identified in the v0.4.0 post-release audit. They are not bugs, but incomplete integrations that should be addressed in v0.5.0.
+
+| # | Issue | Module(s) | Impact | Priority |
+|---|-------|-----------|--------|----------|
+| 1 | `RecommendationInput.age_days` always `None` — aging data not wired to recommendation pipeline | `recommendations/mod.rs` | Age scoring factor always uses default weight (25%); zombie files don't influence recommendations | 🔴 High |
+| 2 | `get_disk_health()` passes hardcoded `0` for `duplicate_waste_bytes` and `zombie_bytes` — modules not integrated | `recommendations/mod.rs` | Disk health score ignores actual duplicate waste and zombie data; only uses free space percentage | 🔴 High |
+| 3 | CLI `export` subcommand hardcodes `"C"` drive instead of accepting `drive` argument | `cli/mod.rs:79-81` | Export commands ignore user-selected drive; always exports C: drive data | 🟡 Medium |
+| 4 | Scoring weights and `min_size` constants in recommendations/duplicates are magic numbers | `recommendations/mod.rs`, `duplicates/mod.rs`, `report/mod.rs` | Hard to tune; user-configurable weights planned in v0.3.6 design but not implemented | 🟡 Medium |
+| 5 | `CleanupWizard` and `NotificationCenter` are UI shells — core logic needs completion | `src/components/CleanupWizard.tsx`, `src/components/NotificationCenter.tsx` | Components exist but may have incomplete backend wiring for full 5-step flow and real-time notification polling | 🟡 Medium |
+
+**Fix plan**: These will be addressed in v0.5.0 Phase 1 (Integration Polish) before any new features.
+
 ## Safety Baseline
 
 - All cleanup goes to **Recycle Bin** via SHFileOperationW (FOF_ALLOWUNDO).

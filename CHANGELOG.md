@@ -45,6 +45,16 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 5. i18n Resource Bundle (JSON) — new language = new JSON file
 6. Theme Token System (CSS variables) — new theme = new variable set
 
+### Known Issues — Deferred to v0.5.0
+
+| # | Issue | Priority |
+|---|-------|----------|
+| 1 | `RecommendationInput.age_days` always `None` — aging data not wired to recommendation pipeline | 🔴 v0.5.0-P1 |
+| 2 | `get_disk_health()` passes hardcoded `0` for duplicate/zombie data — modules not integrated | 🔴 v0.5.0-P1 |
+| 3 | CLI `export` subcommand hardcodes `"C"` drive — ignores user-specified drive | 🟡 v0.5.0-P2 |
+| 4 | Scoring weights and `min_size` constants are magic numbers — user config planned but not implemented | 🟡 v0.5.0-P2 |
+| 5 | `CleanupWizard` + `NotificationCenter` are UI shells — core logic completion needed | 🟡 v0.5.0-P2 |
+
 ## [0.3.9] - 2026-06-01
 
 ### Extensible Intelligence Follow-Up Slice
