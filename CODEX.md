@@ -1,135 +1,201 @@
-# CODEX.md — DiskPulse Implementation Guide
+﻿# CODEX.md - DiskPulse Agent Operating Manual
 
-> **Your role**: Implementer — execute assigned development tasks following this project's conventions.
-> **Planner**: Claude Code (CLAUDE.md) — owns architecture, roadmap, code review, and release.
-> **Sync order**: Read this file → `CLAUDE.md` (for full API reference) → `PROGRESS.md` (for version status).
+This file is the first-stop memory for Codex when working in this repository. Its goal is to keep project context, safety constraints, and verification habits aligned before any code change.
 
-## Project Identity
+## Role
 
-- **DiskPulse**: Real-time disk space monitor & safe cleanup tool for Windows 11
-- **Stack**: Tauri 2 + Rust 1.94+ backend, React 19 + TypeScript 5 + Tailwind CSS 4 frontend
-- **Repo**: `E:\Github Project\DiskPulse`
-- **Current version**: v0.3.0 (production release, 56 tests)
+- Act as the implementation agent for DiskPulse.
+- Prefer concise Chinese responses when the user writes in Chinese.
+- Make code changes only after reading the relevant local files; do not rely only on this document.
+- Treat safety and data-loss prevention as higher priority than feature speed.
 
-## Current Task
+## Startup Protocol
 
-> **Status**: ⏳ Awaiting assignment
-> **Target version**: TBD
-> **Branch**: TBD
-> **Deadline**: TBD
+Run these checks mentally, and with commands when needed, at the start of a task:
 
-<!-- TASK TEMPLATE (fill in when assigning):
-### v0.X.Y — Feature Name
+1. Read `PROGRESS.md` for the latest version/status snapshot.
+2. Read `CLAUDE.md` for architecture, IPC, safety rules, and release context.
+3. Check actual source-of-truth versions in:
+   - `package.json`
+   - `src-tauri/Cargo.toml`
+   - `src-tauri/tauri.conf.json`
+4. Inspect `git status --short` before editing. Do not overwrite unrelated user changes.
+5. Use `rg --files` and `rg` for project search.
+6. Open the exact modules you will modify and match existing style.
 
-**Backend tasks** (Rust):
-- [ ] ...
+If documentation conflicts with source code, trust the code and note the mismatch.
 
-**Frontend tasks** (TypeScript):
-- [ ] ...
+## Current Baseline
 
-**Verification**:
-- [ ] `cargo test` (all passing)
-- [ ] `cargo clippy -- -D warnings` (0 warnings)
-- [ ] `npm run typecheck` (0 errors)
-- [ ] `npm run build:web` (success)
-- [ ] Manual smoke test
--->
+- Product: DiskPulse, a Windows 11 desktop app for disk monitoring and safe cleanup.
+- Current release baseline: `v0.4.0`.
+- Next milestone: post-v0.4.0 maintenance / v0.5.0 planning.
+- Full v0.4.0 roadmap: `docs/v0.4.0-plan.md`.
+- Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite.
+- Build target: Windows desktop installers through Tauri bundling.
+- Current state from project docs: v0.4.0 production release built; MSI/NSIS generated.
 
-## Development Conventions
+## Non-Negotiable Safety Rules
 
-### Before writing ANY code
-1. Read `CLAUDE.md` sections: Tech Stack, Architecture Overview, Critical Safety Rules, Risk Classification System
-2. Check `PROGRESS.md` for the current file inventory and test counts
-3. Read the existing code in the module you're modifying — match its style, naming, and comment density
+These rules apply to every cleanup, scheduler, risk, and filesystem feature:
 
-### Rust (src-tauri/src/)
-```
-Module map:
-  main.rs          — entry point
-  lib.rs           — 26 Tauri IPC commands, tray, auto-startup, event constants
-  scanner/mod.rs   — walkdir + rayon parallel scan, large file finder
-  risk/mod.rs      — 16 risk rules, classification engine
-  cleaner/mod.rs   — Recycle Bin cleanup, undo via $I file parsing
-  watcher/mod.rs   — polling FS monitor, snapshot diff
-  db/mod.rs        — SQLite (rusqlite): snapshots, cleanup logs, settings, auto-cleanup reports
-  alert/mod.rs     — disk space alert monitor, threshold checks, notifications
-  prediction/mod.rs — OLS linear regression, forecast computation (zero new deps)
-  scheduler/mod.rs — auto-cleanup scheduler, LOW-risk filtering, cancellable sleep
-```
+- Never implement permanent delete behavior for cleanup paths.
+- All cleanup deletions must go through Windows Recycle Bin support (`FOF_ALLOWUNDO`).
+- Validate every path before deletion; allowed cleanup is whitelist-based.
+- Protect system and high-risk paths, including `C:\Windows`, `System32`, `WinSxS`, installer caches, registry hives, chat history, and `Program Files` unless a reviewed design explicitly allows display-only handling.
+- Skip locked or in-use files; never force-delete.
+- Auto-cleanup may only clean LOW-risk items marked safe by the existing safety pipeline.
+- Keep preview-before-execute behavior intact.
 
-**Rules**:
-- `rustfmt` + `clippy` must pass, **0 warnings**
-- No `unwrap()` in production code — use `?`, `ok_or_else`, or `match`
-- New Tauri commands register in `lib.rs` → `generate_handler![]`
-- New IPC events: define `pub const` in the appropriate module, emit via `app.emit()`
-- Tests: `#[cfg(test)] mod tests { ... }` at the bottom of each module
-- Use `anyhow::Result` or `Result<T, String>` for fallible functions
+Any change touching `src-tauri/src/cleaner/`, `src-tauri/src/risk/`, `src-tauri/src/scheduler/`, or path validation requires extra tests and careful review.
 
-### TypeScript (src/)
-```
-Module map:
-  App.tsx                            — main app: sidebar, routing, dashboard, event listeners
-  types.ts                           — all shared TypeScript interfaces
-  index.css                          — Aurora design system (CSS custom properties + Tailwind)
-  components/Treemap.tsx             — D3/ECharts treemap visualization
-  components/CleanupPreview.tsx      — cleanup safety check, execute, undo
-  components/PredictionCard.tsx      — disk usage forecast card
-  components/LargeFileFinder.tsx     — large file scanner UI + sortable table
-  components/AutoCleanupStatus.tsx   — auto-cleanup scheduler status card
-  components/Icons.tsx               — shared SVG nav icons
-  pages/Cleanup/index.tsx            — risk-grouped cleanup report
-  pages/History/index.tsx            — trend chart, snapshot table, cleanup timeline
-  pages/Settings/index.tsx           — General / Rules / Alerts / Automation tabs
-  hooks/useDriveScan.ts              — lazy scan: meta → cache → background → cancel
-  hooks/useFsEvents.ts               — FS watcher lifecycle
-  hooks/useLargeFileFinder.ts        — large file scan lifecycle
-  utils/format.ts                    — byte formatting
-```
+## Architecture Map
 
-**Rules**:
-- Strict mode, no `any` types
-- Use `invoke<T>()` with explicit type parameter for all Tauri commands
-- New types go in `types.ts`
-- Event listeners: use `listen<T>()` from `@tauri-apps/api/event`
-- Match existing component patterns: glass-card, aurora color tokens, Tailwind utilities
-- Loading / empty / error states for every data-fetching component
+Backend modules live in `src-tauri/src/`:
 
-### Safety (NEVER violate)
-1. **All deletes → Recycle Bin** — `SHFileOperationW` with `FOF_ALLOWUNDO`
-2. **Whitelist-only cleanup** — only paths matching `is_path_allowed()` patterns
-3. **System path protection** — `C:\Windows`, `Program Files`, `System32`, `WinSxS` blocked
-4. **File lock detection** — skip locked files, never force-delete
-5. **Auto-cleanup invariant** — only LOW risk, `safe_to_delete==true` items
+- `main.rs`: app entry point.
+- `lib.rs`: Tauri setup, IPC command registration, tray, startup events, shared app orchestration.
+- `scanner/mod.rs`: drive scanning, parallel traversal, large-file finder, cancellation, scan progress.
+- `risk/mod.rs`: rule-based risk classification and cleanup eligibility.
+- `cleaner/mod.rs`: preview, Recycle Bin cleanup, undo, safety checks, progress events.
+- `watcher/mod.rs`: polling filesystem watcher and change batching.
+- `db/mod.rs`: SQLite snapshots, cleanup logs, settings, rule overrides, auto-cleanup reports, cache.
+- `alert/mod.rs`: disk-space thresholds, sudden-growth checks, notifications.
+- `prediction/mod.rs`: linear regression forecast from snapshot history.
+- `scheduler/mod.rs`: scheduled auto-cleanup, LOW-risk invariant, report persistence.
 
-## Verification Checklist (run before marking task done)
+**v0.4.0 planned modules:**
+- `duplicates/mod.rs`: (v0.3.4) duplicate file detection via 3-phase pipeline.
+- `aging/mod.rs`: (v0.3.5) file aging analysis, zombie finder, growth hotspots.
+- `recommendations/mod.rs`: (v0.3.6) smart recommendation engine with weighted scoring.
+- `report/mod.rs`: (v0.3.7) report generation & export (CSV/JSON).
+- `cli/mod.rs`: (v0.3.9) CLI mode with 5 subcommands.
+- `platform/mod.rs`: (v0.3.9) cross-platform abstraction traits.
 
-```bash
-# Rust
+Frontend modules live in `src/`:
+
+- `App.tsx`: main shell, navigation, dashboard, event listeners.
+- `types.ts`: shared TypeScript interfaces for IPC payloads and app state.
+- `index.css`: Aurora visual system and Tailwind integration.
+- `components/Treemap.tsx`: disk treemap visualization.
+- `components/CleanupPreview.tsx`: preview, execute, undo UI.
+- `components/LargeFileFinder.tsx`: large-file scan UI and cleanup handoff.
+- `components/PredictionCard.tsx`: disk forecast display.
+- `components/AutoCleanupStatus.tsx`: scheduler status and manual run.
+- `pages/Cleanup/index.tsx`: risk-grouped cleanup report.
+- `pages/History/index.tsx`: trend chart, snapshots, cleanup history, auto-cleanup reports.
+- `pages/Settings/index.tsx`: general, rules, alerts, and automation settings.
+- `hooks/useDriveScan.ts`: lazy meta/cache/background scan and cancel.
+- `hooks/useFsEvents.ts`: watcher lifecycle.
+- `hooks/useLargeFileFinder.ts`: large-file scan lifecycle.
+- `utils/format.ts`: formatting helpers.
+
+**v0.4.0 planned frontend files:**
+- `src/i18n/index.ts`, `locales/*.json`: (v0.3.1) i18n system with I18nProvider.
+- `src/hooks/useTheme.ts`, `src/components/ThemeSwitcher.tsx`: (v0.3.2) theme system.
+- `src/components/DuplicateFinder.tsx`, `src/hooks/useDuplicateScan.ts`: (v0.3.4) duplicate file UI.
+- `src/components/AgingAnalysis.tsx`, `src/hooks/useAgingAnalysis.ts`: (v0.3.5) aging analysis UI.
+- `src/components/RecommendationCard.tsx`, `DiskHealthGauge.tsx`: (v0.3.6) recommendations & health UI.
+- `src/components/CleanupWizard.tsx`, `NotificationCenter.tsx`: (v0.3.8) wizard & notification center.
+
+## Development Rules
+
+Rust:
+
+- Keep production code free of `unwrap()` and `expect()` unless there is a documented, unavoidable invariant.
+- Use `Result<T, String>` for Tauri command boundaries and `anyhow::Result` or module-local error handling internally where already established.
+- Add or update unit tests in the same module under `#[cfg(test)]`.
+- Register every new Tauri command in `generate_handler![]` and keep frontend command names in sync.
+- Define IPC event names as constants where the module pattern already does so.
+- Preserve cancellation paths for long-running scans and cleanup operations.
+
+TypeScript/React:
+
+- Keep TypeScript strict; avoid `any`.
+- Use `invoke<T>()` with explicit return types for Tauri commands.
+- Put shared IPC and domain types in `src/types.ts`.
+- Use `listen<T>()` for Tauri events and always clean up listeners.
+- Provide loading, empty, and error states for data-fetching UI.
+- Preserve the existing Aurora design language unless the user asks for a redesign.
+
+General:
+
+- Make small, targeted edits.
+- Do not refactor unrelated code while fixing a bug.
+- Do not edit generated build artifacts unless the task is explicitly release/build packaging.
+- Do not commit or stage `.claude/settings.local.json` or `production/` artifacts unless the user explicitly instructs otherwise.
+
+## IPC Change Checklist
+
+When adding or changing a Tauri command:
+
+1. Update Rust command function and serialization types.
+2. Register the command in `src-tauri/src/lib.rs`.
+3. Update `src/types.ts` if the frontend consumes the payload.
+4. Update frontend `invoke<T>()` call sites.
+5. Add or update backend tests.
+6. Run Rust tests and TypeScript typecheck.
+7. Update `CLAUDE.md`, `PROGRESS.md`, or release docs if the public API changed.
+
+## Verification Matrix
+
+Use the smallest useful verification first, then expand before declaring completion.
+
+Backend quick checks:
+
+```powershell
 cd src-tauri
-cargo test          # ALL must pass
-cargo clippy -- -D warnings  # ZERO warnings
-
-# TypeScript
-npm run typecheck   # ZERO errors
-npm run build:web   # must succeed
-
-# Manual (when applicable)
-# - Launch app: npm run tauri dev
-# - Smoke test the changed feature
+cargo check
+cargo test
+cargo clippy -- -D warnings
 ```
 
-## Git
+Frontend quick checks from repo root:
 
-- **Branch**: `feature/v0.X.Y-description` from `master`
-- **Commit**: `feat:` / `fix:` / `refactor:` / `docs:` / `chore:` prefix
-- **Do NOT commit**: `.claude/settings.local.json`, `production/` directory
+```powershell
+npm run typecheck
+npm run build:web
+```
 
-## Reference
+Full app/release checks when relevant:
 
-| Doc | What it's for |
-|-----|---------------|
-| `CLAUDE.md` | Full architecture, IPC API reference, safety rules, environment |
-| `PROGRESS.md` | Version history, file inventory, test counts, release checklists |
-| `CHANGELOG.md` | Human-readable changelog for each version |
-| `docs/v0.3.0-plan.md` | Sprint-by-sprint plan for v0.2.5–v0.3.0 |
-| `README.md` | Project overview, quick start, feature list |
+```powershell
+npm run tauri dev
+npm run tauri build
+```
+
+Manual smoke checks are required for UI, cleanup, watcher, notification, scheduler, and release packaging changes.
+
+## Task Handling Pattern
+
+For each assigned task:
+
+1. Restate the goal briefly if it is ambiguous.
+2. Locate the relevant modules with `rg`.
+3. Read existing implementation and tests.
+4. Make the smallest safe change.
+5. Add or update tests for behavior changes.
+6. Run targeted verification.
+7. Report exactly what changed, what was verified, and any remaining risk.
+
+## Known Project Priorities
+
+- Safety-first cleanup behavior.
+- Fast startup and responsive scanning.
+- Clear progress/cancel feedback for long operations.
+- Beautiful but consistent Aurora-style UI.
+- Reliable local history through SQLite.
+- Windows-first behavior and installer readiness.
+
+## Documentation Update Policy
+
+Update docs when a change affects architecture, public commands, release status, setup, or user-facing behavior:
+
+- `PROGRESS.md`: current implementation status, test counts, release checklist.
+- `CLAUDE.md`: architecture, IPC API, conventions, safety rules.
+- `CHANGELOG.md`: user-facing feature/fix history.
+- `docs/`: roadmap or sprint-level design details.
+- `README.md` / `README_zh-CN.md`: public setup and feature descriptions.
+
+Keep this `CODEX.md` focused on agent operating context, not detailed changelog history.
+

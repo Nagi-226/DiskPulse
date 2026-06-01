@@ -1,0 +1,24 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "cleanup": "Cleanup Report",
+    "largeFiles": "Large Files",
+    "duplicates": "Duplicates",
+    "aging": "Aging Analysis",
+    "wizard": "Cleanup Wizard",
+    "history": "History",
+    "settings": "Settings"
+  },
+  "settings": {
+    "language": "Language",
+    "languageHelp": "Choose the UI language. Auto follows the system language.",
+    "theme": "Theme",
+    "themeHelp": "Choose Aurora Light, Aurora Dark, or follow the system theme.",
+    "appearance": "Appearance",
+    "auto": "Auto",
+    "english": "English",
+    "chinese": "Simplified Chinese",
+    "light": "Light",
+    "dark": "Dark"
+  }
+}

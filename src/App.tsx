@@ -9,10 +9,17 @@ import SettingsPage from "./pages/Settings";
 import PredictionCard from "./components/PredictionCard";
 import LargeFileFinder from "./components/LargeFileFinder";
 import AutoCleanupStatus from "./components/AutoCleanupStatus";
+import DuplicateFinder from "./components/DuplicateFinder";
+import AgingAnalysis from "./components/AgingAnalysis";
+import RecommendationCard from "./components/RecommendationCard";
+import CleanupWizard from "./components/CleanupWizard";
+import NotificationCenter from "./components/NotificationCenter";
+import ThemeSwitcher from "./components/ThemeSwitcher";
 import { NavIcons } from "./components/Icons";
 import { formatSize } from "./utils/format";
 import { useDriveScan } from "./hooks/useDriveScan";
 import { useFsEvents } from "./hooks/useFsEvents";
+import { useTranslation } from "react-i18next";
 import type { AutoCleanupStatus as AutoCleanupStatusType, CleanItem, CleanProgress, CleanResult, DirInfo, DiskSpaceAlertPayload, RiskItem, ScanProgress } from "./types";
 
 const EMPTY_RISK_ITEMS: RiskItem[] = [];
@@ -192,11 +199,14 @@ function CacheBadge({
 
 // --- Navigation Sidebar ---
 const NAV_ITEMS = [
-  { id: "dashboard", label: "Dashboard", Icon: NavIcons.Dashboard },
-  { id: "cleanup", label: "Cleanup Report", Icon: NavIcons.Cleanup },
-  { id: "large-files", label: "Large Files", Icon: NavIcons.LargeFiles },
-  { id: "history", label: "History", Icon: NavIcons.History },
-  { id: "settings", label: "Settings", Icon: NavIcons.Settings },
+  { id: "dashboard", labelKey: "nav.dashboard", Icon: NavIcons.Dashboard },
+  { id: "cleanup", labelKey: "nav.cleanup", Icon: NavIcons.Cleanup },
+  { id: "large-files", labelKey: "nav.largeFiles", Icon: NavIcons.LargeFiles },
+  { id: "duplicates", labelKey: "nav.duplicates", Icon: NavIcons.LargeFiles },
+  { id: "aging", labelKey: "nav.aging", Icon: NavIcons.History },
+  { id: "wizard", labelKey: "nav.wizard", Icon: NavIcons.Cleanup },
+  { id: "history", labelKey: "nav.history", Icon: NavIcons.History },
+  { id: "settings", labelKey: "nav.settings", Icon: NavIcons.Settings },
 ] as const;
 
 // --- Directory bar item ---
@@ -294,13 +304,14 @@ function ScanProgressBar({ progress }: { progress: ScanProgress }) {
 
 // --- Main App ---
 export default function App() {
+  const { t } = useTranslation();
   const [cleanProgress, setCleanProgress] = useState<CleanProgress | null>(null);
   const [alertToast, setAlertToast] = useState<DiskSpaceAlertPayload | null>(null);
   const [autoCleanupToast, setAutoCleanupToast] = useState<string | null>(null);
   const [version, setVersion] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
   const [drives, setDrives] = useState<string[]>([]);
-  const [largeFileCleanupItems, setLargeFileCleanupItems] = useState<CleanItem[]>([]);
+  const [externalCleanupItems, setExternalCleanupItems] = useState<CleanItem[]>([]);
   const {
     driveInfo,
     loading,
@@ -444,8 +455,8 @@ export default function App() {
     }
   }
 
-  function handleAddLargeFilesToCleanup(items: CleanItem[]) {
-    setLargeFileCleanupItems((current) => {
+  function handleAddToCleanup(items: CleanItem[]) {
+    setExternalCleanupItems((current) => {
       const byPath = new Map(current.map((item) => [item.path, item]));
       for (const item of items) {
         byPath.set(item.path, item);
@@ -495,7 +506,7 @@ export default function App() {
               onClick={() => setActiveTab(item.id)}
             >
               <item.Icon />
-              <span>{item.label}</span>
+              <span>{t(item.labelKey)}</span>
               {activeTab === item.id && (
                 <div className="ml-auto w-1.5 h-1.5 rounded-full bg-accent"
                   style={{ boxShadow: "0 0 6px var(--color-accent-glow)" }}
@@ -506,6 +517,7 @@ export default function App() {
         </nav>
 
         <div className="px-4 py-4 border-t border-aurora-border/40 space-y-3">
+          <ThemeSwitcher />
           <div className="flex items-center gap-2 text-xs text-text-muted">
             <span className={`${isWatching ? "live-dot" : ""} w-2 h-2 rounded-full ${isWatching ? "bg-success" : "bg-aurora-border"}`} />
             <span>{loading ? (cleanProgress ? "Cleaning..." : "Scanning...") : drillLoading ? "Loading folder..." : isWatching ? `Live · ${eventCount} events` : "Monitor paused"}</span>
@@ -530,7 +542,15 @@ export default function App() {
           <div>
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-                {activeTab === "dashboard" ? "Drive Overview" : activeTab === "large-files" ? "Large Files" : activeTab}
+                {activeTab === "dashboard"
+                  ? "Drive Overview"
+                  : activeTab === "large-files"
+                    ? t("nav.largeFiles")
+                    : activeTab === "duplicates"
+                      ? t("nav.duplicates")
+                      : activeTab === "aging"
+                        ? t("nav.aging")
+                        : activeTab}
               </h2>
               {activeTab === "dashboard" && (
                 <CacheBadge dataSource={dataSource} cacheAgeMs={cacheAgeMs} />
@@ -544,6 +564,9 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Drive selector */}
+            <NotificationCenter />
+
             {/* Drive selector */}
             {drives.length > 0 && (
               <select
@@ -767,6 +790,8 @@ export default function App() {
 
                   <AutoCleanupStatus />
 
+                  <RecommendationCard drive={driveInfo.drive_letter} onAddToCleanup={handleAddToCleanup} />
+
                   {loading && currentData.length === 0 && (
                     <div className="glass-card p-6">
                       <div className="flex items-center justify-between mb-5">
@@ -881,17 +906,17 @@ export default function App() {
           {activeTab === "cleanup" && (
             <div className="space-y-6">
               <CleanupPage report={riskReport} />
-              {(riskReport || largeFileCleanupItems.length > 0) && (
+              {(riskReport || externalCleanupItems.length > 0) && (
                 <div className="px-8 pb-8">
-                  {largeFileCleanupItems.length > 0 && (
+                  {externalCleanupItems.length > 0 && (
                     <div className="mb-4 rounded-2xl border border-accent/20 bg-accent/10 px-4 py-3 text-sm text-text-secondary">
                       <span className="font-semibold text-accent-light">
-                        {largeFileCleanupItems.length} large file candidate(s)
+                        {externalCleanupItems.length} external candidate(s)
                       </span>{" "}
                       added to this safety preview.
                       <button
                         className="ml-3 text-text-muted hover:text-text-primary"
-                        onClick={() => setLargeFileCleanupItems([])}
+                        onClick={() => setExternalCleanupItems([])}
                       >
                         Clear
                       </button>
@@ -899,7 +924,7 @@ export default function App() {
                   )}
                   <CleanupPreview
                     items={riskReport?.items ?? EMPTY_RISK_ITEMS}
-                    additionalItems={largeFileCleanupItems}
+                    additionalItems={externalCleanupItems}
                   />
                 </div>
               )}
@@ -909,8 +934,25 @@ export default function App() {
             <LargeFileFinder
               drives={drives}
               selectedDrive={selectedDrive}
-              onAddToCleanup={handleAddLargeFilesToCleanup}
+              onAddToCleanup={handleAddToCleanup}
             />
+          )}
+          {activeTab === "duplicates" && (
+            <DuplicateFinder
+              drives={drives}
+              selectedDrive={selectedDrive}
+              onAddToCleanup={handleAddToCleanup}
+            />
+          )}
+          {activeTab === "aging" && (
+            <AgingAnalysis
+              drives={drives}
+              selectedDrive={selectedDrive}
+              onAddToCleanup={handleAddToCleanup}
+            />
+          )}
+          {activeTab === "wizard" && (
+            <CleanupWizard selectedDrive={selectedDrive} onStartScan={(drive) => void startDriveScan(drive)} />
           )}
           {activeTab === "history" && <HistoryPage />}
           {activeTab === "settings" && <SettingsPage />}

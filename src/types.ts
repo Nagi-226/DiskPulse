@@ -209,6 +209,8 @@ export interface AppSettings {
   auto_cleanup_time: string;
   auto_cleanup_risk_levels: string;
   auto_cleanup_min_free_gb: number;
+  language: string;
+  theme: string;
 }
 
 export interface DiskSpaceAlertPayload {
@@ -253,4 +255,84 @@ export interface RiskRule {
   explanation: string;
   safe_to_delete: boolean;
   name_match: string | null;
+}
+
+export interface DuplicateScanProgress {
+  drive_letter: string;
+  phase: string;
+  files_processed: number;
+  groups_found: number;
+  current_path: string | null;
+}
+
+export interface DuplicateGroup {
+  group_id: string;
+  total_size_wasted: number;
+  files: FileEntry[];
+}
+
+export interface AgeBucket {
+  id: string;
+  label: string;
+  min_days: number;
+  max_days: number | null;
+  total_bytes: number;
+  file_count: number;
+}
+
+export interface Hotspot {
+  path: string;
+  recent_bytes: number;
+  file_count: number;
+}
+
+export interface AgingReport {
+  drive_letter: string;
+  buckets: AgeBucket[];
+  zombies_total_size: number;
+  zombie_files: FileEntry[];
+  hotspots: Hotspot[];
+}
+
+export interface AgingScanProgress {
+  drive_letter: string;
+  files_processed: number;
+  buckets: AgeBucket[];
+  current_path: string | null;
+}
+
+export interface RecommendationItem {
+  name: string;
+  path: string;
+  size_bytes: number;
+  risk_level: string;
+  safe_to_delete: boolean;
+}
+
+export interface Recommendation {
+  rank: number;
+  item: RecommendationItem;
+  score: number;
+  reason: string;
+  estimated_size: number;
+  action: string;
+}
+
+export interface DiskHealth {
+  drive_letter: string;
+  score: number;
+  status: string;
+  free_percent: number;
+  duplicate_waste_bytes: number;
+  zombie_bytes: number;
+  message: string;
+}
+
+export interface NotificationRecord {
+  id: number;
+  notification_type: string;
+  title: string;
+  message: string;
+  read: boolean;
+  created_at: string;
 }

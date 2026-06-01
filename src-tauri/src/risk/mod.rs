@@ -70,7 +70,7 @@ pub struct RiskRule {
 }
 
 impl RiskRule {
-    fn matches(&self, dir: &DirInfo) -> bool {
+    pub fn matches(&self, dir: &DirInfo) -> bool {
         let lower_name = normalize_match_text(&dir.name);
         let lower_path = normalize_match_text(&dir.path);
 
@@ -252,10 +252,15 @@ fn default_rules() -> Vec<RiskRule> {
 /// Classify a scan result into risk levels
 pub fn classify_risks(drive_info: &DriveInfo) -> RiskReport {
     let rules = default_rules();
+    classify_risks_with_rules(drive_info, &rules)
+}
+
+/// Classify a scan result with a supplied registry of built-in/custom rules.
+pub fn classify_risks_with_rules(drive_info: &DriveInfo, rules: &[RiskRule]) -> RiskReport {
     let mut items: Vec<RiskItem> = Vec::new();
 
     for dir in &drive_info.top_dirs {
-        let (risk_level, category, explanation, safe_to_delete) = match_rule(dir, &rules);
+        let (risk_level, category, explanation, safe_to_delete) = match_rule(dir, rules);
 
         items.push(RiskItem {
             name: dir.name.clone(),
@@ -379,6 +384,19 @@ pub fn get_rules_with_overrides(
             rule
         })
         .collect()
+}
+
+pub fn risk_level_from_str(value: &str) -> Option<RiskLevel> {
+    match value.to_ascii_lowercase().as_str() {
+        "low" => Some(RiskLevel::Low),
+        "medium" => Some(RiskLevel::Medium),
+        "high" => Some(RiskLevel::High),
+        _ => None,
+    }
+}
+
+pub fn built_in_rules() -> Vec<RiskRule> {
+    default_rules()
 }
 
 #[cfg(test)]

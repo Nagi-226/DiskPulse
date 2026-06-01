@@ -1,7 +1,13 @@
 mod alert;
+mod aging;
 mod cleaner;
+mod cli;
 mod db;
+mod duplicates;
 mod prediction;
+mod recommendations;
+mod report;
+pub mod platform;
 mod risk;
 mod scanner;
 mod scheduler;
@@ -19,6 +25,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 pub const SCAN_PROGRESS_EVENT: &str = "scan-progress";
 pub const LARGE_FILE_PROGRESS_EVENT: &str = "large-file-progress";
+pub const DUPLICATE_SCAN_PROGRESS_EVENT: &str = "duplicate-scan-progress";
+pub const AGING_SCAN_PROGRESS_EVENT: &str = "aging-scan-progress";
 pub const CLEAN_PROGRESS_EVENT: &str = "clean-progress";
 pub const FS_EVENT_BATCH: &str = "fs-event-batch";
 pub const DRIVE_CACHE_REFRESHED_EVENT: &str = "drive-cache-refreshed";
@@ -29,6 +37,8 @@ pub const DISK_SPACE_ALERT: &str = "disk-space-alert";
 static WATCHER: Mutex<Option<watcher::WatcherGuard>> = Mutex::new(None);
 static SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 static LARGE_FILE_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+static DUPLICATE_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+static AGING_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 
 fn begin_scan_token() -> Arc<AtomicBool> {
     let token = Arc::new(AtomicBool::new(false));
@@ -63,6 +73,48 @@ fn begin_large_file_scan_token() -> Arc<AtomicBool> {
 
 fn finish_large_file_scan_token(token: &Arc<AtomicBool>) {
     if let Ok(mut guard) = LARGE_FILE_SCAN_CANCEL.lock() {
+        if guard
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, token))
+        {
+            *guard = None;
+        }
+    }
+}
+
+fn begin_duplicate_scan_token() -> Arc<AtomicBool> {
+    let token = Arc::new(AtomicBool::new(false));
+    if let Ok(mut guard) = DUPLICATE_SCAN_CANCEL.lock() {
+        if let Some(previous) = guard.replace(token.clone()) {
+            previous.store(true, Ordering::Relaxed);
+        }
+    }
+    token
+}
+
+fn finish_duplicate_scan_token(token: &Arc<AtomicBool>) {
+    if let Ok(mut guard) = DUPLICATE_SCAN_CANCEL.lock() {
+        if guard
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, token))
+        {
+            *guard = None;
+        }
+    }
+}
+
+fn begin_aging_scan_token() -> Arc<AtomicBool> {
+    let token = Arc::new(AtomicBool::new(false));
+    if let Ok(mut guard) = AGING_SCAN_CANCEL.lock() {
+        if let Some(previous) = guard.replace(token.clone()) {
+            previous.store(true, Ordering::Relaxed);
+        }
+    }
+    token
+}
+
+fn finish_aging_scan_token(token: &Arc<AtomicBool>) {
+    if let Ok(mut guard) = AGING_SCAN_CANCEL.lock() {
         if guard
             .as_ref()
             .is_some_and(|current| Arc::ptr_eq(current, token))
@@ -171,6 +223,65 @@ fn cancel_large_file_scan() -> Result<(), String> {
     Ok(())
 }
 
+/// Scan a drive for identical-content duplicate files.
+#[tauri::command]
+fn scan_duplicates(
+    app: AppHandle,
+    drive: String,
+    min_size: u64,
+) -> Result<Vec<duplicates::DuplicateGroup>, String> {
+    let token = begin_duplicate_scan_token();
+    let result = duplicates::scan_duplicates_with_progress_and_cancel(
+        &drive,
+        min_size,
+        |progress| {
+            let _ = app.emit(DUPLICATE_SCAN_PROGRESS_EVENT, progress);
+        },
+        Some(&token),
+    );
+    finish_duplicate_scan_token(&token);
+    result
+}
+
+/// Cancel the active duplicate scan.
+#[tauri::command]
+fn cancel_duplicate_scan() -> Result<(), String> {
+    let mut guard = DUPLICATE_SCAN_CANCEL
+        .lock()
+        .map_err(|e| format!("Duplicate scan lock error: {}", e))?;
+    if let Some(token) = guard.take() {
+        token.store(true, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+/// Analyze file age distribution, zombie files, and recent growth hotspots.
+#[tauri::command]
+fn analyze_file_aging(app: AppHandle, drive: String) -> Result<aging::AgingReport, String> {
+    let token = begin_aging_scan_token();
+    let result = aging::analyze_file_aging_with_progress_and_cancel(
+        &drive,
+        |progress| {
+            let _ = app.emit(AGING_SCAN_PROGRESS_EVENT, progress);
+        },
+        Some(&token),
+    );
+    finish_aging_scan_token(&token);
+    result
+}
+
+/// Cancel the active aging analysis scan.
+#[tauri::command]
+fn cancel_aging_scan() -> Result<(), String> {
+    let mut guard = AGING_SCAN_CANCEL
+        .lock()
+        .map_err(|e| format!("Aging scan lock error: {}", e))?;
+    if let Some(token) = guard.take() {
+        token.store(true, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
 /// List available drives on the system
 #[tauri::command]
 fn list_drives() -> Result<Vec<String>, String> {
@@ -213,7 +324,11 @@ fn scan_directory(path: String) -> Result<Vec<scanner::DirInfo>, String> {
 /// Classify scan results into risk levels
 #[tauri::command]
 fn classify_risks(scan: DriveInfo) -> Result<risk::RiskReport, String> {
-    Ok(risk::classify_risks(&scan))
+    let mut rules = risk::built_in_rules();
+    if let Ok(custom_rules) = db::get_custom_rules() {
+        rules.extend(custom_rules);
+    }
+    Ok(risk::classify_risks_with_rules(&scan, &rules))
 }
 
 /// Preview cleanup candidates with whitelist validation and safety checks.
@@ -232,6 +347,14 @@ fn clean_items(app: AppHandle, items: Vec<CleanItem>) -> Result<CleanResult, Str
     if let Err(e) = db::save_cleanup_log(&result) {
         eprintln!("Failed to save cleanup log to history DB: {}", e);
     }
+    let _ = db::save_notification(&db::NotificationInput {
+        notification_type: "cleanup-complete".into(),
+        title: "Cleanup complete".into(),
+        message: format!(
+            "{} cleaned, {} skipped, {} failed",
+            result.succeeded, result.skipped, result.failed
+        ),
+    });
     Ok(result)
 }
 
@@ -442,13 +565,43 @@ fn save_settings(app: AppHandle, settings: db::AppSettings) -> Result<(), String
 #[tauri::command]
 fn get_rules() -> Result<Vec<risk::RiskRule>, String> {
     let overrides = db::get_rule_overrides()?;
-    Ok(risk::get_rules_with_overrides(&overrides))
+    let mut rules = risk::get_rules_with_overrides(&overrides);
+    rules.extend(db::get_custom_rules()?);
+    Ok(rules)
 }
 
 /// Save a single rule override.
 #[tauri::command]
 fn save_rule_override(rule_id: String, safe_to_delete: bool) -> Result<(), String> {
     db::save_rule_override(&rule_id, safe_to_delete)
+}
+
+/// Create or update a custom risk rule.
+#[tauri::command]
+fn create_custom_rule(
+    name: String,
+    pattern: String,
+    risk_level: String,
+) -> Result<risk::RiskRule, String> {
+    db::create_custom_rule(&name, &pattern, &risk_level)
+}
+
+/// Delete a custom risk rule.
+#[tauri::command]
+fn delete_custom_rule(rule_id: String) -> Result<(), String> {
+    db::delete_custom_rule(&rule_id)
+}
+
+/// Return persisted notification history.
+#[tauri::command]
+fn get_notifications() -> Result<Vec<db::NotificationRecord>, String> {
+    db::get_notifications()
+}
+
+/// Mark all notifications as read.
+#[tauri::command]
+fn mark_notifications_read() -> Result<(), String> {
+    db::mark_notifications_read()
 }
 
 /// Get snapshot history for a drive within the specified number of past days.
@@ -485,6 +638,36 @@ fn get_auto_cleanup_status() -> Result<scheduler::AutoCleanupStatus, String> {
 #[tauri::command]
 fn get_auto_cleanup_history() -> Result<Vec<db::AutoCleanupReport>, String> {
     scheduler::get_auto_cleanup_history()
+}
+
+/// Get ranked cleanup recommendations for a drive.
+#[tauri::command]
+fn get_recommendations(drive: String) -> Result<Vec<recommendations::Recommendation>, String> {
+    recommendations::get_recommendations(&drive)
+}
+
+/// Get a lightweight disk health score for a drive.
+#[tauri::command]
+fn get_disk_health(drive: String) -> Result<recommendations::DiskHealth, String> {
+    recommendations::get_disk_health(&drive)
+}
+
+/// Export a scan report to a temporary CSV/JSON file.
+#[tauri::command]
+fn export_scan_report(drive: String, format: String) -> Result<String, String> {
+    report::export_scan_report(&drive, &format)
+}
+
+/// Export cleanup history to a temporary CSV/JSON file.
+#[tauri::command]
+fn export_cleanup_history(format: String) -> Result<String, String> {
+    report::export_cleanup_history(&format)
+}
+
+/// Export duplicate scan results to a temporary CSV/JSON file.
+#[tauri::command]
+fn export_duplicates(drive: String, format: String) -> Result<String, String> {
+    report::export_duplicates(&drive, &format)
 }
 
 /// Get the app version
@@ -572,6 +755,18 @@ mod tests {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args = std::env::args().collect::<Vec<_>>();
+    match cli::parse_cli_args(&args) {
+        Ok(Some(options)) => {
+            std::process::exit(cli::execute_cli_command(&options));
+        }
+        Err(err) => {
+            eprintln!("{}", err);
+            std::process::exit(3);
+        }
+        Ok(None) => {}
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -693,6 +888,10 @@ pub fn run() {
             cancel_scan,
             find_large_files,
             cancel_large_file_scan,
+            scan_duplicates,
+            cancel_duplicate_scan,
+            analyze_file_aging,
+            cancel_aging_scan,
             list_drives,
             scan_directory,
             classify_risks,
@@ -707,12 +906,21 @@ pub fn run() {
             run_auto_cleanup_now,
             get_auto_cleanup_status,
             get_auto_cleanup_history,
+            get_recommendations,
+            get_disk_health,
+            export_scan_report,
+            export_cleanup_history,
+            export_duplicates,
             start_alert_monitor,
             stop_alert_monitor,
             get_settings,
             save_settings,
             get_rules,
             save_rule_override,
+            create_custom_rule,
+            delete_custom_rule,
+            get_notifications,
+            mark_notifications_read,
             app_version
         ])
         .run(tauri::generate_context!())

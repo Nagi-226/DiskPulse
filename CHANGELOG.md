@@ -2,6 +2,88 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [0.4.0] - 2026-06-01
+
+> Full roadmap: `docs/v0.4.0-plan.md`
+
+### Production Release
+
+- Bumped app/package versions to 0.4.0 across npm, Cargo, Cargo.lock, and Tauri config.
+- Completed release hardening for custom rules, notification persistence, CLI parsing/execution smoke, report export, and installer generation.
+- Verified `cargo test` (73/73), `cargo clippy -- -D warnings`, `npm run typecheck`, `npm run build:web`, and `npm run tauri build`.
+- Generated release artifacts:
+  - `src-tauri/target/release/bundle/msi/DiskPulse_0.4.0_x64_en-US.msi`
+  - `src-tauri/target/release/bundle/nsis/DiskPulse_0.4.0_x64-setup.exe`
+- Artifact hashes:
+  - MSI SHA256: `3AAB14EC84C7794734BB9FD3E341A2F75F58E408DB1761E0E3E6552B6D1CC184`
+  - NSIS SHA256: `62BCE631815A70646359991F4FBD29B5FF7472D374F96950C74E3396F39D1C8C`
+
+### v0.4.0 Theme: Extensible Intelligence Platform
+
+Transform DiskPulse from a monitoring & cleanup tool into an extensible disk intelligence platform — with plugin-style architecture, multi-dimensional space analysis, and guided optimization.
+
+#### Planned Versions
+
+| Version | Focus | Key Features |
+|---------|-------|-------------|
+| v0.3.1 | i18n | `react-i18next`, en/zh-CN locales, language setting |
+| v0.3.2 | Themes | CSS variable tokens, Light/Dark themes, ThemeProvider |
+| v0.3.3 | Performance | jwalk, streaming scan, incremental update, ScanStage trait, memory < 100MB |
+| v0.3.4 | Duplicates | 3-phase detection (size→4KB→SHA-256), DuplicateFinder, cleanup integration |
+| v0.3.5 | Aging | 7 aging buckets, zombie finder, growth hotspots, ECharts stacked bar |
+| v0.3.6 | Recommendations | Weighted scoring model, disk health gauge, RecommendationCard |
+| v0.3.7 | Rules + Export | RiskRule trait + registry, custom rule editor, CSV/JSON export |
+| v0.3.8 | Wizard + Notify | 5-step CleanupWizard, NotificationCenter with SQLite storage |
+| v0.3.9 | CLI + Platform | 5 subcommands (scan/duplicates/health/clean/export), cross-platform traits |
+| v0.4.0 | Release | Integration tests, benchmarks, MSI + NSIS, docs |
+
+**Extensibility Architecture (6 extension points):**
+1. Risk Rule Registry (`trait RiskRule`) — new rules without touching core
+2. Scanner Pipeline (`trait ScanStage`) — new scan types as plugins
+3. Notification Channel (`trait NotifyChannel`) — Slack, Email, etc.
+4. Cleanup Provider (`trait CleanupProvider`) — per-platform implementations
+5. i18n Resource Bundle (JSON) — new language = new JSON file
+6. Theme Token System (CSS variables) — new theme = new variable set
+
+## [0.3.9] - 2026-06-01
+
+### Extensible Intelligence Follow-Up Slice
+
+- Added `recommendations` backend module with weighted scoring, ranked recommendations, disk health scoring, and 3 unit tests.
+- Added dashboard `RecommendationCard` with Top 5 recommendations, disk health gauge, and safe-candidate handoff into `CleanupPreview`.
+- Added `report` backend module with CSV/JSON report export for scan reports, cleanup history, and duplicate results.
+- Added `CleanupWizard` UI shell and `NotificationCenter` panel shell for the v0.3.8 guided cleanup/notification workflow.
+- Added `cli` parser module and `platform` trait module as the first v0.3.9 CLI/platform abstraction slice.
+- Registered new IPC commands: `get_recommendations`, `get_disk_health`, `export_scan_report`, `export_cleanup_history`, and `export_duplicates`.
+
+### Remaining Before v0.4.0 Release
+
+- Custom risk rule registry and editor are still pending beyond the report-export slice.
+- Notification SQLite persistence and full notification event history are still pending.
+- CLI execution mode currently parses commands; full command execution, JSON/quiet output, and exit-code contract need hardening.
+- Full `npm run tauri build` release packaging was not run in this slice.
+
+## [0.3.5] - 2026-06-01
+
+### Foundation + Intelligence Slice
+
+- Added i18n foundation with `react-i18next`, English and Simplified Chinese resource bundles, and persisted `AppSettings.language`.
+- Added Aurora theme system with CSS-variable light/dark tokens, `ThemeProvider`, sidebar quick toggle, Settings Appearance tab, and persisted `AppSettings.theme`.
+- Added scanner extensibility foundation with `ScanStage`, `ScanContext`, `MeasureStage`, and `jwalk`-backed directory measurement.
+- Added duplicate file detection module with size grouping, first-4KB SHA-256 prefilter, full-file SHA-256 confirmation, progress events, cancellation, and `DuplicateFinder` UI.
+- Added file aging analysis module with 7 aging buckets, zombie file candidates, recent growth hotspots, progress events, cancellation, and `AgingAnalysis` UI.
+- Registered new IPC commands: `scan_duplicates`, `cancel_duplicate_scan`, `analyze_file_aging`, and `cancel_aging_scan`.
+- Kept duplicate and zombie cleanup handoff routed through `CleanupPreview`; external candidates default to review-required safety posture.
+
+### Verification
+
+- `npm run tauri dev` launch smoke: Vite served `http://localhost:1420/` with HTTP 200 and Rust app launched.
+- `cargo check` passed.
+- `cargo test` passed: 62/62.
+- `cargo clippy -- -D warnings` passed.
+- `npm run typecheck` passed.
+- `npm run build:web` passed with the existing chunk-size warning.
+
 ## [0.3.0] — 2026-05-31
 
 ### Production Release

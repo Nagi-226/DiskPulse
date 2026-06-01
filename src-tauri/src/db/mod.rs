@@ -63,6 +63,23 @@ pub struct AutoCleanupReportInput {
     pub items_json: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationRecord {
+    pub id: i64,
+    pub notification_type: String,
+    pub title: String,
+    pub message: String,
+    pub read: bool,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationInput {
+    pub notification_type: String,
+    pub title: String,
+    pub message: String,
+}
+
 /// Application settings persisted across sessions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -82,6 +99,8 @@ pub struct AppSettings {
     pub auto_cleanup_time: String,
     pub auto_cleanup_risk_levels: String,
     pub auto_cleanup_min_free_gb: f64,
+    pub language: String,
+    pub theme: String,
 }
 
 impl Default for AppSettings {
@@ -103,6 +122,8 @@ impl Default for AppSettings {
             auto_cleanup_time: "03:00".into(),
             auto_cleanup_risk_levels: "low".into(),
             auto_cleanup_min_free_gb: 50.0,
+            language: "auto".into(),
+            theme: "auto".into(),
         }
     }
 }
@@ -183,6 +204,24 @@ fn ensure_tables_with(conn: &rusqlite::Connection) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS rule_overrides (
             rule_id TEXT PRIMARY KEY,
             safe_to_delete INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS custom_rules (
+            id TEXT PRIMARY KEY,
+            pattern TEXT NOT NULL,
+            risk_level TEXT NOT NULL,
+            category TEXT NOT NULL,
+            explanation TEXT NOT NULL,
+            safe_to_delete INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            notification_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            read INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );",
     )
     .map_err(|e| format!("Cannot create tables: {}", e))
@@ -435,6 +474,8 @@ fn get_settings_with(conn: &rusqlite::Connection) -> Result<AppSettings, String>
                     settings.auto_cleanup_min_free_gb = v;
                 }
             }
+            "language" => settings.language = value,
+            "theme" => settings.theme = value,
             _ => {}
         }
     }
@@ -498,6 +539,8 @@ fn save_settings_with(conn: &rusqlite::Connection, settings: &AppSettings) -> Re
             "auto_cleanup_min_free_gb",
             settings.auto_cleanup_min_free_gb.to_string(),
         ),
+        ("language", settings.language.clone()),
+        ("theme", settings.theme.clone()),
     ];
     for (key, value) in &pairs {
         conn.execute(
@@ -540,6 +583,134 @@ fn save_rule_override_with(
         rusqlite::params![rule_id, safe_to_delete as i64],
     )
     .map_err(|e| format!("Save rule override error: {}", e))?;
+    Ok(())
+}
+
+fn create_custom_rule_with(
+    conn: &rusqlite::Connection,
+    name: &str,
+    pattern: &str,
+    risk_level: &str,
+) -> Result<crate::risk::RiskRule, String> {
+    let level = crate::risk::risk_level_from_str(risk_level)
+        .ok_or_else(|| format!("Invalid risk level: {}", risk_level))?;
+    let id = format!(
+        "custom-{}",
+        name.to_ascii_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect::<String>()
+            .trim_matches('-')
+    );
+    let rule = crate::risk::RiskRule {
+        id: id.clone(),
+        patterns: vec![pattern.to_string()],
+        risk_level: level,
+        category: "custom".into(),
+        explanation: format!("Custom rule: {}", name),
+        safe_to_delete: false,
+        name_match: None,
+    };
+    conn.execute(
+        "INSERT INTO custom_rules
+            (id, pattern, risk_level, category, explanation, safe_to_delete)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(id) DO UPDATE SET
+            pattern = excluded.pattern,
+            risk_level = excluded.risk_level,
+            category = excluded.category,
+            explanation = excluded.explanation,
+            safe_to_delete = excluded.safe_to_delete",
+        rusqlite::params![
+            rule.id,
+            pattern,
+            risk_level.to_ascii_lowercase(),
+            rule.category,
+            rule.explanation,
+            rule.safe_to_delete as i64,
+        ],
+    )
+    .map_err(|e| format!("Save custom rule error: {}", e))?;
+    Ok(rule)
+}
+
+fn get_custom_rules_with(conn: &rusqlite::Connection) -> Result<Vec<crate::risk::RiskRule>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, pattern, risk_level, category, explanation, safe_to_delete
+             FROM custom_rules
+             ORDER BY id",
+        )
+        .map_err(|e| format!("Query custom rules error: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            let level_text: String = row.get(2)?;
+            let risk_level =
+                crate::risk::risk_level_from_str(&level_text).unwrap_or(crate::risk::RiskLevel::Medium);
+            Ok(crate::risk::RiskRule {
+                id: row.get(0)?,
+                patterns: vec![row.get(1)?],
+                risk_level,
+                category: row.get(3)?,
+                explanation: row.get(4)?,
+                safe_to_delete: row.get::<_, i64>(5)? != 0,
+                name_match: None,
+            })
+        })
+        .map_err(|e| format!("Query custom rules error: {}", e))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Custom rule row error: {}", e))
+}
+
+fn delete_custom_rule_with(conn: &rusqlite::Connection, rule_id: &str) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM custom_rules WHERE id = ?1",
+        rusqlite::params![rule_id],
+    )
+    .map_err(|e| format!("Delete custom rule error: {}", e))?;
+    Ok(())
+}
+
+fn save_notification_with(
+    conn: &rusqlite::Connection,
+    input: &NotificationInput,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO notifications (notification_type, title, message)
+         VALUES (?1, ?2, ?3)",
+        rusqlite::params![input.notification_type, input.title, input.message],
+    )
+    .map_err(|e| format!("Save notification error: {}", e))?;
+    Ok(())
+}
+
+fn get_notifications_with(conn: &rusqlite::Connection) -> Result<Vec<NotificationRecord>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, notification_type, title, message, read, created_at
+             FROM notifications
+             ORDER BY created_at DESC, id DESC",
+        )
+        .map_err(|e| format!("Query notifications error: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(NotificationRecord {
+                id: row.get(0)?,
+                notification_type: row.get(1)?,
+                title: row.get(2)?,
+                message: row.get(3)?,
+                read: row.get::<_, i64>(4)? != 0,
+                created_at: row.get(5)?,
+            })
+        })
+        .map_err(|e| format!("Query notifications error: {}", e))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Notification row error: {}", e))
+}
+
+fn mark_notifications_read_with(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute("UPDATE notifications SET read = 1", [])
+        .map_err(|e| format!("Mark notifications read error: {}", e))?;
     Ok(())
 }
 
@@ -603,6 +774,40 @@ pub fn get_rule_overrides() -> Result<std::collections::HashMap<String, bool>, S
 pub fn save_rule_override(rule_id: &str, safe_to_delete: bool) -> Result<(), String> {
     let conn = open_connection()?;
     save_rule_override_with(&conn, rule_id, safe_to_delete)
+}
+
+pub fn create_custom_rule(
+    name: &str,
+    pattern: &str,
+    risk_level: &str,
+) -> Result<crate::risk::RiskRule, String> {
+    let conn = open_connection()?;
+    create_custom_rule_with(&conn, name, pattern, risk_level)
+}
+
+pub fn get_custom_rules() -> Result<Vec<crate::risk::RiskRule>, String> {
+    let conn = open_connection()?;
+    get_custom_rules_with(&conn)
+}
+
+pub fn delete_custom_rule(rule_id: &str) -> Result<(), String> {
+    let conn = open_connection()?;
+    delete_custom_rule_with(&conn, rule_id)
+}
+
+pub fn save_notification(input: &NotificationInput) -> Result<(), String> {
+    let conn = open_connection()?;
+    save_notification_with(&conn, input)
+}
+
+pub fn get_notifications() -> Result<Vec<NotificationRecord>, String> {
+    let conn = open_connection()?;
+    get_notifications_with(&conn)
+}
+
+pub fn mark_notifications_read() -> Result<(), String> {
+    let conn = open_connection()?;
+    mark_notifications_read_with(&conn)
 }
 
 // ── Tests ───────────────────────────────────────────────────
@@ -747,6 +952,8 @@ mod tests {
             auto_cleanup_time: "04:30".into(),
             auto_cleanup_risk_levels: "low".into(),
             auto_cleanup_min_free_gb: 25.0,
+            language: "zh-CN".into(),
+            theme: "dark".into(),
         };
         save_settings_with(&conn, &settings).unwrap();
         let loaded = get_settings_with(&conn).unwrap();
@@ -766,6 +973,8 @@ mod tests {
         assert_eq!(loaded.auto_cleanup_time, "04:30");
         assert_eq!(loaded.auto_cleanup_risk_levels, "low");
         assert_eq!(loaded.auto_cleanup_min_free_gb, 25.0);
+        assert_eq!(loaded.language, "zh-CN");
+        assert_eq!(loaded.theme, "dark");
     }
 
     #[test]
@@ -780,6 +989,8 @@ mod tests {
         assert_eq!(settings.auto_cleanup_time, "03:00");
         assert_eq!(settings.auto_cleanup_risk_levels, "low");
         assert_eq!(settings.auto_cleanup_min_free_gb, 50.0);
+        assert_eq!(settings.language, "auto");
+        assert_eq!(settings.theme, "auto");
     }
 
     #[test]
@@ -820,5 +1031,42 @@ mod tests {
         save_rule_override_with(&conn, "npm-cache", true).unwrap();
         let overrides = get_rule_overrides_with(&conn).unwrap();
         assert_eq!(overrides.get("npm-cache"), Some(&true));
+    }
+
+    #[test]
+    fn save_query_and_delete_custom_rule() {
+        let conn = setup_test_conn();
+        let rule = create_custom_rule_with(&conn, "Archives", "archive-cache", "medium").unwrap();
+        assert_eq!(rule.id, "custom-archives");
+        assert!(!rule.safe_to_delete);
+
+        let rules = get_custom_rules_with(&conn).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].patterns, vec!["archive-cache".to_string()]);
+
+        delete_custom_rule_with(&conn, "custom-archives").unwrap();
+        assert!(get_custom_rules_with(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn save_and_mark_notifications_read() {
+        let conn = setup_test_conn();
+        save_notification_with(
+            &conn,
+            &NotificationInput {
+                notification_type: "alert".into(),
+                title: "Low space".into(),
+                message: "Drive C is low".into(),
+            },
+        )
+        .unwrap();
+
+        let notifications = get_notifications_with(&conn).unwrap();
+        assert_eq!(notifications.len(), 1);
+        assert!(!notifications[0].read);
+
+        mark_notifications_read_with(&conn).unwrap();
+        let notifications = get_notifications_with(&conn).unwrap();
+        assert!(notifications[0].read);
     }
 }

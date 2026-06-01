@@ -1,0 +1,24 @@
+﻿{
+  "nav": {
+    "dashboard": "仪表盘",
+    "cleanup": "清理报告",
+    "largeFiles": "大文件",
+    "duplicates": "重复文件",
+    "aging": "老化分析",
+    "wizard": "清理向导",
+    "history": "历史记录",
+    "settings": "设置"
+  },
+  "settings": {
+    "language": "语言",
+    "languageHelp": "选择界面语言。自动模式会跟随系统语言。",
+    "theme": "主题",
+    "themeHelp": "选择 Aurora 浅色、深色或跟随系统主题。",
+    "appearance": "外观",
+    "auto": "自动",
+    "english": "英语",
+    "chinese": "简体中文",
+    "light": "浅色",
+    "dark": "深色"
+  }
+}

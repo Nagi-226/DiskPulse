@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::{Ordering as CmpOrdering, Reverse};
 use std::collections::BinaryHeap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
@@ -57,6 +57,38 @@ pub struct DirInfo {
     pub risk_level: Option<String>,
 }
 
+/// Shared input for pluggable scan stages.
+pub struct ScanContext<'a> {
+    pub root: PathBuf,
+    pub cancel: Option<&'a AtomicBool>,
+}
+
+/// Common output for directory measurement stages.
+pub struct ScanOutput {
+    pub size_bytes: u64,
+    pub file_count: u64,
+    pub dir_count: u64,
+}
+
+/// Extension point for replacing scan phases without rewriting callers.
+pub trait ScanStage {
+    fn execute(&self, ctx: &ScanContext<'_>) -> Result<ScanOutput, String>;
+}
+
+/// Default measurement stage backed by the current walker implementation.
+pub struct MeasureStage;
+
+impl ScanStage for MeasureStage {
+    fn execute(&self, ctx: &ScanContext<'_>) -> Result<ScanOutput, String> {
+        let (size_bytes, file_count, dir_count) = calculate_dir_size(&ctx.root, ctx.cancel)?;
+        Ok(ScanOutput {
+            size_bytes,
+            file_count,
+            dir_count,
+        })
+    }
+}
+
 /// Individual file candidate returned by the large file finder.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 pub struct FileEntry {
@@ -99,8 +131,7 @@ pub struct LargeFileProgress {
     pub current_path: Option<String>,
 }
 
-/// Scan a drive and return its overview information (used in tests).
-#[allow(dead_code)]
+/// Scan a drive and return its overview information.
 pub fn scan_drive(drive_letter: &str) -> Result<DriveInfo, String> {
     scan_drive_with_progress(drive_letter, |_| {})
 }
@@ -254,14 +285,17 @@ where
                 partial_results: None,
             });
 
-            let (size, file_count, dir_count) = calculate_dir_size(path, cancel)?;
+            let output = MeasureStage.execute(&ScanContext {
+                root: path.clone(),
+                cancel,
+            })?;
 
             let dir = DirInfo {
                 name: name.clone(),
                 path: path.to_string_lossy().to_string(),
-                size_bytes: size,
-                file_count,
-                dir_count,
+                size_bytes: output.size_bytes,
+                file_count: output.file_count,
+                dir_count: output.dir_count,
                 risk_level: None,
             };
             let done = processed.fetch_add(1, Ordering::SeqCst) + 1;
@@ -283,7 +317,8 @@ where
     Ok(dirs)
 }
 
-fn is_cancelled(cancel: Option<&AtomicBool>) -> bool {
+/// Shared cancellation check used by scanner, duplicates, and aging modules.
+pub fn is_cancelled(cancel: Option<&AtomicBool>) -> bool {
     cancel
         .map(|flag| flag.load(Ordering::Relaxed))
         .unwrap_or(false)
@@ -402,7 +437,7 @@ where
             return Err("Large file scan cancelled".to_string());
         }
 
-        for entry in walkdir::WalkDir::new(&top_dir).follow_links(false) {
+        for entry in jwalk::WalkDir::new(&top_dir).follow_links(false) {
             if is_cancelled(cancel) {
                 return Err("Large file scan cancelled".to_string());
             }
@@ -411,7 +446,7 @@ where
                 continue;
             };
             if entry.file_type().is_file() {
-                push_file_candidate(&mut heap, entry.path(), min_size, limit);
+                push_file_candidate(&mut heap, &entry.path(), min_size, limit);
             }
         }
 
@@ -505,14 +540,17 @@ pub fn scan_top_level_dir(path: &str, cancel: Option<&AtomicBool>) -> Result<Dir
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .ok_or_else(|| format!("Cannot determine directory name: {}", path.display()))?;
-    let (size, file_count, dir_count) = calculate_dir_size(path, cancel)?;
+    let output = MeasureStage.execute(&ScanContext {
+        root: path.to_path_buf(),
+        cancel,
+    })?;
 
     Ok(DirInfo {
         name,
         path: path.to_string_lossy().to_string(),
-        size_bytes: size,
-        file_count,
-        dir_count,
+        size_bytes: output.size_bytes,
+        file_count: output.file_count,
+        dir_count: output.dir_count,
         risk_level: None,
     })
 }
@@ -581,9 +619,8 @@ pub fn scan_directory(path: &str) -> Result<Vec<DirInfo>, String> {
 /// Recursively calculate directory size using walkdir + rayon
 fn calculate_dir_size(path: &Path, cancel: Option<&AtomicBool>) -> Result<(u64, u64, u64), String> {
     use rayon::prelude::*;
-    use walkdir::WalkDir;
 
-    let entries: Vec<walkdir::DirEntry> = WalkDir::new(path)
+    let entries: Vec<_> = jwalk::WalkDir::new(path)
         .follow_links(false)
         .into_iter()
         .take_while(|_| !is_cancelled(cancel))
@@ -618,6 +655,28 @@ mod tests {
         assert!(is_protected_root_dir("System Volume Information"));
         assert!(is_protected_root_dir("$Recycle.Bin"));
         assert!(!is_protected_root_dir("Users"));
+    }
+
+    #[test]
+    fn scan_stage_trait_executes_measure_stage() {
+        let root = std::env::temp_dir().join(format!(
+            "diskpulse-scan-stage-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create scan stage dir");
+        write_sized_file(&root.join("stage.bin"), 12);
+
+        let ctx = ScanContext {
+            root: root.clone(),
+            cancel: None,
+        };
+        let output = MeasureStage.execute(&ctx).expect("measure stage");
+
+        assert_eq!(output.size_bytes, 12);
+        assert_eq!(output.file_count, 1);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

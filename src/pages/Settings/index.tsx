@@ -1,10 +1,13 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
+import { applyLanguage, LANGUAGE_OPTIONS } from "../../i18n";
+import { THEME_OPTIONS, useTheme, type ThemeId } from "../../hooks/useTheme";
 import type { AppSettings, AutoCleanupStatus, CleanResult, RiskLevel, RiskRule } from "../../types";
 import { formatSize } from "../../utils/format";
 
-type SettingsTab = "general" | "rules" | "alerts" | "automation" | "about";
+type SettingsTab = "general" | "appearance" | "rules" | "alerts" | "automation" | "about";
 
 const RISK_STYLES: Record<RiskLevel, string> = {
   low: "bg-risk-low-bg text-success border-success/20",
@@ -29,6 +32,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   auto_cleanup_time: "03:00",
   auto_cleanup_risk_levels: "low",
   auto_cleanup_min_free_gb: 50,
+  language: "auto",
+  theme: "auto",
 };
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -80,6 +85,7 @@ function GeneralTab({ settings, drives, saving, onUpdate, onSave, message }: {
 }) {
   const pollPresets = [1000, 2000, 5000, 10000];
   const debouncePresets = [500, 1500, 3000, 5000];
+  const { t } = useTranslation();
 
   return (
     <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-6">
@@ -101,11 +107,83 @@ function GeneralTab({ settings, drives, saving, onUpdate, onSave, message }: {
 
       <hr className="border-aurora-border/40" />
 
+      <div className="flex items-center justify-between gap-4 py-3">
+        <div>
+          <div className="text-sm font-medium text-text-primary">{t("settings.language")}</div>
+          <p className="mt-1 text-xs text-text-muted">{t("settings.languageHelp")}</p>
+        </div>
+        <select
+          value={settings.language}
+          onChange={(e) => {
+            const language = e.target.value;
+            applyLanguage(language);
+            onUpdate({ ...settings, language });
+          }}
+          className="rounded-lg border border-aurora-border/50 bg-aurora-elevated px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/50"
+        >
+          {LANGUAGE_OPTIONS.map((option) => (
+            <option key={option.id} value={option.id}>{t(option.labelKey)}</option>
+          ))}
+        </select>
+      </div>
+
+      <hr className="border-aurora-border/40" />
+
       <ToggleRow title="Auto scan on startup" detail="Scan the default drive when DiskPulse starts." checked={settings.auto_scan_on_startup} onChange={(v) => onUpdate({ ...settings, auto_scan_on_startup: v })} />
       <ToggleRow title="Auto monitor on startup" detail="Start file-system monitoring when DiskPulse starts." checked={settings.auto_monitor_on_startup} onChange={(v) => onUpdate({ ...settings, auto_monitor_on_startup: v })} />
 
       <PresetRow title="Watcher poll interval" value={settings.watcher_poll_interval_ms} presets={pollPresets} onChange={(v) => onUpdate({ ...settings, watcher_poll_interval_ms: v })} />
       <PresetRow title="Debounce window" value={settings.watcher_debounce_ms} presets={debouncePresets} onChange={(v) => onUpdate({ ...settings, watcher_debounce_ms: v })} />
+
+      <SaveRow saving={saving} message={message} onSave={onSave} />
+    </div>
+  );
+}
+
+function AppearanceTab({ settings, saving, onUpdate, onSave, message }: {
+  settings: AppSettings;
+  saving: boolean;
+  onUpdate: (s: AppSettings) => void;
+  onSave: SaveHandler;
+  message: string | null;
+}) {
+  const { t } = useTranslation();
+  const { setTheme, resolvedTheme } = useTheme();
+
+  function handleThemeChange(theme: string) {
+    const nextTheme = (theme === "light" || theme === "dark" || theme === "auto" ? theme : "auto") as ThemeId;
+    setTheme(nextTheme);
+    onUpdate({ ...settings, theme: nextTheme });
+  }
+
+  return (
+    <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-6">
+      <div className="flex items-center justify-between gap-4 py-3">
+        <div>
+          <div className="text-sm font-medium text-text-primary">{t("settings.theme")}</div>
+          <p className="mt-1 text-xs text-text-muted">{t("settings.themeHelp")}</p>
+        </div>
+        <select
+          value={settings.theme}
+          onChange={(e) => handleThemeChange(e.target.value)}
+          className="rounded-lg border border-aurora-border/50 bg-aurora-elevated px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/50"
+        >
+          {THEME_OPTIONS.map((option) => (
+            <option key={option.id} value={option.id}>{t(option.labelKey)}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/60 p-5">
+          <div className="text-xs uppercase tracking-wider text-text-muted">Resolved theme</div>
+          <div className="mt-2 text-lg font-semibold text-text-primary">{resolvedTheme}</div>
+        </div>
+        <div className="rounded-2xl border border-accent/20 bg-accent/10 p-5">
+          <div className="text-xs uppercase tracking-wider text-text-muted">Token system</div>
+          <div className="mt-2 text-sm text-text-secondary">CSS variables drive all Aurora surfaces and text colors.</div>
+        </div>
+      </div>
 
       <SaveRow saving={saving} message={message} onSave={onSave} />
     </div>
@@ -155,6 +233,9 @@ function RulesTab() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<RiskLevel | "all">("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [customName, setCustomName] = useState("");
+  const [customPattern, setCustomPattern] = useState("");
+  const [customRisk, setCustomRisk] = useState<RiskLevel>("medium");
 
   async function loadRules() {
     setLoading(true);
@@ -180,6 +261,35 @@ function RulesTab() {
     } catch (e) {
       setError(String(e));
       setRules((prev) => prev.map((rule) => (rule.id === ruleId ? { ...rule, safe_to_delete: currentValue } : rule)));
+    }
+  }
+
+  async function handleCreateCustomRule() {
+    if (!customName.trim() || !customPattern.trim()) {
+      setError("Custom rule requires a name and pattern.");
+      return;
+    }
+    setError(null);
+    try {
+      await invoke<RiskRule>("create_custom_rule", {
+        name: customName,
+        pattern: customPattern,
+        riskLevel: customRisk,
+      });
+      setCustomName("");
+      setCustomPattern("");
+      await loadRules();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleDeleteCustomRule(ruleId: string) {
+    try {
+      await invoke("delete_custom_rule", { ruleId });
+      await loadRules();
+    } catch (e) {
+      setError(String(e));
     }
   }
 
@@ -223,6 +333,21 @@ function RulesTab() {
         </button>
       </div>
 
+      <div className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/40 p-4">
+        <div className="mb-3 text-sm font-semibold text-text-primary">Custom rule</div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_150px_auto]">
+          <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Rule name" className="rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
+          <input value={customPattern} onChange={(e) => setCustomPattern(e.target.value)} placeholder="Path pattern, e.g. archive-cache" className="rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
+          <select value={customRisk} onChange={(e) => setCustomRisk(e.target.value as RiskLevel)} className="rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60">
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+          <button className="rounded-xl border border-accent/30 bg-accent/15 px-4 py-2.5 text-sm font-semibold text-accent-light" onClick={() => void handleCreateCustomRule()}>Create</button>
+        </div>
+        <p className="mt-2 text-xs text-text-muted">Custom rules are review-only by default; they do not become safe-to-delete automatically.</p>
+      </div>
+
       {error && <div className="rounded-xl border border-red-500/20 bg-risk-high-bg/20 p-3 text-sm text-danger">{error}</div>}
 
       {loading ? (
@@ -236,6 +361,7 @@ function RulesTab() {
                 <th className="px-4 py-3 text-left font-medium">Category</th>
                 <th className="px-4 py-3 text-left font-medium">Risk</th>
                 <th className="w-24 px-4 py-3 text-center font-medium">Safe</th>
+                <th className="w-24 px-4 py-3 text-right font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -248,10 +374,15 @@ function RulesTab() {
                       <td className="px-4 py-3 text-text-secondary">{rule.category}</td>
                       <td className="px-4 py-3"><span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${RISK_STYLES[rule.risk_level]}`}>{rule.risk_level}</span></td>
                       <td className="px-4 py-3 text-center"><Toggle checked={rule.safe_to_delete} onChange={() => handleToggle(rule.id, rule.safe_to_delete)} /></td>
+                      <td className="px-4 py-3 text-right">
+                        {rule.id.startsWith("custom-") && (
+                          <button className="text-xs text-danger hover:text-text-primary" onClick={(e) => { e.stopPropagation(); void handleDeleteCustomRule(rule.id); }}>Delete</button>
+                        )}
+                      </td>
                     </tr>
                     {expanded && (
                       <tr key={`${rule.id}-detail`} className="border-b border-aurora-border/20">
-                        <td colSpan={4} className="bg-aurora-elevated/20 px-6 py-5">
+                        <td colSpan={5} className="bg-aurora-elevated/20 px-6 py-5">
                           <div className="space-y-3 text-sm text-text-secondary">
                             <div><span className="text-text-muted">Patterns:</span> <span className="font-mono text-text-primary">{rule.patterns.join(", ")}</span></div>
                             {rule.name_match && <div><span className="text-text-muted">Name match:</span> <span className="font-mono text-text-primary">{rule.name_match}</span></div>}
@@ -457,6 +588,8 @@ function AboutTab() {
 }
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
+  const { setTheme } = useTheme();
   const [tab, setTab] = useState<SettingsTab>("general");
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [drives, setDrives] = useState<string[]>(["C"]);
@@ -464,7 +597,12 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    invoke<AppSettings>("get_settings").then((loaded) => setSettings({ ...DEFAULT_SETTINGS, ...loaded })).catch((e) => console.error("get_settings:", e));
+    invoke<AppSettings>("get_settings").then((loaded) => {
+      const merged = { ...DEFAULT_SETTINGS, ...loaded };
+      setSettings(merged);
+      applyLanguage(merged.language);
+      setTheme((merged.theme === "light" || merged.theme === "dark" || merged.theme === "auto" ? merged.theme : "auto") as ThemeId);
+    }).catch((e) => console.error("get_settings:", e));
     invoke<string[]>("list_drives").then((list) => {
       setDrives(list);
       if (list.length > 0 && !list.includes("C")) {
@@ -491,6 +629,7 @@ export default function SettingsPage() {
 
   const tabs: { id: SettingsTab; label: string }[] = [
     { id: "general", label: "General" },
+    { id: "appearance", label: t("settings.appearance") },
     { id: "rules", label: "Rules" },
     { id: "alerts", label: "Alerts" },
     { id: "automation", label: "Automation" },
@@ -513,6 +652,7 @@ export default function SettingsPage() {
       </div>
 
       {tab === "general" && <GeneralTab settings={settings} drives={drives} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
+      {tab === "appearance" && <AppearanceTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
       {tab === "rules" && <RulesTab />}
       {tab === "alerts" && <AlertsTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
       {tab === "automation" && <AutomationTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}

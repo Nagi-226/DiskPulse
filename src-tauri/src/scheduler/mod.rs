@@ -174,6 +174,11 @@ pub fn run_auto_cleanup_now(app: Option<AppHandle>) -> Result<CleanResult, Strin
         &report_status,
         &message,
     )?;
+    let _ = db::save_notification(&db::NotificationInput {
+        notification_type: "auto-cleanup-complete".into(),
+        title: "Auto-cleanup complete".into(),
+        message: message.clone(),
+    });
     set_status(final_status);
 
     if let Some(app_handle) = app {
