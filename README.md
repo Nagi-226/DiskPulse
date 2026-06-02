@@ -1,6 +1,6 @@
 # DiskPulse
 
-**Real-time disk space monitor & safe cleanup tool for Windows 11**
+**Real-time disk space monitor & safe cleanup tool — Windows / Linux / macOS**
 
 > [中文版](README_zh-CN.md)
 
@@ -9,26 +9,40 @@
 [![React](https://img.shields.io/badge/react-19-06b6d4)](https://react.dev)
 [![Rust](https://img.shields.io/badge/rust-1.94-orange)](https://www.rust-lang.org)
 [![Windows](https://img.shields.io/badge/windows-11-0078D6)](https://www.microsoft.com/windows)
+[![Linux](https://img.shields.io/badge/linux-FCC624?logo=linux)](https://kernel.org)
+[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple)](https://www.apple.com/macos)
 
-DiskPulse gives you full visibility into your disk space usage and helps you reclaim wasted gigabytes — safely. Built with an Aurora-designed UI, powered by a high-performance Rust backend, and committed to never losing your data.
+DiskPulse gives you full visibility into your disk space usage and helps you reclaim wasted gigabytes — safely. Built with an Aurora-designed UI, powered by a high-performance Rust backend with native kernel-level file monitoring, and committed to never losing your data.
 
 
-## v0.5.0 Integration Excellence
+## v0.6.0 Cross-Platform Performance Foundation
 
-- Aging-aware recommendations and full disk health checks now combine scan, duplicate, and zombie data.
-- Cleanup Wizard is a complete 5-step guided flow from scan to Recycle Bin execution.
-- Notification Center polls in real time, badges unread items, and supports dismiss/clear-all.
-- Settings include recommendation scoring weights plus duplicate and zombie thresholds.
-- CLI supports `scan`, `duplicates`, `health`, `clean <drive> --dry-run`, and `export <drive> <format> <type>`.
+- **6-trait platform abstraction** — `DiskInfoProvider`, `FsWatcher`, `DirScanner`, `CleanupProvider`, `FileMetaAnalyzer`, `SystemInfo` isolate all OS-specific code behind compile-time dispatch.
+- **Native Windows watcher** — `ReadDirectoryChangesW` kernel-push events replace polling (< 50ms latency, ~0% idle CPU).
+- **Hard-link-aware dedup** — `GetFileInformationByHandle` detects shared files before hashing; duplicate scan skips hard links.
+- **Sparse file detection** — `FILE_ATTRIBUTE_SPARSE_FILE` + `GetCompressedFileSizeW` report apparent vs actual size on disk.
+- **Linux support** — inotify native watcher, statvfs disk info, gio trash, statx metadata.
+- **macOS support** — FSEvents-ready polling fallback, osascript Finder Trash, sysctl RAM, stat metadata.
+- **CI/CD** — GitHub Actions 3-platform matrix: Windows (MSI + NSIS), Linux (.deb + .AppImage), macOS (.dmg).
+- **MFT technical reserve** — `MftStage` compiled behind `mft-scanner` feature flag for future NTFS direct-scan.
 
 ## ✨ Features
 
 - **Interactive treemap visualization** — see exactly what's eating your disk, drill down to any subdirectory
-- **Smart risk classification** — 16 built-in rules categorize every directory as Low / Medium / High risk
-- **One-click safe cleanup** — all deletions go to Recycle Bin, never permanent
+- **Smart risk classification** — 16 built-in rules + custom rule editor categorize every directory as Low / Medium / High risk
+- **One-click safe cleanup** — all deletions go to Recycle Bin / Trash, never permanent
 - **Multi-drive support** — scan any drive with real-time progress feedback
-- **Cleanup report** — search, filter, sort, and export (HTML/CSV) classified items
-- **Parallel scan engine** — walks 500GB drives in under 5 seconds with rayon
+- **Cleanup report** — search, filter, sort classified items; guided 5-step Cleanup Wizard
+- **Native FS monitoring** — kernel-level file change events (Windows ReadDirectoryChangesW, Linux inotify)
+- **Duplicate detection** — 3-phase pipeline (size → 4KB hash → SHA-256) with hard-link awareness
+- **File aging analysis** — 7 time buckets, zombie file finder, growth hotspot detection
+- **Smart recommendations** — weighted scoring engine with configurable weights
+- **Disk health scoring** — composite health index (free space + growth + duplicates + zombies)
+- **Parallel scan engine** — jwalk + rayon; 500GB drives in under 5 seconds
+- **Real-time alerts** — low-space thresholds + sudden growth detection via Windows native notifications
+- **Auto-cleanup scheduler** — configurable LOW-risk automatic cleanup with system tray integration
+- **i18n** — English + Simplified Chinese, auto-detect OS language
+- **Dark/Light themes** — Aurora design system with CSS variable tokens
 
 ## 🛡 Safety-first Design
 
@@ -52,16 +66,18 @@ A custom "Windows 11 Fluent meets data visualization" design language:
 - **Animated ring chart** — drive usage with glowing drop shadow
 - **Shimmer progress bars** — beautiful scanning indicators
 - **Live monitoring dot** — green pulsing indicator for real-time mode
-- **Dark theme** — designed for the modern Windows 11 aesthetic
+- **Dark/Light themes** — CSS variable tokens, auto-match system preference
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- **Windows 11** (primary target)
+- **Windows 11** / **Linux** / **macOS**
 - **Node.js** ≥ 22
-- **Rust** ≥ 1.94 (with `stable-x86_64-pc-windows-msvc` toolchain)
-- **Microsoft Visual C++ Build Tools** (for windows crate)
+- **Rust** ≥ 1.94
+- **Windows**: Microsoft Visual C++ Build Tools
+- **Linux**: `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`
+- **macOS**: Xcode Command Line Tools
 
 ### Development
 
@@ -80,8 +96,29 @@ npm run tauri dev
 ### Build
 
 ```bash
-# Production build (generates .msi installer)
+# Production build
 npm run tauri build
+
+# Platform-specific artifacts:
+#   Windows: .msi + .exe (NSIS)
+#   Linux:   .deb + .AppImage
+#   macOS:   .dmg
+```
+
+### CLI Mode
+
+```bash
+# Scan a drive
+diskpulse --cli scan C
+
+# Full health check
+diskpulse --cli health C --json
+
+# Dry-run cleanup preview
+diskpulse --cli clean C --dry-run
+
+# Export scan report
+diskpulse --cli export C json scan
 ```
 
 ## 🏗 Architecture
@@ -89,43 +126,40 @@ npm run tauri build
 ```
 Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
      |                                      |
-  ECharts/D3                           walkdir + rayon
-  Tailwind CSS                         rusqlite (SQLite)
-  lucide-react                         windows-rs (Win32)
+  ECharts/D3                    ┌──────────┴──────────┐
+  Tailwind CSS                  │  6-trait platform    │
+  lucide-react                  │  abstraction layer   │
+  react-i18next                 ├──────────────────────┤
+                                │ Win │ Linux │ macOS │
+                                └──────────────────────┘
+                                walkdir/jwalk + rayon
+                                rusqlite (SQLite)
+                                windows-rs / inotify / FSEvents
 ```
 
 | Layer | Stack |
 |-------|-------|
 | Desktop Shell | Tauri 2.x |
-| Backend | Rust — scanner, risk engine, cleaner, watcher, database |
+| Backend | Rust — 20 modules, 6 platform traits, 86 tests |
 | Frontend | React 19 + TypeScript 5 + Tailwind CSS 4 |
 | Visualization | ECharts 6 + D3 7 |
 | Storage | SQLite (via rusqlite) |
-| Win32 APIs | windows crate 0.58 |
+| Platform APIs | windows crate 0.58 / inotify FFI / FSEvents + sysctl |
+| Knowledge Graph | graphify-rs — 995 nodes, 1356 edges |
 
 ## 📦 Project Status
 
 | Version | Feature | Status |
 |---------|---------|--------|
-| v0.0.1 | Project scaffold + Aurora design | ✅ |
-| v0.0.2 | Scanner polish + multi-drive + tests | ✅ |
-| v0.0.3 | ECharts treemap + drill-down | ✅ |
-| v0.0.4 | Risk classification engine (16 rules) | ✅ |
-| v0.0.5 | Cleanup report page | ✅ |
-| v0.0.6 | Safe cleanup engine (Recycle Bin + undo) | ✅ |
-| v0.0.7 | Real-time FS watcher + system tray | ✅ |
-| v0.0.8 | History trends + SQLite snapshots | ✅ |
-| v0.0.9 | Settings page (prefs, rules, about) | ✅ |
+| v0.0.1–0.0.9 | Core foundation: scanner, risk, cleanup, watcher, history, settings | ✅ |
 | v0.1.0 | Production release candidate | ✅ |
 | v0.2.0 | Performance & UX optimization | ✅ |
-| v0.2.5 | Intelligent insights — alerts & prediction | ✅ |
-| v0.2.6 | Large file finder backend | ✅ |
-| v0.2.7 | Large file finder frontend | ✅ |
-| v0.2.8 | Auto-cleanup backend | ✅ |
-| v0.2.9 | Auto-cleanup frontend | ✅ |
-| v0.3.0 | Production release | Complete |
-| v0.4.0 | Extensible intelligence platform | Complete |
-| v0.5.0 | Integration excellence | Implemented |
+| v0.2.5–0.2.9 | Intelligent insights: alerts, prediction, large files, auto-cleanup | ✅ |
+| v0.3.0 | Production release | ✅ |
+| v0.4.0 | Extensible intelligence platform (i18n, themes, duplicates, aging, recommendations) | ✅ |
+| v0.5.0 | Integration excellence (cross-module wiring, CLI, wizard, notifications) | ✅ |
+| **v0.6.0** | **Cross-platform performance foundation (native watcher, 6 traits, Linux, macOS)** | ✅ |
+| v0.7.0 | Intelligent operations (planned) | 📋 |
 
 ## ⌨️ IPC Commands
 
@@ -164,6 +198,33 @@ get_snapshot_history(drive: String, days: u32) -> Vec<Snapshot>
 get_cleanup_history() -> Vec<CleanupLog>
 predict_disk_usage(drive: String, days: u32) -> Prediction
 
+// Duplicates & Aging
+scan_duplicates(drive: String, min_size: u64) -> Vec<DuplicateGroup>
+cancel_duplicate_scan() -> ()
+analyze_file_aging(drive: String) -> AgingReport
+cancel_aging_scan() -> ()
+
+// Recommendations
+get_recommendations(drive: String) -> Vec<Recommendation>
+get_disk_health(drive: String) -> DiskHealth
+
+// Rules & Export
+create_custom_rule(name: String, pattern: String, risk_level: String) -> RiskRule
+delete_custom_rule(rule_id: String) -> ()
+export_scan_report(drive: String, format: String) -> String
+export_cleanup_history(format: String) -> String
+export_duplicates(drive: String, format: String) -> String
+
+// Notifications
+get_notifications() -> Vec<NotificationRecord>
+mark_notifications_read() -> ()
+mark_notification_read(id: i64) -> ()
+clear_notifications() -> ()
+
+// System (v0.6.0)
+get_system_info() -> PlatformSystemInfo
+get_file_meta(path: String) -> FileMeta
+
 // Settings
 get_settings() -> AppSettings
 save_settings(settings: AppSettings) -> ()
@@ -184,7 +245,7 @@ Contributions are welcome! Please read the guidelines:
 4. **TypeScript**: Strict mode, no `any` types
 5. **Safety PRs**: Changes to `cleaner/` module require thorough test coverage + review
 
-Check [CLAUDE.md](CLAUDE.md) for detailed development context, and [PROGRESS.md](PROGRESS.md) for current progress.
+Check [CLAUDE.md](CLAUDE.md) for detailed development context, [PROGRESS.md](PROGRESS.md) for current progress, and [CODEX.md](CODEX.md) for implementation tasks.
 
 ## 📄 License
 

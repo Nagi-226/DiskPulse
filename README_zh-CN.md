@@ -1,34 +1,48 @@
 # DiskPulse
 
-**Windows 11 实时磁盘空间监控与安全清理工具**
+**实时磁盘空间监控与安全清理工具 — Windows / Linux / macOS**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Tauri](https://img.shields.io/badge/tauri-2.0-6366f1)](https://tauri.app)
 [![React](https://img.shields.io/badge/react-19-06b6d4)](https://react.dev)
 [![Rust](https://img.shields.io/badge/rust-1.94-orange)](https://www.rust-lang.org)
 [![Windows](https://img.shields.io/badge/windows-11-0078D6)](https://www.microsoft.com/windows)
+[![Linux](https://img.shields.io/badge/linux-FCC624?logo=linux)](https://kernel.org)
+[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple)](https://www.apple.com/macos)
 
 > [English Version](README.md)
 
-DiskPulse 让你全面掌握磁盘空间使用情况，并安全地回收被浪费的存储空间。基于 Aurora 设计系统打造的精美 UI，由高性能 Rust 后端驱动，恪守"绝不丢失你的数据"的承诺。
+DiskPulse 让你全面掌握磁盘空间使用情况，并安全地回收被浪费的存储空间。基于 Aurora 设计系统打造的精美 UI，由高性能 Rust 后端与内核级原生文件监控驱动，恪守"绝不丢失你的数据"的承诺。
 
 
-## v0.5.0 Integration Excellence
+## v0.6.0 跨平台性能基础
 
-- Recommendations now use real aging data, and disk health uses duplicate waste plus zombie bytes.
-- Cleanup Wizard now completes the full Select -> Scan -> Review -> Confirm -> Execute flow.
-- Notification Center now polls automatically, shows unread badges, and supports dismiss/clear-all.
-- Settings now include scoring weights, duplicate minimum size, and zombie threshold.
-- CLI supports scan, duplicates, health, clean dry-run/execution, and drive-aware export.
+- **6-Trait 平台抽象层** — `DiskInfoProvider`、`FsWatcher`、`DirScanner`、`CleanupProvider`、`FileMetaAnalyzer`、`SystemInfo` 将全部 OS 相关代码隔离在编译期分发的 trait 实现中。
+- **Windows 原生文件监控** — `ReadDirectoryChangesW` 内核推送事件替换轮询（延迟 < 50ms，待机 CPU ~0%）。
+- **硬链接感知去重** — `GetFileInformationByHandle` 在哈希计算前识别共享文件；重复扫描自动跳过硬链接。
+- **稀疏文件检测** — `FILE_ATTRIBUTE_SPARSE_FILE` + `GetCompressedFileSizeW` 报告文件表观大小与实际磁盘占用的差异。
+- **Linux 支持** — inotify 原生文件监控、statvfs 磁盘信息、gio 回收站、statx 元数据。
+- **macOS 支持** — FSEvents 就绪的轮询降级方案、osascript Finder 废纸篓、sysctl 内存信息、stat 元数据。
+- **CI/CD** — GitHub Actions 三平台矩阵构建：Windows（MSI + NSIS）、Linux（.deb + .AppImage）、macOS（.dmg）。
+- **MFT 技术储备** — `MftStage` 在 `mft-scanner` feature flag 下编译，为未来 NTFS 直接扫描做好准备。
 
 ## ✨ 功能特性
 
 - **交互式矩形树图** — 直观查看磁盘空间占用，支持逐级下钻到任意子目录
-- **智能风险分类** — 16 条内置规则将每个目录划分为低/中/高三个风险等级
-- **一键安全清理** — 所有删除操作均进入回收站，绝不永久删除
+- **智能风险分类** — 16 条内置规则 + 自定义规则编辑器，将每个目录划分为低/中/高三个风险等级
+- **一键安全清理** — 所有删除操作均进入回收站/废纸篓，绝不永久删除
 - **多驱动器支持** — 可扫描任意盘符，实时进度反馈
-- **清理报告** — 支持搜索、筛选、排序，可导出为 HTML/CSV 格式
-- **并行扫描引擎** — 基于 rayon 实现，500GB 驱动器扫描时间 < 5 秒
+- **清理报告** — 搜索、筛选、排序分类项目；5 步引导式清理向导
+- **原生文件监控** — 内核级文件变更事件（Windows ReadDirectoryChangesW、Linux inotify）
+- **重复文件检测** — 三阶段流水线（大小 → 4KB 哈希 → SHA-256），支持硬链接感知
+- **文件老化分析** — 7 个时间桶、僵尸文件查找、增长热点检测
+- **智能推荐引擎** — 可配置权重的加权评分模型
+- **磁盘健康评分** — 综合健康指数（空闲空间 + 增长趋势 + 重复浪费 + 僵尸文件）
+- **并行扫描引擎** — jwalk + rayon；500GB 驱动器扫描时间 < 5 秒
+- **实时告警** — 低空间阈值 + 突发增长检测，Windows 原生通知
+- **自动清理调度** — 可配置的 LOW 风险自动清理，系统托盘集成
+- **国际化** — 英文 + 简体中文，自动检测系统语言
+- **深色/浅色主题** — Aurora 设计系统，CSS 变量令牌
 
 ## 🛡 安全第一的设计理念
 
@@ -52,16 +66,18 @@ DiskPulse 从底层架构开始就贯彻以下原则：
 - **动态环形图** — 带发光投影的磁盘使用率图表
 - **流光进度条** — 优雅的扫描进度指示器
 - **实时监控指示灯** — 绿色脉冲圆点标识实时模式
-- **深色主题** — 专为现代 Windows 11 美学打造
+- **深色/浅色主题** — CSS 变量令牌，自动跟随系统偏好
 
 ## 🚀 快速开始
 
 ### 环境要求
 
-- **Windows 11**（主要目标平台）
+- **Windows 11** / **Linux** / **macOS**
 - **Node.js** ≥ 22
-- **Rust** ≥ 1.94（需 `stable-x86_64-pc-windows-msvc` 工具链）
-- **Microsoft Visual C++ Build Tools**（windows crate 编译需要）
+- **Rust** ≥ 1.94
+- **Windows**: Microsoft Visual C++ Build Tools
+- **Linux**: `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`
+- **macOS**: Xcode Command Line Tools
 
 ### 开发模式
 
@@ -80,8 +96,29 @@ npm run tauri dev
 ### 生产构建
 
 ```bash
-# 生产构建（生成 .msi 安装包）
+# 生产构建
 npm run tauri build
+
+# 各平台产物：
+#   Windows: .msi + .exe (NSIS)
+#   Linux:   .deb + .AppImage
+#   macOS:   .dmg
+```
+
+### CLI 模式
+
+```bash
+# 扫描驱动器
+diskpulse --cli scan C
+
+# 完整健康检查
+diskpulse --cli health C --json
+
+# 预览清理候选
+diskpulse --cli clean C --dry-run
+
+# 导出扫描报告
+diskpulse --cli export C json scan
 ```
 
 ## 🏗 架构
@@ -89,41 +126,39 @@ npm run tauri build
 ```
 前端 (React/TS)  <-->  Tauri IPC  <-->  Rust 后端
      |                                      |
-  ECharts/D3                           walkdir + rayon
-  Tailwind CSS                         rusqlite (SQLite)
-  lucide-react                         windows-rs (Win32)
+  ECharts/D3                    ┌──────────┴──────────┐
+  Tailwind CSS                  │  6-trait 平台抽象层  │
+  lucide-react                  ├──────────────────────┤
+  react-i18next                 │ Win │ Linux │ macOS │
+                                └──────────────────────┘
+                                walkdir/jwalk + rayon
+                                rusqlite (SQLite)
+                                windows-rs / inotify / FSEvents
 ```
 
 | 层级 | 技术栈 |
 |------|--------|
 | 桌面框架 | Tauri 2.x |
-| 后端 | Rust — scanner、risk engine、cleaner、watcher、database |
+| 后端 | Rust — 20 个模块、6 个平台 trait、86 项测试 |
 | 前端 | React 19 + TypeScript 5 + Tailwind CSS 4 |
 | 可视化 | ECharts 6 + D3 7 |
 | 存储 | SQLite（通过 rusqlite） |
-| Win32 API | windows crate 0.58 |
+| 平台 API | windows crate 0.58 / inotify FFI / FSEvents + sysctl |
+| 知识图谱 | graphify-rs — 995 个节点、1356 条边 |
 
 ## 📦 项目状态
 
 | 版本 | 功能 | 状态 |
 |------|------|------|
-| v0.0.1 | 项目脚手架 + Aurora 设计 | ✅ |
-| v0.0.2 | 扫描器优化 + 多驱动器 + 测试 | ✅ |
-| v0.0.3 | ECharts 矩形树图 + 下钻导航 | ✅ |
-| v0.0.4 | 风险分类引擎（16 条规则） | ✅ |
-| v0.0.5 | 清理报告页面 | ✅ |
-| v0.0.6 | 安全清理引擎（回收站 + 撤销） | ✅ |
-| v0.0.7 | 实时文件监控 + 系统托盘 | ✅ |
-| v0.0.8 | 历史趋势图 + SQLite 快照 | ✅ |
-| v0.0.9 | 设置页面（偏好、规则、关于） | ✅ |
+| v0.0.1–0.0.9 | 核心基础：扫描器、风险引擎、清理器、文件监控、历史记录、设置 | ✅ |
 | v0.1.0 | 正式发布候选版 | ✅ |
 | v0.2.0 | 性能与用户体验优化 | ✅ |
-| v0.2.5 | 智能洞察 — 告警与预测 | ✅ |
-| v0.2.6 | 大文件查找器后端 | ✅ |
-| v0.2.7 | 大文件查找器前端 | ✅ |
-| v0.2.8 | 自动清理后端 | ✅ |
-| v0.2.9 | 自动清理前端 | ✅ |
+| v0.2.5–0.2.9 | 智能洞察：告警、预测、大文件、自动清理 | ✅ |
 | v0.3.0 | 生产发布 | ✅ |
+| v0.4.0 | 可扩展智能平台（国际化、主题、去重、老化分析、推荐引擎） | ✅ |
+| v0.5.0 | 集成卓越（跨模块数据流、CLI、清理向导、通知中心） | ✅ |
+| **v0.6.0** | **跨平台性能基础（原生监控、6-trait 架构、Linux、macOS）** | ✅ |
+| v0.7.0 | 智能运维（规划中） | 📋 |
 
 ## ⌨️ IPC 命令
 
@@ -162,6 +197,33 @@ get_snapshot_history(drive: String, days: u32) -> Vec<Snapshot>
 get_cleanup_history() -> Vec<CleanupLog>
 predict_disk_usage(drive: String, days: u32) -> Prediction
 
+// 重复文件 & 老化分析
+scan_duplicates(drive: String, min_size: u64) -> Vec<DuplicateGroup>
+cancel_duplicate_scan() -> ()
+analyze_file_aging(drive: String) -> AgingReport
+cancel_aging_scan() -> ()
+
+// 推荐引擎
+get_recommendations(drive: String) -> Vec<Recommendation>
+get_disk_health(drive: String) -> DiskHealth
+
+// 规则 & 导出
+create_custom_rule(name: String, pattern: String, risk_level: String) -> RiskRule
+delete_custom_rule(rule_id: String) -> ()
+export_scan_report(drive: String, format: String) -> String
+export_cleanup_history(format: String) -> String
+export_duplicates(drive: String, format: String) -> String
+
+// 通知
+get_notifications() -> Vec<NotificationRecord>
+mark_notifications_read() -> ()
+mark_notification_read(id: i64) -> ()
+clear_notifications() -> ()
+
+// 系统信息 (v0.6.0)
+get_system_info() -> PlatformSystemInfo
+get_file_meta(path: String) -> FileMeta
+
 // 设置
 get_settings() -> AppSettings
 save_settings(settings: AppSettings) -> ()
@@ -182,7 +244,7 @@ app_version() -> String
 4. **TypeScript**: 严格模式，禁用 `any` 类型
 5. **安全性 PR**: 涉及 `cleaner/` 模块的更改需要充分的测试覆盖和代码审查
 
-详见 [CLAUDE.md](CLAUDE.md)（开发上下文）和 [PROGRESS.md](PROGRESS.md)（当前进度）。
+详见 [CLAUDE.md](CLAUDE.md)（开发上下文）、[PROGRESS.md](PROGRESS.md)（当前进度）和 [CODEX.md](CODEX.md)（实施任务）。
 
 ## 📄 许可协议
 
