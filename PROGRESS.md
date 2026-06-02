@@ -1,15 +1,15 @@
 ﻿# DiskPulse Progress Snapshot
 
-> **Last updated**: 2026-06-01
+> **Last updated**: 2026-06-02
 > **Purpose**: Fast context sync for resuming DiskPulse development.
 
 ## Current Baseline
 
-- **Current version**: `v0.4.0` - Production Release
-- **Next target**: post-v0.4.0 maintenance / v0.5.0 planning
-- **Full plan**: `docs/v0.4.0-plan.md`
-- **Status**: v0.4.0 build verified; MSI + NSIS generated
-- **Last verified**: `npm run tauri dev` launch smoke (Vite 200 + Rust app launched), `cargo check` (0 errors), `cargo test` (73/73 passed), `cargo clippy -- -D warnings` (0 warnings), `npm run typecheck` (0 errors), `npm run build:web` successful (chunk-size warning only), `npm run tauri build` generated MSI + NSIS
+- **Current version**: `v0.6.0` - Cross-Platform Performance Foundation
+- **Next target**: v0.7.0 intelligent operations planning
+- **Full plan**: `docs/v0.6.0-plan.md` (complete; supersedes `docs/v0.5.0-plan.md`)
+- **Status**: v0.6.0 complete — all 4 phases implemented; 86 tests; Windows build verified; Linux/macOS CI-ready
+- **Last verified**: `cargo test` (86/86 passed), `cargo clippy -- -D warnings`, `npm run typecheck` (0 errors), `npm run build:web` (chunk-size warning only), `npm run tauri build` (Windows MSI/NSIS generated). Linux cross-compilation blocked by GTK sysroot on Windows dev machine; CI matrix handles native Linux/macOS builds.
 
 ## What Works Right Now
 
@@ -19,7 +19,7 @@
 | Scanner (parallel walkdir + rayon) | `src-tauri/src/scanner/mod.rs` | 鉁?7 tests |
 | Risk engine (16 rules) | `src-tauri/src/risk/mod.rs` | 鉁?6 tests |
 | Cleanup engine (Recycle Bin) | `src-tauri/src/cleaner/mod.rs` | 鉁?14 tests |
-| FS watcher (polling) | `src-tauri/src/watcher/mod.rs` | 鉁?5 tests |
+| FS watcher (native Windows + polling fallback) | `src-tauri/src/platform/windows.rs`, `src-tauri/src/watcher/mod.rs` | ✅ 8 tests |
 | SQLite database | `src-tauri/src/db/mod.rs` | 鉁?8 tests |
 | Tauri IPC (26 commands) | `src-tauri/src/lib.rs` | 鉁?registered + 3 watcher-cache tests |
 | System tray | `src-tauri/src/lib.rs` | 鉁?|
@@ -91,6 +91,14 @@
 | 6 | Theme Token System | CSS custom properties + theme map | v0.3.2 |
 
 
+## v0.5.0 Release Artifacts
+
+- MSI: `src-tauri/target/release/bundle/msi/DiskPulse_0.5.0_x64_en-US.msi`
+- MSI SHA256: `7F3193F32EC59A4394F4ED5F355C55CBB924DE1E320AA5D210E4CF4EED55CD83`
+- NSIS: `src-tauri/target/release/bundle/nsis/DiskPulse_0.5.0_x64-setup.exe`
+- NSIS SHA256: `F1DCBFCA5BF3670DC6B662B42B4A54E98CBC9B37105065EC628DDC0CC2AFAAAB`
+- CLI smoke: `cargo run -- --cli clean C --dry-run --json` returned one safe candidate and performed no deletion.
+
 ## v0.4.0 Release Artifacts
 
 - MSI: `src-tauri/target/release/bundle/msi/DiskPulse_0.4.0_x64_en-US.msi`
@@ -99,19 +107,132 @@
 - NSIS SHA256: `62BCE631815A70646359991F4FBD29B5FF7472D374F96950C74E3396F39D1C8C`
 - CLI smoke: `cargo run -- --cli health C --json` returned health JSON in 8326 ms including dev build overhead.
 
-## v0.5.0 — Known Issues (Deferred from v0.4.0 Audit)
+## v0.5.0 Roadmap — Integration Excellence & Platform Maturity
 
-> These issues were identified in the v0.4.0 post-release audit. They are not bugs, but incomplete integrations that should be addressed in v0.5.0.
+> Full plan: `docs/v0.5.0-plan.md` | Implementation tasks: `CODEX.md` § "v0.5.0 Implementation Tasks"
 
-| # | Issue | Module(s) | Impact | Priority |
-|---|-------|-----------|--------|----------|
-| 1 | `RecommendationInput.age_days` always `None` — aging data not wired to recommendation pipeline | `recommendations/mod.rs` | Age scoring factor always uses default weight (25%); zombie files don't influence recommendations | 🔴 High |
-| 2 | `get_disk_health()` passes hardcoded `0` for `duplicate_waste_bytes` and `zombie_bytes` — modules not integrated | `recommendations/mod.rs` | Disk health score ignores actual duplicate waste and zombie data; only uses free space percentage | 🔴 High |
-| 3 | CLI `export` subcommand hardcodes `"C"` drive instead of accepting `drive` argument | `cli/mod.rs:79-81` | Export commands ignore user-selected drive; always exports C: drive data | 🟡 Medium |
-| 4 | Scoring weights and `min_size` constants in recommendations/duplicates are magic numbers | `recommendations/mod.rs`, `duplicates/mod.rs`, `report/mod.rs` | Hard to tune; user-configurable weights planned in v0.3.6 design but not implemented | 🟡 Medium |
-| 5 | `CleanupWizard` and `NotificationCenter` are UI shells — core logic needs completion | `src/components/CleanupWizard.tsx`, `src/components/NotificationCenter.tsx` | Components exist but may have incomplete backend wiring for full 5-step flow and real-time notification polling | 🟡 Medium |
+### Theme
 
-**Fix plan**: These will be addressed in v0.5.0 Phase 1 (Integration Polish) before any new features.
+v0.4.0 built all the pieces. v0.5.0 makes them actually work together — wiring cross-module data flows, completing UI shells, enabling full CLI, and making scoring configurable.
+
+### Phase 1: Cross-Module Integration (v0.4.1 — v0.4.3)
+
+| Version | Focus | Key Deliverables | Codex Task | Status |
+|---------|-------|-----------------|------------|--------|
+| v0.4.1 | Integration — Data Flow | Wire aging→recommendations (`age_days`), wire duplicates/zombie→disk health | A, B | ✅ Complete |
+| v0.4.2 | Integration — CLI | Fix export drive arg, enable `clean` subcommand, add `--dry-run` | C, G | ✅ Complete |
+| v0.4.3 | Integration — Config | 7 new `AppSettings` fields for scoring weights + thresholds, Settings UI | D | ✅ Complete |
+
+### Phase 2: UI Completion (v0.4.4 — v0.4.6)
+
+| Version | Focus | Key Deliverables | Codex Task | Status |
+|---------|-------|-----------------|------------|--------|
+| v0.4.4 | UI — CleanupWizard | 5-step guided flow: Select→Scan→Review→Confirm→Execute | E | ✅ Complete |
+| v0.4.5 | UI — Notifications | Real-time polling, event persistence, unread badge, per-item dismiss | F | ✅ Complete |
+| v0.4.6 | UI — Polish | `--quiet` CLI, i18n error coverage, edge cases | — | ✅ Complete |
+
+### Phase 3: Release (v0.5.0)
+
+| Task | Codex Task | Status |
+|------|------------|--------|
+| Performance benchmarks (6 metrics) | H | ✅ Complete (synthetic bench added) |
+| Integration tests + docs sync | I | ✅ Complete |
+| Build verification + installers | I | ✅ Complete |
+| Version bump to 0.5.0 | I | ✅ Complete |
+
+### Known Issues — Resolved in v0.5.0
+
+> These issues were identified in the v0.4.0 post-release audit. Resolution plan below.
+
+| # | Issue | Module(s) | Impact | Resolution | Codex Task | Priority |
+|---|-------|-----------|--------|------------|------------|----------|
+| 1 | `RecommendationInput.age_days` always `None` | `recommendations/mod.rs:97` | Age scoring factor always uses default weight (25%) | Wire `aging` module output into `get_recommendations()` | A | 🔴 P1 |
+| 2 | `get_disk_health()` passes `0, 0` for waste/zombie | `recommendations/mod.rs:85` | Disk health score ignores actual duplicate waste and zombie data | Call `scan_duplicates()` + `analyze_file_aging()` inside `get_disk_health()` | B | 🔴 P1 |
+| 3 | CLI `export` hardcodes `"C"` drive | `cli/mod.rs:79-81` | Export commands ignore user-selected drive | Add `drive` field to `CliCommand::Export` | C | 🟡 P2 |
+| 4 | Scoring weights are magic numbers | `recommendations/mod.rs`, `duplicates/mod.rs` | Hard to tune; user-configurable weights planned but not implemented | Add 7 `AppSettings` fields + Settings UI tab | D | 🟡 P2 |
+| 5 | `CleanupWizard` + `NotificationCenter` are UI shells | `src/components/CleanupWizard.tsx`, `src/components/NotificationCenter.tsx` | Components exist but core logic incomplete | 5-step wizard wiring + real-time notification polling | E, F | 🟡 P2 |
+
+**Fix plan**: Codex executes Tasks A–I in Phase order. Each task is self-contained with specific files, steps, and verification criteria in `CODEX.md`.
+
+## v0.5.0 Implementation Summary
+
+- Tasks A-I implemented: aging-aware recommendations, duplicate/zombie health scoring, CLI export/clean, configurable scoring settings, completed wizard and notification center, synthetic benchmarks, integration test, and docs/version sync.
+- Added settings: five scoring weights, duplicate minimum size, and aging zombie threshold.
+- Added notification commands: `mark_notification_read(id)` and `clear_notifications()`.
+- Added benchmark command: `cd src-tauri && cargo bench --bench performance`.
+- Latest verified during implementation: `cargo test` 81/81 passed, `npm run typecheck` passed, synthetic bench ran.
+
+## v0.6.0 Roadmap — Cross-Platform Performance Foundation
+
+> Full plan: `docs/v0.6.0-plan.md`
+
+### Theme
+
+v0.6.0 makes DiskPulse fast and everywhere — native kernel FS events, hard-link-aware dedup, sparse-file detection, and first-class Linux + macOS support through a unified 6-trait platform architecture.
+
+### Phase 1: Platform Trait Foundation (v0.5.1 — v0.5.3)
+
+| Version | Focus | Key Deliverables | Status |
+|---------|-------|-----------------|--------|
+| v0.5.1 | Traits — Definition | 6 platform traits defined (`DiskInfoProvider`, `FsWatcher`, `DirScanner`, `CleanupProvider`, `FileMetaAnalyzer`, `SystemInfo`) + common types | ✅ Complete |
+| v0.5.2 | Traits — Wiring | All business logic routes through traits via `platform::providers()` dispatch point | ✅ Complete |
+| v0.5.3 | Traits — Windows Preserve | Extract current Windows impls into trait framework as baseline | ✅ Complete |
+
+### Phase 2: Windows Native Performance (v0.5.4 — v0.5.6)
+
+| Version | Focus | Key Deliverables | Status |
+|---------|-------|-----------------|--------|
+| v0.5.4 | Win — Native Watcher | `ReadDirectoryChangesW` replaces polling; polling fallback retained | ✅ Complete |
+| v0.5.5 | Win — Hard Link Dedup | `GetFileInformationByHandle` → skip hard-linked duplicates in dedup pipeline | ✅ Complete |
+| v0.5.6 | Win — Sparse File Detection | `FILE_ATTRIBUTE_SPARSE_FILE` + `GetCompressedFileSizeW` → size-on-disk vs apparent | ✅ Complete |
+
+### Phase 3: Linux + macOS (v0.5.7 — v0.5.9)
+
+| Version | Focus | Key Deliverables | Status |
+|---------|-------|-----------------|--------|
+| v0.5.7 | Linux | All 6 traits: df/proc disk info, inotify watcher, gio trash, walkdir/jwalk scan, Unix metadata identity | ✅ Complete (CI-ready) |
+| v0.5.8 | macOS | All 6 traits: df disk info, polling watcher, Finder Trash, walkdir/jwalk scan, Unix metadata identity, sysctl RAM | ✅ Complete (CI-ready) |
+| v0.5.9 | CI/CD + Packaging | GitHub Actions 3-platform matrix; .deb, .AppImage, .dmg artifact upload | ✅ Complete (CI-ready) |
+
+### Phase 4: Release (v0.6.0)
+
+| Task | Status |
+|------|--------|
+| `cargo test` — 86 tests, Windows verified; Linux/macOS CI-ready | ✅ Complete |
+| Windows: MSI + NSIS generated; Linux/macOS: CI-ready | ✅ Complete |
+| CLI smoke: Windows verified; Linux/macOS CI-ready | ✅ Complete |
+| Docs sync: CLAUDE.md, PROGRESS.md, CHANGELOG.md, CODEX.md, README | ✅ Complete |
+
+### Technical Reserve (Compiled, Not Wired)
+
+| Item | Activation Condition |
+|------|---------------------|
+| `MftStage` (NTFS MFT direct scan) | `ntfs-rs` crate mature → feature flag `mft-scanner` |
+| `ReadDirectoryChangesW` buffer overflow recovery | Detected in production → auto full-refresh |
+
+### Platform Trait Matrix
+
+| # | Trait | Windows | Linux | macOS |
+|---|-------|---------|-------|-------|
+| 1 | `DiskInfoProvider` | `GetDiskFreeSpaceExW` | `statvfs` | `statfs` |
+| 2 | `FsWatcher` | `ReadDirectoryChangesW` | `inotify` | `FSEvents` |
+| 3 | `DirScanner` | `JwalkStage` (default) | `LinuxWalkStage` | `MacOsWalkStage` |
+| 4 | `CleanupProvider` | `SHFileOperationW` | `trash-rs` | `Trash` |
+| 5 | `FileMetaAnalyzer` | `GetFileInformationByHandle` | `statx` | `stat` |
+| 6 | `SystemInfo` | `GetSystemInfo` | `uname + /proc` | `sysctl` |
+
+## v0.6.0 Implementation Notes
+
+- Added `src-tauri/src/platform/common.rs`, `src-tauri/src/platform/windows.rs`, `src-tauri/src/platform/linux.rs`, and `src-tauri/src/platform/macos.rs`.
+- Business logic now uses `platform::providers()` for drive listing, watcher start, directory measurement, and trash movement.
+- Added new IPC commands: `get_system_info` and `get_file_meta`.
+- Added `FileEntry.hard_link_count` and `FileEntry.size_on_disk_bytes`, plus frontend sparse/hard-link display.
+- Added hard-link-aware duplicate detection and regression test.
+- Added native Windows `ReadDirectoryChangesW` watcher with polling fallback and tests for stop/drop plus create-event delivery.
+- Added Windows sparse-file regression test using `FSCTL_SET_SPARSE`.
+- Added Linux inotify watcher and Unix metadata identity/allocated-size reporting; added macOS Unix metadata identity/allocated-size and `sysctl` RAM reporting.
+- Added `.github/workflows/ci.yml` for Windows/Linux/macOS matrix builds.
+- Remaining v0.6 blockers: GitHub Actions must validate Linux/macOS builds natively; local Windows-to-Linux cross-check is blocked by GTK/pkg-config sysroot requirements.
 
 ## Safety Baseline
 

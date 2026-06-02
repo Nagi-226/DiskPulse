@@ -132,6 +132,11 @@ pub fn apply_auto_cleanup_settings(
     };
     let status = status_from_config(&config, false, message)?;
     set_status(status.clone());
+    let _ = db::save_notification(&db::NotificationInput {
+        notification_type: "auto-cleanup-scheduled".into(),
+        title: "Auto-cleanup schedule updated".into(),
+        message: status.message.clone(),
+    });
     let _ = app.emit(AUTO_CLEANUP_SCHEDULED_EVENT, &status);
 
     if config.enabled {
@@ -221,7 +226,8 @@ pub fn start_auto_cleanup_scheduler(app: &AppHandle) -> Result<String, String> {
                     break;
                 }
 
-                let Ok(status) = status_from_config(&config, false, "auto-cleanup scheduled") else {
+                let Ok(status) = status_from_config(&config, false, "auto-cleanup scheduled")
+                else {
                     break;
                 };
                 set_status(status.clone());

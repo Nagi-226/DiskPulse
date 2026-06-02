@@ -12,6 +12,15 @@
 
 DiskPulse gives you full visibility into your disk space usage and helps you reclaim wasted gigabytes — safely. Built with an Aurora-designed UI, powered by a high-performance Rust backend, and committed to never losing your data.
 
+
+## v0.5.0 Integration Excellence
+
+- Aging-aware recommendations and full disk health checks now combine scan, duplicate, and zombie data.
+- Cleanup Wizard is a complete 5-step guided flow from scan to Recycle Bin execution.
+- Notification Center polls in real time, badges unread items, and supports dismiss/clear-all.
+- Settings include recommendation scoring weights plus duplicate and zombie thresholds.
+- CLI supports `scan`, `duplicates`, `health`, `clean <drive> --dry-run`, and `export <drive> <format> <type>`.
+
 ## ✨ Features
 
 - **Interactive treemap visualization** — see exactly what's eating your disk, drill down to any subdirectory
@@ -114,7 +123,9 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | v0.2.7 | Large file finder frontend | ✅ |
 | v0.2.8 | Auto-cleanup backend | ✅ |
 | v0.2.9 | Auto-cleanup frontend | ✅ |
-| v0.3.0 | Production release | ✅ |
+| v0.3.0 | Production release | Complete |
+| v0.4.0 | Extensible intelligence platform | Complete |
+| v0.5.0 | Integration excellence | Implemented |
 
 ## ⌨️ IPC Commands
 

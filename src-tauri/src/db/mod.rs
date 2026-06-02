@@ -101,6 +101,13 @@ pub struct AppSettings {
     pub auto_cleanup_min_free_gb: f64,
     pub language: String,
     pub theme: String,
+    pub scoring_weight_risk: f64,
+    pub scoring_weight_age: f64,
+    pub scoring_weight_duplicate: f64,
+    pub scoring_weight_size: f64,
+    pub scoring_weight_safety: f64,
+    pub duplicate_min_size_bytes: u64,
+    pub aging_zombie_days: u64,
 }
 
 impl Default for AppSettings {
@@ -124,6 +131,13 @@ impl Default for AppSettings {
             auto_cleanup_min_free_gb: 50.0,
             language: "auto".into(),
             theme: "auto".into(),
+            scoring_weight_risk: 0.20,
+            scoring_weight_age: 0.15,
+            scoring_weight_duplicate: 0.20,
+            scoring_weight_size: 0.20,
+            scoring_weight_safety: 0.25,
+            duplicate_min_size_bytes: 1_048_576,
+            aging_zombie_days: 180,
         }
     }
 }
@@ -476,6 +490,41 @@ fn get_settings_with(conn: &rusqlite::Connection) -> Result<AppSettings, String>
             }
             "language" => settings.language = value,
             "theme" => settings.theme = value,
+            "scoring_weight_risk" => {
+                if let Ok(v) = value.parse() {
+                    settings.scoring_weight_risk = v;
+                }
+            }
+            "scoring_weight_age" => {
+                if let Ok(v) = value.parse() {
+                    settings.scoring_weight_age = v;
+                }
+            }
+            "scoring_weight_duplicate" => {
+                if let Ok(v) = value.parse() {
+                    settings.scoring_weight_duplicate = v;
+                }
+            }
+            "scoring_weight_size" => {
+                if let Ok(v) = value.parse() {
+                    settings.scoring_weight_size = v;
+                }
+            }
+            "scoring_weight_safety" => {
+                if let Ok(v) = value.parse() {
+                    settings.scoring_weight_safety = v;
+                }
+            }
+            "duplicate_min_size_bytes" => {
+                if let Ok(v) = value.parse() {
+                    settings.duplicate_min_size_bytes = v;
+                }
+            }
+            "aging_zombie_days" => {
+                if let Ok(v) = value.parse() {
+                    settings.aging_zombie_days = v;
+                }
+            }
             _ => {}
         }
     }
@@ -541,6 +590,31 @@ fn save_settings_with(conn: &rusqlite::Connection, settings: &AppSettings) -> Re
         ),
         ("language", settings.language.clone()),
         ("theme", settings.theme.clone()),
+        (
+            "scoring_weight_risk",
+            settings.scoring_weight_risk.to_string(),
+        ),
+        (
+            "scoring_weight_age",
+            settings.scoring_weight_age.to_string(),
+        ),
+        (
+            "scoring_weight_duplicate",
+            settings.scoring_weight_duplicate.to_string(),
+        ),
+        (
+            "scoring_weight_size",
+            settings.scoring_weight_size.to_string(),
+        ),
+        (
+            "scoring_weight_safety",
+            settings.scoring_weight_safety.to_string(),
+        ),
+        (
+            "duplicate_min_size_bytes",
+            settings.duplicate_min_size_bytes.to_string(),
+        ),
+        ("aging_zombie_days", settings.aging_zombie_days.to_string()),
     ];
     for (key, value) in &pairs {
         conn.execute(
@@ -634,7 +708,9 @@ fn create_custom_rule_with(
     Ok(rule)
 }
 
-fn get_custom_rules_with(conn: &rusqlite::Connection) -> Result<Vec<crate::risk::RiskRule>, String> {
+fn get_custom_rules_with(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<crate::risk::RiskRule>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT id, pattern, risk_level, category, explanation, safe_to_delete
@@ -645,8 +721,8 @@ fn get_custom_rules_with(conn: &rusqlite::Connection) -> Result<Vec<crate::risk:
     let rows = stmt
         .query_map([], |row| {
             let level_text: String = row.get(2)?;
-            let risk_level =
-                crate::risk::risk_level_from_str(&level_text).unwrap_or(crate::risk::RiskLevel::Medium);
+            let risk_level = crate::risk::risk_level_from_str(&level_text)
+                .unwrap_or(crate::risk::RiskLevel::Medium);
             Ok(crate::risk::RiskRule {
                 id: row.get(0)?,
                 patterns: vec![row.get(1)?],
@@ -711,6 +787,21 @@ fn get_notifications_with(conn: &rusqlite::Connection) -> Result<Vec<Notificatio
 fn mark_notifications_read_with(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute("UPDATE notifications SET read = 1", [])
         .map_err(|e| format!("Mark notifications read error: {}", e))?;
+    Ok(())
+}
+
+fn mark_notification_read_with(conn: &rusqlite::Connection, id: i64) -> Result<(), String> {
+    conn.execute(
+        "UPDATE notifications SET read = 1 WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| format!("Mark notification read error: {}", e))?;
+    Ok(())
+}
+
+fn clear_notifications_with(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute("DELETE FROM notifications", [])
+        .map_err(|e| format!("Clear notifications error: {}", e))?;
     Ok(())
 }
 
@@ -808,6 +899,16 @@ pub fn get_notifications() -> Result<Vec<NotificationRecord>, String> {
 pub fn mark_notifications_read() -> Result<(), String> {
     let conn = open_connection()?;
     mark_notifications_read_with(&conn)
+}
+
+pub fn mark_notification_read(id: i64) -> Result<(), String> {
+    let conn = open_connection()?;
+    mark_notification_read_with(&conn, id)
+}
+
+pub fn clear_notifications() -> Result<(), String> {
+    let conn = open_connection()?;
+    clear_notifications_with(&conn)
 }
 
 // ── Tests ───────────────────────────────────────────────────
@@ -954,6 +1055,13 @@ mod tests {
             auto_cleanup_min_free_gb: 25.0,
             language: "zh-CN".into(),
             theme: "dark".into(),
+            scoring_weight_risk: 0.30,
+            scoring_weight_age: 0.10,
+            scoring_weight_duplicate: 0.25,
+            scoring_weight_size: 0.15,
+            scoring_weight_safety: 0.20,
+            duplicate_min_size_bytes: 2_097_152,
+            aging_zombie_days: 240,
         };
         save_settings_with(&conn, &settings).unwrap();
         let loaded = get_settings_with(&conn).unwrap();
@@ -975,6 +1083,13 @@ mod tests {
         assert_eq!(loaded.auto_cleanup_min_free_gb, 25.0);
         assert_eq!(loaded.language, "zh-CN");
         assert_eq!(loaded.theme, "dark");
+        assert_eq!(loaded.scoring_weight_risk, 0.30);
+        assert_eq!(loaded.scoring_weight_age, 0.10);
+        assert_eq!(loaded.scoring_weight_duplicate, 0.25);
+        assert_eq!(loaded.scoring_weight_size, 0.15);
+        assert_eq!(loaded.scoring_weight_safety, 0.20);
+        assert_eq!(loaded.duplicate_min_size_bytes, 2_097_152);
+        assert_eq!(loaded.aging_zombie_days, 240);
     }
 
     #[test]
@@ -991,6 +1106,13 @@ mod tests {
         assert_eq!(settings.auto_cleanup_min_free_gb, 50.0);
         assert_eq!(settings.language, "auto");
         assert_eq!(settings.theme, "auto");
+        assert_eq!(settings.scoring_weight_risk, 0.20);
+        assert_eq!(settings.scoring_weight_age, 0.15);
+        assert_eq!(settings.scoring_weight_duplicate, 0.20);
+        assert_eq!(settings.scoring_weight_size, 0.20);
+        assert_eq!(settings.scoring_weight_safety, 0.25);
+        assert_eq!(settings.duplicate_min_size_bytes, 1_048_576);
+        assert_eq!(settings.aging_zombie_days, 180);
     }
 
     #[test]
@@ -1068,5 +1190,35 @@ mod tests {
         mark_notifications_read_with(&conn).unwrap();
         let notifications = get_notifications_with(&conn).unwrap();
         assert!(notifications[0].read);
+    }
+
+    #[test]
+    fn mark_single_notification_read_and_clear_all() {
+        let conn = setup_test_conn();
+        for title in ["Low space", "Cleanup"] {
+            save_notification_with(
+                &conn,
+                &NotificationInput {
+                    notification_type: "alert".into(),
+                    title: title.into(),
+                    message: "message".into(),
+                },
+            )
+            .unwrap();
+        }
+
+        let notifications = get_notifications_with(&conn).unwrap();
+        let first_id = notifications[0].id;
+        mark_notification_read_with(&conn, first_id).unwrap();
+        let notifications = get_notifications_with(&conn).unwrap();
+        assert!(notifications
+            .iter()
+            .any(|item| item.id == first_id && item.read));
+        assert!(notifications
+            .iter()
+            .any(|item| item.id != first_id && !item.read));
+
+        clear_notifications_with(&conn).unwrap();
+        assert!(get_notifications_with(&conn).unwrap().is_empty());
     }
 }

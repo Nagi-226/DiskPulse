@@ -266,7 +266,7 @@ pub fn preview_cleanup(items: Vec<CleanItem>) -> CleanPreview {
 
 /// Move a file or directory to the Recycle Bin via SHFileOperationW.
 /// Returns true on success.
-fn recycle_bin_delete(path: &str) -> bool {
+pub(crate) fn recycle_bin_delete(path: &str) -> bool {
     use std::os::windows::ffi::OsStrExt;
     use windows::Win32::UI::Shell::{
         SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FO_DELETE,
@@ -374,7 +374,10 @@ where
             continue;
         }
 
-        let success = recycle_bin_delete(&item.path);
+        let trash_result = crate::platform::providers()
+            .cleanup
+            .move_to_trash(&item.path);
+        let success = trash_result.success;
 
         if success {
             freed_bytes += item.size_bytes;

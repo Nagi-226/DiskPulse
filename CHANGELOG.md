@@ -2,6 +2,79 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [0.6.0] - 2026-06-02
+
+> Full roadmap: `docs/v0.6.0-plan.md`
+
+### Cross-Platform Performance Foundation
+
+**6-Trait Platform Architecture:**
+- Defined `DiskInfoProvider`, `FsWatcher`, `DirScanner`, `CleanupProvider`, `FileMetaAnalyzer`, `SystemInfo` traits in `platform/mod.rs`.
+- Shared types: `FileIdentity`, `TrashResult`, `RestoreResult`, `WatcherGuard`, `PlatformProviders`.
+- Compile-time `#[cfg(target_os)]` dispatch via `platform::providers()`.
+- All scanner, watcher, cleanup, and drive listing logic routed through traits.
+
+**Windows Native Performance:**
+- `ReadDirectoryChangesW` native watcher with overlapped I/O and debounce (< 50ms latency, ~0% CPU idle).
+- `WindowsPollWatcher` fallback for non-admin or network drives.
+- `GetFileInformationByHandle` file metadata: hard-link count, sparse flag, file identity (volume serial + file index).
+- `GetCompressedFileSizeW` for sparse file size-on-disk reporting.
+- `FSCTL_SET_SPARSE` test coverage for sparse file regression.
+- `JwalkStage` via `DirScanner` trait, `MftStage` as technical reserve (feature-gated).
+
+**Hard-Link-Aware Duplicate Detection:**
+- Files with identical `FileIdentity` skipped before SHA-256 hashing.
+- `hard_link_count` surfaced in duplicate scan progress and `FileEntry`.
+- `size_on_disk_bytes` added to `FileEntry` + LargeFileFinder UI display.
+
+**Linux Support:**
+- `statvfs`-based disk info, inotify native watcher (FFI), `/proc/mounts` drive listing.
+- `gio trash` cleanup provider, `statx`-based file metadata, `/proc/meminfo` RAM reporting.
+- Polling fallback if inotify fails.
+
+**macOS Support:**
+- `df`-based disk info, `osascript` trash cleanup, `stat`-based file metadata.
+- `sysctl hw.memsize` RAM reporting, `sw_vers` OS version.
+- Watcher uses safe polling fallback (FSEvents pending native CI validation).
+
+**CI/CD:**
+- GitHub Actions matrix workflow for `windows-latest`, `ubuntu-latest`, `macos-latest`.
+- Artifact upload: MSI + NSIS (Windows), .deb + .AppImage (Linux), .dmg (macOS).
+
+**Technical Reserve:**
+- `MftStage` in `platform/windows_mft.rs` — compiled behind `mft-scanner` feature flag, not yet wired.
+
+### Verification
+
+- `cargo test`: 86/86 passed (up from 81).
+- `cargo clippy -- -D warnings`: 0 warnings.
+- `npm run typecheck`: 0 errors.
+- `npm run build:web`: passed (Vite chunk-size warning only).
+- `npm run tauri build`: Windows MSI + NSIS generated.
+- Linux cross-compilation blocked by GTK sysroot on Windows dev machine — CI matrix handles native Linux builds.
+
+## [0.5.0] - 2026-06-02
+
+> Full roadmap: `docs/v0.5.0-plan.md`
+
+### Integration Excellence
+
+- Wired aging analysis into recommendations so `RecommendationInput.age_days` uses real per-file age data.
+- Wired duplicate waste and zombie bytes into `get_disk_health`, making health checks a full cross-module scan.
+- Completed CLI integration: `export <drive> <format> <type>`, `clean <drive> --dry-run`, LOW-risk cleanup execution, JSON/quiet flags, and exit-code handling.
+- Added configurable recommendation weights plus duplicate and zombie thresholds in Settings -> Recommendations.
+- Completed CleanupWizard's 5-step flow with scan progress, review, safe LOW-risk selection, execution, and summary states.
+- Completed NotificationCenter polling, unread badge, persisted event notifications, per-item dismiss, and clear-all support.
+- Added synthetic performance benchmark: `cargo bench --bench performance`.
+- Bumped app/package versions to 0.5.0 across npm, Cargo, Cargo.lock, and Tauri config.
+
+### Verification
+
+- `cargo test`: 81/81 passed.
+- `npm run typecheck`: passed.
+- `cargo clippy -- -D warnings`, `npm run build:web`, and `npm run tauri build`: passed.
+- Generated `DiskPulse_0.5.0_x64_en-US.msi` (SHA256 `7F3193F32EC59A4394F4ED5F355C55CBB924DE1E320AA5D210E4CF4EED55CD83`) and `DiskPulse_0.5.0_x64-setup.exe` (SHA256 `F1DCBFCA5BF3670DC6B662B42B4A54E98CBC9B37105065EC628DDC0CC2AFAAAB`).
+
 ## [0.4.0] - 2026-06-01
 
 > Full roadmap: `docs/v0.4.0-plan.md`
@@ -45,15 +118,15 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 5. i18n Resource Bundle (JSON) — new language = new JSON file
 6. Theme Token System (CSS variables) — new theme = new variable set
 
-### Known Issues — Deferred to v0.5.0
+### Known Issues — Resolved in v0.5.0
 
-| # | Issue | Priority |
-|---|-------|----------|
-| 1 | `RecommendationInput.age_days` always `None` — aging data not wired to recommendation pipeline | 🔴 v0.5.0-P1 |
-| 2 | `get_disk_health()` passes hardcoded `0` for duplicate/zombie data — modules not integrated | 🔴 v0.5.0-P1 |
-| 3 | CLI `export` subcommand hardcodes `"C"` drive — ignores user-specified drive | 🟡 v0.5.0-P2 |
-| 4 | Scoring weights and `min_size` constants are magic numbers — user config planned but not implemented | 🟡 v0.5.0-P2 |
-| 5 | `CleanupWizard` + `NotificationCenter` are UI shells — core logic completion needed | 🟡 v0.5.0-P2 |
+| # | Issue | Resolution | Priority |
+|---|-------|------------|----------|
+| 1 | `RecommendationInput.age_days` always `None` | ✅ Wired aging analysis into `get_recommendations()` | 🔴 → ✅ |
+| 2 | `get_disk_health()` passes hardcoded `0` for duplicate/zombie data | ✅ Full health check now scans duplicates + aging | 🔴 → ✅ |
+| 3 | CLI `export` subcommand hardcodes `"C"` drive | ✅ Added `drive` field to `CliCommand::Export` | 🟡 → ✅ |
+| 4 | Scoring weights and `min_size` constants are magic numbers | ✅ 7 new `AppSettings` fields + Settings UI | 🟡 → ✅ |
+| 5 | `CleanupWizard` + `NotificationCenter` are UI shells | ✅ 5-step wizard + real-time polling + badge | 🟡 → ✅ |
 
 ## [0.3.9] - 2026-06-01
 

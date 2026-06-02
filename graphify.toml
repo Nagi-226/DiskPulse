@@ -1,0 +1,13 @@
+# graphify-rs configuration for DiskPulse
+# AST extraction runs locally (free). LLM semantic extraction uses your API key.
+
+# Output directory
+output = "graphify-out"
+
+# Export formats: JSON (for agent queries), HTML (interactive vis.js), report (Markdown summary)
+formats = ["json", "html", "report"]
+
+# LLM provider for semantic extraction (uses Claude Code session credentials)
+[llm]
+provider = "anthropic"
+model = "claude-sonnet-4-6"

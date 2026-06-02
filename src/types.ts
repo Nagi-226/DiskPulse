@@ -40,6 +40,8 @@ export interface FileEntry {
   path: string;
   size_bytes: number;
   modified_epoch_ms: number;
+  hard_link_count: number;
+  size_on_disk_bytes: number | null;
 }
 
 export interface LargeFileProgress {
@@ -101,6 +103,7 @@ export interface CleanPreview {
   accepted: CleanItem[];
   blocked: CleanItem[];
   validation: CleanValidationResult;
+  unsafe_items: CleanItemResult[];
 }
 
 export interface CleanExecutionResult {
@@ -211,6 +214,13 @@ export interface AppSettings {
   auto_cleanup_min_free_gb: number;
   language: string;
   theme: string;
+  scoring_weight_risk: number;
+  scoring_weight_age: number;
+  scoring_weight_duplicate: number;
+  scoring_weight_size: number;
+  scoring_weight_safety: number;
+  duplicate_min_size_bytes: number;
+  aging_zombie_days: number;
 }
 
 export interface DiskSpaceAlertPayload {
@@ -263,11 +273,13 @@ export interface DuplicateScanProgress {
   files_processed: number;
   groups_found: number;
   current_path: string | null;
+  hard_link_count: number;
 }
 
 export interface DuplicateGroup {
   group_id: string;
   total_size_wasted: number;
+  hard_link_count: number;
   files: FileEntry[];
 }
 
@@ -286,12 +298,18 @@ export interface Hotspot {
   file_count: number;
 }
 
+export interface FileAge {
+  path: string;
+  age_days: number;
+}
+
 export interface AgingReport {
   drive_letter: string;
   buckets: AgeBucket[];
   zombies_total_size: number;
   zombie_files: FileEntry[];
   hotspots: Hotspot[];
+  file_ages?: FileAge[];
 }
 
 export interface AgingScanProgress {
@@ -335,4 +353,25 @@ export interface NotificationRecord {
   message: string;
   read: boolean;
   created_at: string;
+}
+
+export interface PlatformSystemInfo {
+  os_name: string;
+  os_version: string;
+  cpu_count: number;
+  total_ram_bytes: number;
+  app_data_dir: string;
+}
+
+export interface FileIdentity {
+  volume_serial: number;
+  file_index: number;
+}
+
+export interface FileMeta {
+  path: string;
+  hard_link_count: number;
+  is_sparse: boolean;
+  size_on_disk_bytes: number | null;
+  identity: FileIdentity | null;
 }

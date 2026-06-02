@@ -96,6 +96,10 @@ pub struct FileEntry {
     pub path: String,
     pub size_bytes: u64,
     pub modified_epoch_ms: u64,
+    #[serde(default)]
+    pub hard_link_count: u64,
+    #[serde(default)]
+    pub size_on_disk_bytes: Option<u64>,
 }
 
 impl Ord for FileEntry {
@@ -103,12 +107,16 @@ impl Ord for FileEntry {
         (
             self.size_bytes,
             self.modified_epoch_ms,
+            self.hard_link_count,
+            self.size_on_disk_bytes,
             &self.path,
             &self.name,
         )
             .cmp(&(
                 other.size_bytes,
                 other.modified_epoch_ms,
+                other.hard_link_count,
+                other.size_on_disk_bytes,
                 &other.path,
                 &other.name,
             ))
@@ -200,32 +208,20 @@ where
     })
 }
 
-/// Get drive space using Win32 GetDiskFreeSpaceExW
 fn get_drive_space(path: &Path) -> (u64, u64) {
-    use std::os::windows::ffi::OsStrExt;
+    let drive = drive_key_from_path(path);
+    let providers = crate::platform::providers();
+    let total_bytes = providers.disk_info.total_bytes(&drive).unwrap_or(0);
+    let free_bytes = providers.disk_info.free_bytes(&drive).unwrap_or(0);
+    (total_bytes, free_bytes)
+}
 
-    let wide: Vec<u16> = std::ffi::OsStr::new(path)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    let mut free_bytes_available: u64 = 0;
-    let mut total_bytes: u64 = 0;
-    let mut total_free_bytes: u64 = 0;
-
-    let result = unsafe {
-        windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
-            windows::core::PCWSTR(wide.as_ptr()),
-            Some(&mut free_bytes_available as *mut u64 as *mut _),
-            Some(&mut total_bytes as *mut u64 as *mut _),
-            Some(&mut total_free_bytes as *mut u64 as *mut _),
-        )
-    };
-
-    if result.is_ok() {
-        (total_bytes, free_bytes_available)
+fn drive_key_from_path(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    if text.len() >= 2 && text.as_bytes().get(1) == Some(&b':') {
+        text[..1].to_ascii_uppercase()
     } else {
-        (0, 0)
+        text.to_string()
     }
 }
 
@@ -285,7 +281,8 @@ where
                 partial_results: None,
             });
 
-            let output = MeasureStage.execute(&ScanContext {
+            let providers = crate::platform::providers();
+            let output = providers.dir_scanner.execute(&ScanContext {
                 root: path.clone(),
                 cancel,
             })?;
@@ -482,14 +479,18 @@ fn push_file_candidate(
         return;
     }
 
+    let path_text = path.to_string_lossy().to_string();
+    let meta = crate::platform::providers().file_meta;
     let entry = FileEntry {
         name: path
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_default(),
-        path: path.to_string_lossy().to_string(),
+        path: path_text.clone(),
         size_bytes: metadata.len(),
         modified_epoch_ms: modified_epoch_ms(&metadata),
+        hard_link_count: meta.hard_link_count(&path_text).unwrap_or(1),
+        size_on_disk_bytes: meta.size_on_disk(&path_text).ok().flatten(),
     };
 
     heap.push(Reverse(entry));
@@ -540,7 +541,8 @@ pub fn scan_top_level_dir(path: &str, cancel: Option<&AtomicBool>) -> Result<Dir
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .ok_or_else(|| format!("Cannot determine directory name: {}", path.display()))?;
-    let output = MeasureStage.execute(&ScanContext {
+    let providers = crate::platform::providers();
+    let output = providers.dir_scanner.execute(&ScanContext {
         root: path.to_path_buf(),
         cancel,
     })?;
@@ -659,10 +661,8 @@ mod tests {
 
     #[test]
     fn scan_stage_trait_executes_measure_stage() {
-        let root = std::env::temp_dir().join(format!(
-            "diskpulse-scan-stage-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("diskpulse-scan-stage-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("create scan stage dir");
         write_sized_file(&root.join("stage.bin"), 12);

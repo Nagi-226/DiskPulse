@@ -7,11 +7,11 @@
 ## Project Identity
 
 - **Name**: DiskPulse
-- **Tagline**: Real-time disk space monitor & safe cleanup tool for Windows 11
+- **Tagline**: Real-time disk space monitor & safe cleanup tool — Windows / Linux / macOS
 - **Type**: Open source desktop application (MIT License)
 - **Repository**: E:\Github Project\DiskPulse
-- **Current Version**: v0.4.0 (production release)
-- **Next Milestone**: post-v0.4.0 maintenance / v0.5.0 planning
+- **Current Version**: v0.6.0 (cross-platform performance foundation)
+- **Next Milestone**: v0.7.0 intelligent operations planning
 
 ## Tech Stack (LOCKED 鈥?do not change without explicit user approval)
 
@@ -75,6 +75,48 @@ v0.4.0 introduces a **trait + registry** plugin pattern across core systems:
 - `pages/Settings` 鈥?Preferences, risk rules configuration, about
 - `components/` 鈥?Shared UI components (Treemap, CleanupPreview, PredictionCard, LargeFileFinder, AutoCleanupStatus, Icons)
 - `hooks/` 鈥?Custom React hooks (useDriveScan, useFsEvents, useLargeFileFinder)
+
+### v0.5.0 Integration Notes
+
+- `get_recommendations` now runs aging analysis and feeds real `age_days` into scoring.
+- `get_disk_health` is now a full health check: it scans duplicates and aging data to include duplicate waste and zombie bytes.
+- CLI export syntax is `diskpulse --cli export <drive> <format> <type>`; CLI clean supports `diskpulse --cli clean <drive> --dry-run` and LOW-risk execution.
+- Settings now include recommendation weights, duplicate minimum size, and aging zombie threshold.
+- Notifications persist disk alerts, cleanup complete, auto-cleanup complete, and auto-cleanup scheduled events; UI supports polling, unread badge, per-item read, and clear all.
+- Benchmarks: `cd src-tauri && cargo bench --bench performance`.
+
+### v0.6.0 Implementation Notes
+
+- Platform traits and common provider types are now implemented under `src-tauri/src/platform/`.
+- `platform::providers()` dispatches OS-specific providers; Windows baseline providers preserve existing behavior.
+- Business logic now routes drive listing, watcher startup, directory measurement, cleanup trash movement, and file metadata through traits.
+- Duplicate detection skips same-identity hard links before hashing.
+- `FileEntry` includes `hard_link_count` and `size_on_disk_bytes` for hard-link/sparse display.
+- Windows watcher now uses `ReadDirectoryChangesW` with a polling fallback; sparse file detection has an `FSCTL_SET_SPARSE` regression test.
+- Linux watcher uses inotify and Unix metadata for identity/allocated-size; cleanup currently uses `gio trash` fallback.
+- macOS metadata uses Unix identity/allocated-size and `sysctl` RAM; watcher remains polling fallback pending native FSEvents validation.
+- Linux/macOS final validation is expected on GitHub Actions/native runners because local Windows cross-check hits GTK/pkg-config sysroot requirements.
+
+### v0.6.0 Platform Architecture (6-Trait Matrix)
+
+> Full plan: `docs/v0.6.0-plan.md`
+
+All OS-specific code is isolated behind 6 traits in `src-tauri/src/platform/`:
+
+| # | Trait | Windows | Linux | macOS |
+|---|-------|---------|-------|-------|
+| 1 | `DiskInfoProvider` | `GetDiskFreeSpaceExW` | `statvfs` | `statfs` |
+| 2 | `FsWatcher` | `ReadDirectoryChangesW` | `inotify` | `FSEvents` |
+| 3 | `DirScanner` (`ScanStage`) | `JwalkStage` / `MftStage`(reserve) | `LinuxWalkStage` | `MacOsWalkStage` |
+| 4 | `CleanupProvider` | `SHFileOperationW` | `trash-rs` | `Trash` |
+| 5 | `FileMetaAnalyzer` | `GetFileInformationByHandle` | `statx` | `stat` |
+| 6 | `SystemInfo` | `GetSystemInfo` | `uname + /proc` | `sysctl` |
+
+Single dispatch point: `platform::providers()` returns `PlatformProviders` struct — compile-time `#[cfg(target_os)]` dispatch.
+
+**Technical reserve**: `MftStage` in `platform/windows_mft.rs` — compiled but feature-gated. Reads NTFS MFT directly via `FSCTL_ENUM_USN_DATA`. Activation condition: `ntfs-rs` crate maturity + `mft-scanner` feature flag.
+
+**New crate deps (v0.6.0)**: no new third-party crates are required for the current implementation; Windows uses existing `windows` crate features, Linux inotify is direct FFI, and macOS native FSEvents/objc remain reserved pending CI/platform validation.
 
 ## Critical Safety Rules (NEVER VIOLATE)
 
@@ -147,6 +189,8 @@ fn start_alert_monitor(app: AppHandle) -> Result<String, String>
 fn stop_alert_monitor() -> Result<String, String>
 
 // App
+fn get_system_info() -> Result<PlatformSystemInfo, String>
+fn get_file_meta(path: String) -> Result<FileMeta, String>
 fn app_version() -> String
 
 // Duplicates (v0.3.4)
@@ -189,7 +233,7 @@ fn export_duplicates(drive: String, format: String) -> Result<String, String>
 ## Current Development State
 
 - **Phase**: v0.4.0 production release complete
-- **Last Updated**: 2026-06-01
+- **Last Updated**: 2026-06-02
 - **Full Plan**: `docs/v0.4.0-plan.md`
 
 ### v0.4.0 Roadmap Summary
@@ -271,3 +315,12 @@ fn export_duplicates(drive: String, format: String) -> Result<String, String>
 - Existing GitHub projects use PascalCase or snake_case naming
 - Has Rust, Node.js, and full dev toolchain installed
 
+
+## graphify
+
+This project has a graphify-rs knowledge graph at C:\Users\FJL03\.graphify-rs\DiskPulse-4b29f2dfdbaedc4b/.
+
+Rules:
+- Before answering architecture or codebase questions, read C:\Users\FJL03\.graphify-rs\DiskPulse-4b29f2dfdbaedc4b/GRAPH_REPORT.md for god nodes and community structure
+- If C:\Users\FJL03\.graphify-rs\DiskPulse-4b29f2dfdbaedc4b/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `graphify-rs build --path . --output C:\Users\FJL03\.graphify-rs\DiskPulse-4b29f2dfdbaedc4b --no-llm --update` to keep the graph current (fast, AST-only, ~2-5s)

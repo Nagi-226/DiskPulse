@@ -1,6 +1,8 @@
 use crate::risk::{RiskItem, RiskLevel};
 use crate::scanner;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
 
 #[derive(Debug, Clone)]
 struct RecommendationInput {
@@ -64,37 +66,102 @@ impl Default for ScoringWeights {
     }
 }
 
+impl ScoringWeights {
+    fn from_settings(settings: &crate::db::AppSettings) -> Self {
+        Self {
+            risk_factor: settings.scoring_weight_risk,
+            age_factor: settings.scoring_weight_age,
+            duplicate_factor: settings.scoring_weight_duplicate,
+            size_factor: settings.scoring_weight_size,
+            safety_factor: settings.scoring_weight_safety,
+        }
+    }
+}
+
 pub fn get_recommendations(drive: &str) -> Result<Vec<Recommendation>, String> {
     let scan = scanner::scan_drive(drive)?;
+    let aging_report = crate::aging::analyze_file_aging(drive)?;
+    let age_map = build_age_map(&aging_report);
     let report = crate::risk::classify_risks(&scan);
     let inputs = report
         .items
         .into_iter()
-        .map(input_from_risk_item)
+        .map(|item| input_from_risk_item(item, &age_map))
         .collect::<Vec<_>>();
-    Ok(rank_recommendations(inputs, &ScoringWeights::default()))
+    Ok(rank_recommendations(inputs, &load_scoring_weights()))
 }
 
 pub fn get_disk_health(drive: &str) -> Result<DiskHealth, String> {
     let meta = scanner::scan_drive_meta(drive, None, None)?;
+    let duplicate_min_size = crate::db::get_settings()
+        .map(|settings| settings.duplicate_min_size_bytes)
+        .unwrap_or_else(|_| crate::db::AppSettings::default().duplicate_min_size_bytes);
+    let duplicate_waste_bytes: u64 = crate::duplicates::scan_duplicates_with_progress_and_cancel(
+        drive,
+        duplicate_min_size,
+        |_| {},
+        None,
+    )?
+    .into_iter()
+    .map(|group| group.total_size_wasted)
+    .sum();
+    let zombie_bytes = crate::aging::analyze_file_aging(drive)?.zombies_total_size;
     let free_percent = if meta.total_bytes > 0 {
         (meta.free_bytes as f64 / meta.total_bytes as f64) * 100.0
     } else {
         0.0
     };
-    let mut health = calculate_disk_health(free_percent, 0.0, 0, 0);
+    let mut health = calculate_disk_health(free_percent, 0.0, duplicate_waste_bytes, zombie_bytes);
     health.drive_letter = meta.drive_letter;
     Ok(health)
 }
 
-fn input_from_risk_item(item: RiskItem) -> RecommendationInput {
+fn load_scoring_weights() -> ScoringWeights {
+    crate::db::get_settings()
+        .map(|settings| ScoringWeights::from_settings(&settings))
+        .unwrap_or_default()
+}
+
+fn build_age_map(report: &crate::aging::AgingReport) -> HashMap<String, u64> {
+    let mut age_map = HashMap::new();
+    for file_age in &report.file_ages {
+        insert_max_age(&mut age_map, &file_age.path, file_age.age_days);
+        for ancestor in Path::new(&file_age.path).ancestors().skip(1) {
+            let ancestor_path = ancestor.to_string_lossy();
+            if ancestor_path.is_empty() {
+                continue;
+            }
+            insert_max_age(&mut age_map, &ancestor_path, file_age.age_days);
+        }
+    }
+    age_map
+}
+
+fn insert_max_age(age_map: &mut HashMap<String, u64>, path: &str, age_days: u64) {
+    let key = normalize_path_key(path);
+    if key.is_empty() {
+        return;
+    }
+    let current = age_map.entry(key).or_insert(age_days);
+    *current = (*current).max(age_days);
+}
+
+fn normalize_path_key(path: &str) -> String {
+    path.trim()
+        .trim_end_matches(['\\', '/'])
+        .replace('/', "\\")
+        .to_lowercase()
+}
+
+fn input_from_risk_item(item: RiskItem, age_map: &HashMap<String, u64>) -> RecommendationInput {
+    let age_days = age_map.get(&normalize_path_key(&item.path)).copied();
     RecommendationInput {
         path: item.path,
         name: item.name,
         size_bytes: item.size_bytes,
         risk_level: risk_level_to_string(&item.risk_level),
         safe_to_delete: item.safe_to_delete,
-        age_days: None,
+        age_days,
         duplicate_waste_bytes: 0,
     }
 }
@@ -118,9 +185,11 @@ fn rank_recommendations(
             let score = score_recommendation(&input, weights);
             Recommendation {
                 rank: 0,
-                estimated_size: input
-                    .duplicate_waste_bytes
-                    .max(if input.safe_to_delete { input.size_bytes } else { 0 }),
+                estimated_size: input.duplicate_waste_bytes.max(if input.safe_to_delete {
+                    input.size_bytes
+                } else {
+                    0
+                }),
                 reason: recommendation_reason(&input),
                 action: if input.safe_to_delete {
                     "preview_cleanup".into()
@@ -229,6 +298,7 @@ fn calculate_disk_health(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn score_prefers_large_safe_low_risk_items() {
@@ -278,10 +348,126 @@ mod tests {
     }
 
     #[test]
+    fn recommendation_input_uses_real_age_days_from_age_map() {
+        let item = RiskItem {
+            name: "cache".into(),
+            path: "C:\\Temp\\cache".into(),
+            size_bytes: 1_000,
+            file_count: 1,
+            dir_count: 0,
+            risk_level: RiskLevel::Low,
+            category: "Cache".into(),
+            explanation: "test".into(),
+            safe_to_delete: true,
+        };
+        let mut age_map = HashMap::new();
+        age_map.insert("c:\\temp\\cache".to_string(), 240);
+
+        let input = input_from_risk_item(item, &age_map);
+
+        assert_eq!(input.age_days, Some(240));
+    }
+
+    #[test]
+    fn real_age_days_scores_higher_than_missing_age() {
+        let aged = RecommendationInput {
+            path: "C:\\Temp\\old-cache".into(),
+            name: "old-cache".into(),
+            size_bytes: 1_000,
+            risk_level: "low".into(),
+            safe_to_delete: true,
+            age_days: Some(365),
+            duplicate_waste_bytes: 0,
+        };
+        let missing_age = RecommendationInput {
+            age_days: None,
+            ..aged.clone()
+        };
+
+        let aged_score = score_recommendation(&aged, &ScoringWeights::default());
+        let missing_age_score = score_recommendation(&missing_age, &ScoringWeights::default());
+
+        assert!(aged_score > missing_age_score);
+    }
+
+    #[test]
     fn disk_health_penalizes_low_free_space() {
         let health = calculate_disk_health(5.0, 0.0, 0, 0);
 
         assert!(health.score < 60);
         assert_eq!(health.status, "warning");
+    }
+
+    #[test]
+    fn disk_health_penalizes_duplicate_and_zombie_waste() {
+        let clean = calculate_disk_health(80.0, 0.0, 0, 0);
+        let waste_heavy = calculate_disk_health(80.0, 0.0, 11_000_000_000, 26_000_000_000);
+
+        assert!(waste_heavy.score < clean.score);
+        assert_eq!(waste_heavy.duplicate_waste_bytes, 11_000_000_000);
+        assert_eq!(waste_heavy.zombie_bytes, 26_000_000_000);
+    }
+
+    #[test]
+    fn scoring_weights_can_be_built_from_settings() {
+        let settings = crate::db::AppSettings {
+            scoring_weight_risk: 0.5,
+            scoring_weight_age: 0.1,
+            scoring_weight_duplicate: 0.1,
+            scoring_weight_size: 0.1,
+            scoring_weight_safety: 0.2,
+            ..crate::db::AppSettings::default()
+        };
+
+        let weights = ScoringWeights::from_settings(&settings);
+
+        assert_eq!(weights.risk_factor, 0.5);
+        assert_eq!(weights.safety_factor, 0.2);
+    }
+
+    #[test]
+    fn synthetic_scan_classify_recommend_and_dry_run_preview_pipeline() {
+        let root =
+            std::env::temp_dir().join(format!("diskpulse-pipeline-temp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create temp pipeline dir");
+        let path = root.to_string_lossy().to_string();
+        let scan = crate::scanner::DriveInfo {
+            drive_letter: "C".into(),
+            total_bytes: 100_000_000,
+            used_bytes: 60_000_000,
+            free_bytes: 40_000_000,
+            top_dirs: vec![crate::scanner::DirInfo {
+                name: "Temp".into(),
+                path: path.clone(),
+                size_bytes: 10_000_000,
+                file_count: 10,
+                dir_count: 1,
+                risk_level: None,
+            }],
+        };
+        let report = crate::risk::classify_risks(&scan);
+        let mut age_map = HashMap::new();
+        age_map.insert(normalize_path_key(&path), 365);
+        let inputs = report
+            .items
+            .iter()
+            .cloned()
+            .map(|item| input_from_risk_item(item, &age_map))
+            .collect::<Vec<_>>();
+        let recommendations = rank_recommendations(inputs, &ScoringWeights::default());
+        let preview_items = report
+            .items
+            .iter()
+            .filter(|item| item.safe_to_delete && item.risk_level == RiskLevel::Low)
+            .map(crate::cleaner::CleanItem::from)
+            .collect::<Vec<_>>();
+
+        let preview = crate::cleaner::preview_cleanup(preview_items);
+
+        assert!(!recommendations.is_empty());
+        assert_eq!(recommendations[0].item.path, path);
+        assert_eq!(preview.validation.total_bytes, 10_000_000);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

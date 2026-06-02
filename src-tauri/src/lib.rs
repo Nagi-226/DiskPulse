@@ -1,15 +1,15 @@
-mod alert;
 mod aging;
+mod alert;
 mod cleaner;
 mod cli;
 mod db;
-mod duplicates;
+pub mod duplicates;
+pub mod platform;
 mod prediction;
 mod recommendations;
 mod report;
-pub mod platform;
 mod risk;
-mod scanner;
+pub mod scanner;
 mod scheduler;
 mod watcher;
 
@@ -23,18 +23,28 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager};
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct FileMeta {
+    path: String,
+    hard_link_count: u64,
+    is_sparse: bool,
+    size_on_disk_bytes: Option<u64>,
+    identity: Option<platform::FileIdentity>,
+}
+
 pub const SCAN_PROGRESS_EVENT: &str = "scan-progress";
 pub const LARGE_FILE_PROGRESS_EVENT: &str = "large-file-progress";
 pub const DUPLICATE_SCAN_PROGRESS_EVENT: &str = "duplicate-scan-progress";
 pub const AGING_SCAN_PROGRESS_EVENT: &str = "aging-scan-progress";
 pub const CLEAN_PROGRESS_EVENT: &str = "clean-progress";
+pub const CLEANUP_COMPLETE_EVENT: &str = "cleanup-complete";
 pub const FS_EVENT_BATCH: &str = "fs-event-batch";
 pub const DRIVE_CACHE_REFRESHED_EVENT: &str = "drive-cache-refreshed";
 pub const AUTO_SCAN_EVENT: &str = "auto-scan";
 pub const DISK_SPACE_ALERT: &str = "disk-space-alert";
 
 /// Global watcher guard so we can stop it from another command.
-static WATCHER: Mutex<Option<watcher::WatcherGuard>> = Mutex::new(None);
+static WATCHER: Mutex<Option<platform::WatcherGuard>> = Mutex::new(None);
 static SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 static LARGE_FILE_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 static DUPLICATE_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
@@ -230,10 +240,17 @@ fn scan_duplicates(
     drive: String,
     min_size: u64,
 ) -> Result<Vec<duplicates::DuplicateGroup>, String> {
+    let effective_min_size = if min_size == 0 {
+        db::get_settings()
+            .map(|settings| settings.duplicate_min_size_bytes)
+            .unwrap_or_else(|_| db::AppSettings::default().duplicate_min_size_bytes)
+    } else {
+        min_size
+    };
     let token = begin_duplicate_scan_token();
     let result = duplicates::scan_duplicates_with_progress_and_cancel(
         &drive,
-        min_size,
+        effective_min_size,
         |progress| {
             let _ = app.emit(DUPLICATE_SCAN_PROGRESS_EVENT, progress);
         },
@@ -285,34 +302,7 @@ fn cancel_aging_scan() -> Result<(), String> {
 /// List available drives on the system
 #[tauri::command]
 fn list_drives() -> Result<Vec<String>, String> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::Win32::Storage::FileSystem::GetLogicalDrives;
-
-    unsafe {
-        let drives_mask = GetLogicalDrives();
-        if drives_mask == 0 {
-            return Err("Failed to get logical drives".into());
-        }
-
-        let mut drives = Vec::new();
-        for i in 0..26 {
-            if drives_mask & (1 << i) != 0 {
-                let letter = (b'A' + i) as char;
-                let path = format!("{}:\\", letter);
-                let wide: Vec<u16> = std::ffi::OsStr::new(&path)
-                    .encode_wide()
-                    .chain(std::iter::once(0))
-                    .collect();
-                let result = windows::Win32::Storage::FileSystem::GetDriveTypeW(
-                    windows::core::PCWSTR(wide.as_ptr()),
-                );
-                if result != 1 {
-                    drives.push(letter.to_string());
-                }
-            }
-        }
-        Ok(drives)
-    }
+    platform::providers().disk_info.list_drives()
 }
 
 /// Scan a specific directory for drill-down navigation
@@ -355,6 +345,7 @@ fn clean_items(app: AppHandle, items: Vec<CleanItem>) -> Result<CleanResult, Str
             result.succeeded, result.skipped, result.failed
         ),
     });
+    let _ = app.emit(CLEANUP_COMPLETE_EVENT, &result);
     Ok(result)
 }
 
@@ -515,9 +506,12 @@ fn start_fs_watcher(app: AppHandle) -> Result<String, String> {
     let dir_list = config.directories.join(", ");
     let handle = app.clone();
 
-    let watcher_guard = watcher::start_watching(config, move |batch| {
-        handle_fs_change_batch(handle.clone(), batch);
-    });
+    let watcher_guard = platform::providers().fs_watcher.start(
+        config,
+        Box::new(move |batch| {
+            handle_fs_change_batch(handle.clone(), batch);
+        }),
+    )?;
 
     *guard = Some(watcher_guard);
 
@@ -528,7 +522,7 @@ fn start_fs_watcher(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 fn stop_fs_watcher() -> Result<String, String> {
     let mut guard = WATCHER.lock().map_err(|e| format!("Lock error: {}", e))?;
-    if let Some(w) = guard.take() {
+    if let Some(mut w) = guard.take() {
         w.stop();
         Ok("watcher stopped".into())
     } else {
@@ -604,6 +598,18 @@ fn mark_notifications_read() -> Result<(), String> {
     db::mark_notifications_read()
 }
 
+/// Mark one notification as read.
+#[tauri::command]
+fn mark_notification_read(id: i64) -> Result<(), String> {
+    db::mark_notification_read(id)
+}
+
+/// Clear all persisted notifications.
+#[tauri::command]
+fn clear_notifications() -> Result<(), String> {
+    db::clear_notifications()
+}
+
 /// Get snapshot history for a drive within the specified number of past days.
 #[tauri::command]
 fn get_snapshot_history(drive: String, days: u32) -> Result<Vec<db::Snapshot>, String> {
@@ -676,6 +682,32 @@ fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Return platform system metadata.
+#[tauri::command]
+fn get_system_info() -> Result<platform::PlatformSystemInfo, String> {
+    let providers = platform::providers();
+    Ok(platform::PlatformSystemInfo {
+        os_name: providers.system_info.os_name()?,
+        os_version: providers.system_info.os_version()?,
+        cpu_count: providers.system_info.cpu_count(),
+        total_ram_bytes: providers.system_info.total_ram_bytes()?,
+        app_data_dir: providers.system_info.app_data_dir()?,
+    })
+}
+
+/// Return hard-link and sparse-file metadata for a path.
+#[tauri::command]
+fn get_file_meta(path: String) -> Result<FileMeta, String> {
+    let meta = platform::providers().file_meta;
+    Ok(FileMeta {
+        hard_link_count: meta.hard_link_count(&path)?,
+        is_sparse: meta.is_sparse(&path)?,
+        size_on_disk_bytes: meta.size_on_disk(&path)?,
+        identity: meta.file_identity(&path)?,
+        path,
+    })
+}
+
 /// Internal: start watcher without command signature (used by auto-startup).
 fn start_fs_watcher_internal(app: &AppHandle) -> Result<String, String> {
     let mut guard = WATCHER.lock().map_err(|e| format!("Lock error: {}", e))?;
@@ -690,9 +722,12 @@ fn start_fs_watcher_internal(app: &AppHandle) -> Result<String, String> {
     };
     let dir_list = config.directories.join(", ");
     let handle = app.clone();
-    let watcher_guard = watcher::start_watching(config, move |batch| {
-        handle_fs_change_batch(handle.clone(), batch);
-    });
+    let watcher_guard = platform::providers().fs_watcher.start(
+        config,
+        Box::new(move |batch| {
+            handle_fs_change_batch(handle.clone(), batch);
+        }),
+    )?;
     *guard = Some(watcher_guard);
     Ok(format!("watching: {}", dir_list))
 }
@@ -921,6 +956,10 @@ pub fn run() {
             delete_custom_rule,
             get_notifications,
             mark_notifications_read,
+            mark_notification_read,
+            clear_notifications,
+            get_system_info,
+            get_file_meta,
             app_version
         ])
         .run(tauri::generate_context!())

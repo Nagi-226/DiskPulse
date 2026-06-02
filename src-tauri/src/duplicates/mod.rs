@@ -9,6 +9,8 @@ use std::time::SystemTime;
 pub struct DuplicateGroup {
     pub group_id: String,
     pub total_size_wasted: u64,
+    #[serde(default)]
+    pub hard_link_count: usize,
     pub files: Vec<FileEntry>,
 }
 
@@ -19,6 +21,8 @@ pub struct DuplicateScanProgress {
     pub files_processed: usize,
     pub groups_found: usize,
     pub current_path: Option<String>,
+    #[serde(default)]
+    pub hard_link_count: usize,
 }
 
 pub fn scan_duplicates_with_progress_and_cancel<F>(
@@ -36,6 +40,18 @@ where
         return Err(format!("Drive {} does not exist", drive_letter));
     }
     scan_duplicates_under_root(root, drive_letter, min_size, on_progress, cancel)
+}
+
+pub fn scan_duplicates_in_directory<F>(
+    root: &Path,
+    min_size: u64,
+    on_progress: F,
+    cancel: Option<&AtomicBool>,
+) -> Result<Vec<DuplicateGroup>, String>
+where
+    F: Fn(DuplicateScanProgress),
+{
+    scan_duplicates_under_root(root, "BENCH", min_size, on_progress, cancel)
 }
 
 fn scan_duplicates_under_root<F>(
@@ -57,9 +73,19 @@ where
 
     let drive_letter = drive_letter.to_uppercase();
     let mut files_by_size: HashMap<u64, Vec<FileEntry>> = HashMap::new();
+    let mut seen_identities: HashMap<crate::platform::FileIdentity, String> = HashMap::new();
     let mut processed = 0usize;
+    let mut hard_link_count = 0usize;
 
-    emit_progress(&on_progress, &drive_letter, "size_grouping", processed, 0, Some(root));
+    emit_progress(
+        &on_progress,
+        &drive_letter,
+        "size_grouping",
+        processed,
+        0,
+        hard_link_count,
+        Some(root),
+    );
     for entry in jwalk::WalkDir::new(root).follow_links(false) {
         if scanner::is_cancelled(cancel) {
             return Err("Duplicate scan cancelled".to_string());
@@ -81,6 +107,26 @@ where
 
         processed += 1;
         let path = entry.path();
+        let path_text = path.to_string_lossy().to_string();
+        if let Ok(Some(identity)) = crate::platform::providers()
+            .file_meta
+            .file_identity(&path_text)
+        {
+            if seen_identities.insert(identity, path_text).is_some() {
+                hard_link_count += 1;
+                emit_progress(
+                    &on_progress,
+                    &drive_letter,
+                    "size_grouping",
+                    processed,
+                    0,
+                    hard_link_count,
+                    Some(&path),
+                );
+                continue;
+            }
+        }
+
         files_by_size
             .entry(metadata.len())
             .or_default()
@@ -92,6 +138,7 @@ where
             "size_grouping",
             processed,
             0,
+            hard_link_count,
             Some(&path),
         );
         if scanner::is_cancelled(cancel) {
@@ -143,6 +190,7 @@ where
         groups.push(DuplicateGroup {
             group_id,
             total_size_wasted: size.saturating_mul(files.len().saturating_sub(1) as u64),
+            hard_link_count,
             files,
         });
         emit_progress(
@@ -151,6 +199,7 @@ where
             "complete",
             processed,
             groups.len(),
+            hard_link_count,
             None,
         );
     }
@@ -159,12 +208,14 @@ where
 }
 
 fn file_entry_from_path(path: &Path, size_bytes: u64, metadata: &std::fs::Metadata) -> FileEntry {
+    let path_text = path.to_string_lossy().to_string();
+    let meta = crate::platform::providers().file_meta;
     FileEntry {
         name: path
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
             .unwrap_or_default(),
-        path: path.to_string_lossy().to_string(),
+        path: path_text.clone(),
         size_bytes,
         modified_epoch_ms: metadata
             .modified()
@@ -172,6 +223,8 @@ fn file_entry_from_path(path: &Path, size_bytes: u64, metadata: &std::fs::Metada
             .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
             .map(|duration| duration.as_millis() as u64)
             .unwrap_or(0),
+        hard_link_count: meta.hard_link_count(&path_text).unwrap_or(1),
+        size_on_disk_bytes: meta.size_on_disk(&path_text).ok().flatten(),
     }
 }
 
@@ -208,6 +261,7 @@ fn emit_progress<F>(
     phase: &str,
     files_processed: usize,
     groups_found: usize,
+    hard_link_count: usize,
     current_path: Option<&Path>,
 ) where
     F: Fn(DuplicateScanProgress),
@@ -218,6 +272,7 @@ fn emit_progress<F>(
         files_processed,
         groups_found,
         current_path: current_path.map(|path| path.to_string_lossy().to_string()),
+        hard_link_count,
     });
 }
 
@@ -243,12 +298,13 @@ mod tests {
         write_file(&nested.join("b.bin"), b"same payload");
         write_file(&nested.join("unique.bin"), b"different payload");
 
-        let groups = scan_duplicates_under_root(&root, "T", 1, |_| {}, None)
-            .expect("scan duplicates");
+        let groups =
+            scan_duplicates_under_root(&root, "T", 1, |_| {}, None).expect("scan duplicates");
 
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].files.len(), 2);
         assert_eq!(groups[0].total_size_wasted, b"same payload".len() as u64);
+        assert_eq!(groups[0].hard_link_count, 0);
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -264,8 +320,8 @@ mod tests {
         write_file(&root.join("a.bin"), b"tiny");
         write_file(&root.join("b.bin"), b"tiny");
 
-        let groups = scan_duplicates_under_root(&root, "T", 10, |_| {}, None)
-            .expect("scan duplicates");
+        let groups =
+            scan_duplicates_under_root(&root, "T", 10, |_| {}, None).expect("scan duplicates");
 
         assert!(groups.is_empty());
 
@@ -297,6 +353,40 @@ mod tests {
         );
 
         assert_eq!(result, Err("Duplicate scan cancelled".to_string()));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn duplicate_scan_skips_hard_links_with_same_file_identity() {
+        let root = std::env::temp_dir().join(format!(
+            "diskpulse-duplicates-hardlink-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create duplicate test dir");
+        let original = root.join("a.bin");
+        let linked = root.join("b.bin");
+        write_file(&original, b"same inode payload");
+        if std::fs::hard_link(&original, &linked).is_err() {
+            let _ = std::fs::remove_dir_all(&root);
+            return;
+        }
+
+        let last_hard_links = std::cell::Cell::new(0usize);
+        let groups = scan_duplicates_under_root(
+            &root,
+            "T",
+            1,
+            |progress| {
+                last_hard_links.set(progress.hard_link_count);
+            },
+            None,
+        )
+        .expect("scan duplicates");
+
+        assert!(groups.is_empty());
+        assert_eq!(last_hard_links.get(), 1);
 
         let _ = std::fs::remove_dir_all(&root);
     }

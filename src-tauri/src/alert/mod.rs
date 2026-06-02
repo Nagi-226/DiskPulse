@@ -259,6 +259,11 @@ fn send_notification(
         .title("DiskPulse — Low Disk Space")
         .body(message)
         .show();
+    let _ = crate::db::save_notification(&crate::db::NotificationInput {
+        notification_type: "disk-space-alert".into(),
+        title: format!("Low disk space on {}:", drive),
+        message: message.to_string(),
+    });
 
     let payload = DiskSpaceAlertPayload {
         alert_type: "low_space".into(),

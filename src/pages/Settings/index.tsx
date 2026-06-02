@@ -7,7 +7,7 @@ import { THEME_OPTIONS, useTheme, type ThemeId } from "../../hooks/useTheme";
 import type { AppSettings, AutoCleanupStatus, CleanResult, RiskLevel, RiskRule } from "../../types";
 import { formatSize } from "../../utils/format";
 
-type SettingsTab = "general" | "appearance" | "rules" | "alerts" | "automation" | "about";
+type SettingsTab = "general" | "appearance" | "rules" | "alerts" | "automation" | "recommendations" | "about";
 
 const RISK_STYLES: Record<RiskLevel, string> = {
   low: "bg-risk-low-bg text-success border-success/20",
@@ -34,6 +34,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   auto_cleanup_min_free_gb: 50,
   language: "auto",
   theme: "auto",
+  scoring_weight_risk: 0.20,
+  scoring_weight_age: 0.15,
+  scoring_weight_duplicate: 0.20,
+  scoring_weight_size: 0.20,
+  scoring_weight_safety: 0.25,
+  duplicate_min_size_bytes: 1_048_576,
+  aging_zombie_days: 180,
 };
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -556,6 +563,74 @@ function StatusTile({ label, value }: { label: string; value: string }) {
   );
 }
 
+function RecommendationSettingsTab({ settings, saving, onUpdate, onSave, message }: {
+  settings: AppSettings;
+  saving: boolean;
+  onUpdate: (s: AppSettings) => void;
+  onSave: SaveHandler;
+  message: string | null;
+}) {
+  const totalWeight =
+    settings.scoring_weight_risk +
+    settings.scoring_weight_age +
+    settings.scoring_weight_duplicate +
+    settings.scoring_weight_size +
+    settings.scoring_weight_safety;
+
+  return (
+    <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-6">
+      <div>
+        <div className="text-sm font-semibold text-text-primary">Recommendation scoring</div>
+        <p className="mt-1 text-xs text-text-muted">Tune the weighted ranking model and the expensive scan thresholds used by integrations.</p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <WeightSlider label="Risk" value={settings.scoring_weight_risk} onChange={(v) => onUpdate({ ...settings, scoring_weight_risk: v })} />
+        <WeightSlider label="Age" value={settings.scoring_weight_age} onChange={(v) => onUpdate({ ...settings, scoring_weight_age: v })} />
+        <WeightSlider label="Duplicates" value={settings.scoring_weight_duplicate} onChange={(v) => onUpdate({ ...settings, scoring_weight_duplicate: v })} />
+        <WeightSlider label="Size" value={settings.scoring_weight_size} onChange={(v) => onUpdate({ ...settings, scoring_weight_size: v })} />
+        <WeightSlider label="Safety" value={settings.scoring_weight_safety} onChange={(v) => onUpdate({ ...settings, scoring_weight_safety: v })} />
+        <div className="rounded-2xl border border-accent/20 bg-accent/10 p-4">
+          <div className="text-xs uppercase tracking-wider text-text-muted">Weight total</div>
+          <div className="mt-2 text-lg font-semibold text-text-primary">{totalWeight.toFixed(2)}</div>
+          <p className="mt-1 text-xs text-text-muted">Values do not need to equal 1.00; they directly scale each score factor.</p>
+        </div>
+      </div>
+
+      <hr className="border-aurora-border/40" />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Field label="Duplicate minimum size">
+          <div className="flex items-center gap-2">
+            <input type="number" min={0} step={1} value={Math.round(settings.duplicate_min_size_bytes / 1_048_576)} onChange={(e) => onUpdate({ ...settings, duplicate_min_size_bytes: Math.max(0, Number(e.target.value)) * 1_048_576 })} className="w-full rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
+            <span className="text-xs text-text-muted">MB</span>
+          </div>
+        </Field>
+        <Field label="Zombie threshold">
+          <div className="flex items-center gap-2">
+            <input type="number" min={1} step={30} value={settings.aging_zombie_days} onChange={(e) => onUpdate({ ...settings, aging_zombie_days: Math.max(1, Number(e.target.value)) })} className="w-full rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
+            <span className="text-xs text-text-muted">days</span>
+          </div>
+        </Field>
+      </div>
+
+      <SaveRow saving={saving} message={message} onSave={onSave} label="Save Recommendations" />
+    </div>
+  );
+}
+
+function WeightSlider({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+  return (
+    <div className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/50 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-sm font-medium text-text-primary">{label}</div>
+        <div className="font-mono text-xs text-text-muted">{value.toFixed(2)}</div>
+      </div>
+      <input type="range" min={0} max={1} step={0.01} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-accent" />
+    </div>
+  );
+}
+
 function AboutTab() {
   const [version, setVersion] = useState("");
   useEffect(() => {
@@ -633,6 +708,7 @@ export default function SettingsPage() {
     { id: "rules", label: "Rules" },
     { id: "alerts", label: "Alerts" },
     { id: "automation", label: "Automation" },
+    { id: "recommendations", label: "Recommendations" },
     { id: "about", label: "About" },
   ];
 
@@ -656,6 +732,7 @@ export default function SettingsPage() {
       {tab === "rules" && <RulesTab />}
       {tab === "alerts" && <AlertsTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
       {tab === "automation" && <AutomationTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
+      {tab === "recommendations" && <RecommendationSettingsTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
       {tab === "about" && <AboutTab />}
     </div>
   );

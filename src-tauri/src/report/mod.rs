@@ -49,7 +49,11 @@ pub fn export_cleanup_history(format: &str) -> Result<String, String> {
 
 pub fn export_duplicates(drive: &str, format: &str) -> Result<String, String> {
     let format = ReportFormat::parse(format).ok_or_else(|| "Unsupported format".to_string())?;
-    let groups = duplicates::scan_duplicates_with_progress_and_cancel(drive, 1_000_000, |_| {}, None)?;
+    let min_size = db::get_settings()
+        .map(|settings| settings.duplicate_min_size_bytes)
+        .unwrap_or_else(|_| db::AppSettings::default().duplicate_min_size_bytes);
+    let groups =
+        duplicates::scan_duplicates_with_progress_and_cancel(drive, min_size, |_| {}, None)?;
     let content = match format {
         ReportFormat::Json => json_pretty(&groups)?,
         ReportFormat::Csv => duplicates_to_csv(&groups),
@@ -78,7 +82,8 @@ fn risk_report_to_csv(report: &risk::RiskReport) -> String {
 }
 
 fn cleanup_history_to_csv(history: &[db::CleanupLog]) -> String {
-    let mut rows = vec!["id,created_at,item_count,freed_bytes,succeeded,skipped,failed".to_string()];
+    let mut rows =
+        vec!["id,created_at,item_count,freed_bytes,succeeded,skipped,failed".to_string()];
     for item in history {
         rows.push(format!(
             "{},{},{},{},{},{},{}",
@@ -110,7 +115,11 @@ fn duplicates_to_csv(groups: &[duplicates::DuplicateGroup]) -> String {
     rows.join("\n")
 }
 
-fn write_report_file(prefix: &str, format: ReportFormat, content: String) -> Result<String, String> {
+fn write_report_file(
+    prefix: &str,
+    format: ReportFormat,
+    content: String,
+) -> Result<String, String> {
     let mut path: PathBuf = std::env::temp_dir();
     path.push(format!(
         "diskpulse-{}-{}.{}",
@@ -141,8 +150,14 @@ mod tests {
 
     #[test]
     fn report_format_parses_csv_and_json() {
-        assert!(matches!(ReportFormat::parse("csv"), Some(ReportFormat::Csv)));
-        assert!(matches!(ReportFormat::parse("json"), Some(ReportFormat::Json)));
+        assert!(matches!(
+            ReportFormat::parse("csv"),
+            Some(ReportFormat::Csv)
+        ));
+        assert!(matches!(
+            ReportFormat::parse("json"),
+            Some(ReportFormat::Json)
+        ));
         assert!(ReportFormat::parse("xml").is_none());
     }
 }

@@ -12,6 +12,15 @@
 
 DiskPulse 让你全面掌握磁盘空间使用情况，并安全地回收被浪费的存储空间。基于 Aurora 设计系统打造的精美 UI，由高性能 Rust 后端驱动，恪守"绝不丢失你的数据"的承诺。
 
+
+## v0.5.0 Integration Excellence
+
+- Recommendations now use real aging data, and disk health uses duplicate waste plus zombie bytes.
+- Cleanup Wizard now completes the full Select -> Scan -> Review -> Confirm -> Execute flow.
+- Notification Center now polls automatically, shows unread badges, and supports dismiss/clear-all.
+- Settings now include scoring weights, duplicate minimum size, and zombie threshold.
+- CLI supports scan, duplicates, health, clean dry-run/execution, and drive-aware export.
+
 ## ✨ 功能特性
 
 - **交互式矩形树图** — 直观查看磁盘空间占用，支持逐级下钻到任意子目录

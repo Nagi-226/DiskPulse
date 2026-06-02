@@ -27,12 +27,20 @@ pub struct Hotspot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FileAge {
+    pub path: String,
+    pub age_days: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AgingReport {
     pub drive_letter: String,
     pub buckets: Vec<AgeBucket>,
     pub zombies_total_size: u64,
     pub zombie_files: Vec<FileEntry>,
     pub hotspots: Vec<Hotspot>,
+    #[serde(default, skip_serializing)]
+    pub file_ages: Vec<FileAge>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,8 +66,35 @@ impl FileTimeRecord {
     }
 }
 
+pub fn analyze_file_aging(drive_letter: &str) -> Result<AgingReport, String> {
+    let zombie_threshold_days = crate::db::get_settings()
+        .map(|settings| settings.aging_zombie_days)
+        .unwrap_or(ZOMBIE_THRESHOLD_DAYS);
+    analyze_file_aging_with_threshold_and_cancel(drive_letter, zombie_threshold_days, |_| {}, None)
+}
+
 pub fn analyze_file_aging_with_progress_and_cancel<F>(
     drive_letter: &str,
+    on_progress: F,
+    cancel: Option<&AtomicBool>,
+) -> Result<AgingReport, String>
+where
+    F: Fn(AgingScanProgress),
+{
+    let zombie_threshold_days = crate::db::get_settings()
+        .map(|settings| settings.aging_zombie_days)
+        .unwrap_or(ZOMBIE_THRESHOLD_DAYS);
+    analyze_file_aging_with_threshold_and_cancel(
+        drive_letter,
+        zombie_threshold_days,
+        on_progress,
+        cancel,
+    )
+}
+
+pub fn analyze_file_aging_with_threshold_and_cancel<F>(
+    drive_letter: &str,
+    zombie_threshold_days: u64,
     on_progress: F,
     cancel: Option<&AtomicBool>,
 ) -> Result<AgingReport, String>
@@ -71,12 +106,19 @@ where
     if !root.exists() {
         return Err(format!("Drive {} does not exist", drive_letter));
     }
-    analyze_file_aging_under_root(root, drive_letter, on_progress, cancel)
+    analyze_file_aging_under_root(
+        root,
+        drive_letter,
+        zombie_threshold_days,
+        on_progress,
+        cancel,
+    )
 }
 
 fn analyze_file_aging_under_root<F>(
     root: &Path,
     drive_letter: &str,
+    zombie_threshold_days: u64,
     on_progress: F,
     cancel: Option<&AtomicBool>,
 ) -> Result<AgingReport, String>
@@ -94,6 +136,7 @@ where
     let drive_letter = drive_letter.to_uppercase();
     let mut buckets = empty_buckets();
     let mut zombie_files = Vec::new();
+    let mut file_ages = Vec::new();
     let mut hotspots: HashMap<String, Hotspot> = HashMap::new();
     let mut files_processed = 0usize;
 
@@ -117,15 +160,22 @@ where
             size_bytes: metadata.len(),
             created: metadata.created().unwrap_or(now),
             modified: metadata.modified().unwrap_or(now),
-            accessed: metadata.accessed().unwrap_or_else(|_| metadata.modified().unwrap_or(now)),
+            accessed: metadata
+                .accessed()
+                .unwrap_or_else(|_| metadata.modified().unwrap_or(now)),
         };
 
         let _created_age_days = age_days(now, record.created);
-        add_to_bucket(&mut buckets, age_days(now, record.modified), record.size_bytes);
-        if record.is_zombie(now, ZOMBIE_THRESHOLD_DAYS) {
+        let modified_age_days = age_days(now, record.modified);
+        add_to_bucket(&mut buckets, modified_age_days, record.size_bytes);
+        file_ages.push(FileAge {
+            path: record.path.clone(),
+            age_days: modified_age_days,
+        });
+        if record.is_zombie(now, zombie_threshold_days) {
             zombie_files.push(file_entry_from_record(&record));
         }
-        if age_days(now, record.modified) <= HOTSPOT_THRESHOLD_DAYS {
+        if modified_age_days <= HOTSPOT_THRESHOLD_DAYS {
             add_hotspot(&mut hotspots, &entry.path(), record.size_bytes);
         }
 
@@ -144,6 +194,7 @@ where
 
     zombie_files.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
     let zombies_total_size = zombie_files.iter().map(|file| file.size_bytes).sum();
+    file_ages.sort_by(|a, b| a.path.cmp(&b.path));
     let mut hotspots: Vec<Hotspot> = hotspots.into_values().collect();
     hotspots.sort_by(|a, b| b.recent_bytes.cmp(&a.recent_bytes));
 
@@ -153,6 +204,7 @@ where
         zombies_total_size,
         zombie_files,
         hotspots,
+        file_ages,
     })
 }
 
@@ -231,10 +283,7 @@ fn bucket_for_age_days(days: u64) -> &'static str {
 
 fn add_to_bucket(buckets: &mut [AgeBucket], days: u64, size_bytes: u64) {
     let id = bucket_for_age_days(days);
-    if let Some(bucket) = buckets
-        .iter_mut()
-        .find(|bucket| bucket.id == id)
-    {
+    if let Some(bucket) = buckets.iter_mut().find(|bucket| bucket.id == id) {
         bucket.total_bytes = bucket.total_bytes.saturating_add(size_bytes);
         bucket.file_count += 1;
     }
@@ -261,6 +310,7 @@ fn parent_dir(path: &Path) -> String {
 
 fn file_entry_from_record(record: &FileTimeRecord) -> FileEntry {
     let path = Path::new(&record.path);
+    let meta = crate::platform::providers().file_meta;
     FileEntry {
         name: path
             .file_name()
@@ -273,14 +323,13 @@ fn file_entry_from_record(record: &FileTimeRecord) -> FileEntry {
             .duration_since(SystemTime::UNIX_EPOCH)
             .map(|duration| duration.as_millis() as u64)
             .unwrap_or(0),
+        hard_link_count: meta.hard_link_count(&record.path).unwrap_or(1),
+        size_on_disk_bytes: meta.size_on_disk(&record.path).ok().flatten(),
     }
 }
 
 fn age_days(now: SystemTime, then: SystemTime) -> u64 {
-    now.duration_since(then)
-        .unwrap_or(Duration::ZERO)
-        .as_secs()
-        / DAY_SECONDS
+    now.duration_since(then).unwrap_or(Duration::ZERO).as_secs() / DAY_SECONDS
 }
 
 fn emit_progress<F>(

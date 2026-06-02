@@ -1,17 +1,44 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum CliCommand {
-    Scan { drive: String },
-    Duplicates { drive: String },
-    Health { drive: String },
-    CleanLow { drive: String },
-    Export { format: String, report_type: String },
+    Scan {
+        drive: String,
+    },
+    Duplicates {
+        drive: String,
+    },
+    Health {
+        drive: String,
+    },
+    CleanLow {
+        drive: String,
+    },
+    Export {
+        drive: String,
+        format: String,
+        report_type: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CliOptions {
     pub json: bool,
     pub quiet: bool,
+    pub dry_run: bool,
     pub command: Option<CliCommand>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct CliCleanPreview {
+    drive: String,
+    dry_run: bool,
+    candidate_count: usize,
+    estimated_bytes: u64,
+    items: Vec<crate::cleaner::CleanItem>,
+}
+
+struct CliCleanOutcome {
+    output: String,
+    exit_code: i32,
 }
 
 pub fn parse_cli_args(args: &[String]) -> Result<Option<CliOptions>, String> {
@@ -20,6 +47,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<Option<CliOptions>, String> {
     }
     let json = args.iter().any(|arg| arg == "--json");
     let quiet = args.iter().any(|arg| arg == "--quiet");
+    let dry_run = args.iter().any(|arg| arg == "--dry-run");
     let positional = args
         .iter()
         .skip(2)
@@ -41,8 +69,9 @@ pub fn parse_cli_args(args: &[String]) -> Result<Option<CliOptions>, String> {
             drive: positional_arg(&positional, 1, "drive")?,
         }),
         Some("export") => Ok(CliCommand::Export {
-            format: positional_arg(&positional, 1, "format")?,
-            report_type: positional_arg(&positional, 2, "type")?,
+            drive: positional_arg(&positional, 1, "drive")?,
+            format: positional_arg(&positional, 2, "format")?,
+            report_type: positional_arg(&positional, 3, "type")?,
         }),
         Some(other) => Err(format!("Unknown CLI command: {}", other)),
         None => Err("Missing CLI command".into()),
@@ -50,6 +79,7 @@ pub fn parse_cli_args(args: &[String]) -> Result<Option<CliOptions>, String> {
     Ok(Some(CliOptions {
         json,
         quiet,
+        dry_run,
         command: Some(command),
     }))
 }
@@ -58,27 +88,47 @@ pub fn execute_cli_command(options: &CliOptions) -> i32 {
     let Some(command) = &options.command else {
         return 3;
     };
+    if let CliCommand::CleanLow { drive } = command {
+        return match execute_clean_low(drive, options) {
+            Ok(outcome) => {
+                if !options.quiet {
+                    println!("{}", outcome.output);
+                }
+                outcome.exit_code
+            }
+            Err(err) => {
+                eprintln!("{}", err);
+                2
+            }
+        };
+    }
     let result = match command {
         CliCommand::Scan { drive } => crate::scanner::scan_drive_meta(drive, None, None)
             .and_then(|value| render(&value, options)),
-        CliCommand::Duplicates { drive } => crate::duplicates::scan_duplicates_with_progress_and_cancel(
-            drive,
-            1_000_000,
-            |_| {},
-            None,
-        )
-        .and_then(|value| render(&value, options)),
+        CliCommand::Duplicates { drive } => {
+            crate::duplicates::scan_duplicates_with_progress_and_cancel(
+                drive,
+                1_000_000,
+                |_| {},
+                None,
+            )
+            .and_then(|value| render(&value, options))
+        }
         CliCommand::Health { drive } => {
             crate::recommendations::get_disk_health(drive).and_then(|value| render(&value, options))
         }
-        CliCommand::CleanLow { .. } => Err("CLI cleanup execution is disabled until release hardening completes".into()),
+        CliCommand::CleanLow { .. } => unreachable!("clean handled before generic CLI dispatch"),
         CliCommand::Export {
+            drive,
             format,
             report_type,
         } => match report_type.as_str() {
-            "scan" => crate::report::export_scan_report("C", format).and_then(|value| render(&value, options)),
-            "cleanup" => crate::report::export_cleanup_history(format).and_then(|value| render(&value, options)),
-            "duplicates" => crate::report::export_duplicates("C", format).and_then(|value| render(&value, options)),
+            "scan" => crate::report::export_scan_report(drive, format)
+                .and_then(|value| render(&value, options)),
+            "cleanup" => crate::report::export_cleanup_history(format)
+                .and_then(|value| render(&value, options)),
+            "duplicates" => crate::report::export_duplicates(drive, format)
+                .and_then(|value| render(&value, options)),
             other => Err(format!("Unsupported export type: {}", other)),
         },
     };
@@ -92,8 +142,47 @@ pub fn execute_cli_command(options: &CliOptions) -> i32 {
         }
         Err(err) => {
             eprintln!("{}", err);
-            1
+            if matches!(
+                &options.command,
+                Some(CliCommand::Scan { .. })
+                    | Some(CliCommand::Health { .. })
+                    | Some(CliCommand::CleanLow { .. })
+            ) {
+                2
+            } else {
+                1
+            }
         }
+    }
+}
+
+fn execute_clean_low(drive: &str, options: &CliOptions) -> Result<CliCleanOutcome, String> {
+    let scan = crate::scanner::scan_drive(drive)?;
+    let report = crate::risk::classify_risks(&scan);
+    let items = report
+        .items
+        .iter()
+        .filter(|item| item.safe_to_delete && item.risk_level == crate::risk::RiskLevel::Low)
+        .map(crate::cleaner::CleanItem::from)
+        .collect::<Vec<_>>();
+
+    if options.dry_run {
+        let preview = crate::cleaner::preview_cleanup(items);
+        let payload = CliCleanPreview {
+            drive: drive.to_uppercase(),
+            dry_run: true,
+            candidate_count: preview.accepted.len(),
+            estimated_bytes: preview.validation.total_bytes,
+            items: preview.accepted,
+        };
+        render(&payload, options).map(|output| CliCleanOutcome {
+            output,
+            exit_code: 0,
+        })
+    } else {
+        let result = crate::cleaner::clean_items_with_progress(items, None, |_| {});
+        let exit_code = if result.failed > 0 { 1 } else { 0 };
+        render(&result, options).map(|output| CliCleanOutcome { output, exit_code })
     }
 }
 
@@ -120,12 +209,18 @@ mod tests {
 
     #[test]
     fn parse_scan_cli_command() {
-        let args = vec!["diskpulse".into(), "--cli".into(), "scan".into(), "C".into()];
+        let args = vec![
+            "diskpulse".into(),
+            "--cli".into(),
+            "scan".into(),
+            "C".into(),
+        ];
         assert_eq!(
             parse_cli_args(&args).unwrap(),
             Some(CliOptions {
                 json: false,
                 quiet: false,
+                dry_run: false,
                 command: Some(CliCommand::Scan { drive: "C".into() })
             })
         );
@@ -148,6 +243,49 @@ mod tests {
         ];
         let parsed = parse_cli_args(&args).unwrap().expect("cli options");
         assert!(parsed.json);
-        assert_eq!(parsed.command, Some(CliCommand::Health { drive: "D".into() }));
+        assert!(!parsed.dry_run);
+        assert_eq!(
+            parsed.command,
+            Some(CliCommand::Health { drive: "D".into() })
+        );
+    }
+
+    #[test]
+    fn parse_export_cli_command_includes_drive() {
+        let args = vec![
+            "diskpulse".into(),
+            "--cli".into(),
+            "export".into(),
+            "D".into(),
+            "json".into(),
+            "duplicates".into(),
+        ];
+
+        assert_eq!(
+            parse_cli_args(&args).unwrap().expect("cli options").command,
+            Some(CliCommand::Export {
+                drive: "D".into(),
+                format: "json".into(),
+                report_type: "duplicates".into()
+            })
+        );
+    }
+
+    #[test]
+    fn parse_clean_dry_run_cli_command() {
+        let args = vec![
+            "diskpulse".into(),
+            "--cli".into(),
+            "clean".into(),
+            "C".into(),
+            "--dry-run".into(),
+        ];
+
+        let parsed = parse_cli_args(&args).unwrap().expect("cli options");
+        assert!(parsed.dry_run);
+        assert_eq!(
+            parsed.command,
+            Some(CliCommand::CleanLow { drive: "C".into() })
+        );
     }
 }

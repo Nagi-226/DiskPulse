@@ -1,0 +1,29 @@
+# Build artifacts
+target/
+dist/
+node_modules/
+production/
+
+# Generated graphs (avoid re-indexing)
+graphify-out/
+
+# IDE / editor
+.vscode/
+.idea/
+.cursor/
+
+# Git
+.git/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large binary files
+*.exe
+*.msi
+*.dmg
+*.deb
+*.rpm
+*.AppImage
+*.wasm

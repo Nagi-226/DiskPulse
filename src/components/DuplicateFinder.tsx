@@ -79,7 +79,10 @@ export default function DuplicateFinder({ drives, selectedDrive, onAddToCleanup 
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-text-primary">Group {group.group_id}</div>
-                <p className="mt-1 text-xs text-text-muted">{group.files.length} identical files ? {formatSize(group.total_size_wasted)} reclaimable if one copy is kept</p>
+                <p className="mt-1 text-xs text-text-muted">
+                  {group.files.length} identical files ? {formatSize(group.total_size_wasted)} reclaimable if one copy is kept
+                  {group.hard_link_count > 0 ? ` · ${group.hard_link_count} hard links already shared on disk` : ""}
+                </p>
               </div>
             </div>
             <div className="space-y-2">

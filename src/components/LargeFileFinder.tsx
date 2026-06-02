@@ -335,7 +335,17 @@ export default function LargeFileFinder({
                           {file.name}
                         </div>
                       </td>
-                      <td className="px-3 py-3 font-mono text-text-primary">{formatSize(file.size_bytes)}</td>
+                      <td className="px-3 py-3 font-mono text-text-primary">
+                        <div>{formatSize(file.size_bytes)}</div>
+                        {file.size_on_disk_bytes != null && file.size_on_disk_bytes !== file.size_bytes && (
+                          <div className="mt-1 text-[10px] text-warning">
+                            {formatSize(file.size_on_disk_bytes)} on disk (sparse)
+                          </div>
+                        )}
+                        {file.hard_link_count > 1 && (
+                          <div className="mt-1 text-[10px] text-text-muted">Links: {file.hard_link_count}</div>
+                        )}
+                      </td>
                       <td className="px-3 py-3 text-text-secondary">{fileAge(file.modified_epoch_ms)}</td>
                       <td className="px-3 py-3">
                         <span
