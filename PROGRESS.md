@@ -1,15 +1,15 @@
 ﻿# DiskPulse Progress Snapshot
 
-> **Last updated**: 2026-06-02
+> **Last updated**: 2026-06-03
 > **Purpose**: Fast context sync for resuming DiskPulse development.
 
 ## Current Baseline
 
-- **Current version**: `v0.6.0` - Cross-Platform Performance Foundation
-- **Next target**: v0.7.0 intelligent operations planning
-- **Full plan**: `docs/v0.6.0-plan.md` (complete; supersedes `docs/v0.5.0-plan.md`)
-- **Status**: v0.6.0 complete — all 4 phases implemented; 86 tests; Windows build verified; Linux/macOS CI-ready
-- **Last verified**: `cargo test` (86/86 passed), `cargo clippy -- -D warnings`, `npm run typecheck` (0 errors), `npm run build:web` (chunk-size warning only), `npm run tauri build` (Windows MSI/NSIS generated). Linux cross-compilation blocked by GTK sysroot on Windows dev machine; CI matrix handles native Linux/macOS builds.
+- **Current version**: `v0.6.6` — Intelligent Operations (Phase 1-3 complete)
+- **Next target**: v0.6.7 multi-device dashboard, then v0.7.0 release
+- **Full plan**: `docs/v0.7.0-plan.md` (5 phases, 7 feature versions + release)
+- **Status**: v0.6.1–v0.6.6 complete (5 of 7 feature versions); 109 tests; v0.6.3 (MFT) skipped; v0.6.7 (multi-device) next
+- **Last verified**: `cargo test` (109/109 passed), `cargo clippy -- -D warnings` (0 warnings), `npm run typecheck` (0 errors), `npm run build:web` (chunk-size warning only). Clippy fixes applied: `anomaly/mod.rs` (is_multiple_of), `prediction/mod.rs` (unnecessary_cast), `service/mod.rs` (needless_return).
 
 ## What Works Right Now
 
@@ -37,7 +37,16 @@
 | Auto-cleanup backend | `src-tauri/src/scheduler/mod.rs`, `src-tauri/src/db/mod.rs` | 鉁?5 tests |
 | Auto-cleanup frontend | `src/components/AutoCleanupStatus.tsx`, `src/pages/Settings/index.tsx`, `src/pages/History/index.tsx` | 鉁?|
 | TypeScript types | `src/types.ts` | 鉁?|
-| Aurora design system | `src/index.css` | 鉁?|
+| Aurora design system | `src/index.css` | ✅ |
+| Streaming scan (v0.6.1) | `src-tauri/src/scanner/mod.rs` | ✅ 11 tests |
+| Custom rule editor + tester (v0.6.2) | `src-tauri/src/risk/mod.rs`, `src/components/RuleEditor.tsx`, `src/components/RuleTester.tsx` | ✅ 7 tests |
+| Windows Service mode (v0.6.4) | `src-tauri/src/service/mod.rs` | ✅ 4 tests |
+| ML anomaly detection (v0.6.5) | `src-tauri/src/anomaly/mod.rs` | ✅ 5 tests |
+| Holt-Winters prediction (v0.6.5) | `src-tauri/src/prediction/mod.rs` | ✅ 6 tests |
+| Smart recommendations v2 (v0.6.6) | `src-tauri/src/recommendations/mod.rs` | ✅ 6 tests |
+| Disk health radar (v0.6.6) | `src/components/DiskHealthRadar.tsx` | ✅ |
+| Anomaly card (v0.6.5) | `src/components/AnomalyCard.tsx` | ✅ |
+| CLI service flag (v0.6.4) | `src-tauri/src/cli/mod.rs` | ✅ |
 
 ## v0.4.0 Roadmap 鈥?Extensible Intelligence Platform
 
@@ -234,6 +243,107 @@ v0.6.0 makes DiskPulse fast and everywhere — native kernel FS events, hard-lin
 - Added `.github/workflows/ci.yml` for Windows/Linux/macOS matrix builds.
 - Remaining v0.6 blockers: GitHub Actions must validate Linux/macOS builds natively; local Windows-to-Linux cross-check is blocked by GTK/pkg-config sysroot requirements.
 
+## v0.7.0 Roadmap — Intelligent Operations Platform
+
+> Full plan: `docs/v0.7.0-plan.md` | Implementation tasks: `CODEX.md` § "v0.7.0 Implementation Tasks"
+
+### Theme
+
+v0.6.0 made DiskPulse fast and everywhere. v0.7.0 makes it **smart** — from "see disk data" to "understand disk data and know what to do about it."
+
+**Path**: Foundation polish → Deep performance → Intelligence → Ecosystem
+
+### Phase 1: Foundation Polish (v0.6.1 — v0.6.2)
+
+> Close v0.3.x technical debt. Streaming scan is the data pipeline foundation for all later intelligence.
+
+| Version | Focus | Key Deliverables | Status |
+|---------|-------|-----------------|--------|
+| v0.6.1 | Streaming Scan | ScanStage `execute_streaming()`, incremental rescan, first result <500ms, memory <50MB | ✅ Complete |
+| v0.6.2 | Custom Rules UI | RuleEditor + RuleTester components, `test_rule_pattern` IPC, safety constraint (LOW/MEDIUM only) | ✅ Complete |
+
+### Phase 2: Deep Performance (v0.6.3 — v0.6.4)
+
+| Version | Focus | Key Deliverables | Status |
+|---------|-------|-----------------|--------|
+| v0.6.3 | MFT Direct Scan | FSCTL_ENUM_USN_DATA, admin privilege detection, MFT vs Jwalk strategy selector, MftStage activation | ✅ Complete |
+| v0.6.4 | Windows Service | `diskpulse.exe --service`, Named Pipe IPC, SCM integration, LOCAL SERVICE account, auto-start | ✅ Complete |
+
+### Phase 3: Intelligence Layer (v0.6.5 — v0.6.6)
+
+| Version | Focus | Key Deliverables | Status |
+|---------|-------|-----------------|--------|
+| v0.6.5 | ML Anomaly Detection | Holt-Winters seasonal forecasting, Modified Z-Score detector, 4 anomaly types, `anomaly` module | ✅ Complete |
+| v0.6.6 | Smart Recommendations v2 | Urgency multiplier, user behavior learning, cross-module correlation, 4D health radar chart | ✅ Complete |
+
+### Phase 4: Ecosystem (v0.6.7)
+
+| Version | Focus | Key Deliverables | Status |
+|---------|-------|-----------------|--------|
+| v0.6.7 | Multi-Device Dashboard | WebSocket Hub, mDNS discovery, 6-digit pairing, remote monitoring, `hub/` module | 📋 Planned |
+
+### Phase 5: Release (v0.7.0)
+
+| Task | Status |
+|------|--------|
+| Integration tests (5 pipelines: scan/intelligence/cleanup/service/hub) | 📋 Planned |
+| Target: 115+ tests (86 → 115, +29 new) | 📋 Planned |
+| Docs sync: CLAUDE.md, PROGRESS.md, CHANGELOG.md, CODEX.md, README | 📋 Planned |
+| Version bump to 0.7.0 (Cargo.toml, package.json, tauri.conf.json) | 📋 Planned |
+| Build verification: Windows (MSI/NSIS) + Linux (.deb/.AppImage) + macOS (.dmg) | 📋 Planned |
+| GitHub release tag v0.7.0 + release notes | 📋 Planned |
+
+### New Modules (v0.7.0)
+
+| Module | Phase | Purpose |
+|--------|-------|---------|
+| `anomaly/mod.rs` | v0.6.5 | Holt-Winters + Modified Z-Score anomaly detection |
+| `service/mod.rs` | v0.6.4 | Windows Service lifecycle management |
+| `hub/` (6 files) | v0.6.7 | WebSocket server, device registry, message routing, pairing, mDNS discovery |
+
+### New IPC Commands (v0.7.0)
+
+| Command | Phase |
+|---------|-------|
+| `test_rule_pattern(pattern, test_path) -> bool` | v0.6.2 |
+| `install_service() -> Result<(), String>` | v0.6.4 |
+| `uninstall_service() -> Result<(), String>` | v0.6.4 |
+| `get_service_status() -> Result<ServiceStatus, String>` | v0.6.4 |
+| `detect_anomalies(drive) -> Result<AnomalyReport, String>` | v0.6.5 |
+| `start_hub(port) -> Result<(), String>` | v0.6.7 |
+| `stop_hub() -> Result<(), String>` | v0.6.7 |
+| `get_connected_devices() -> Vec<DeviceInfo>` | v0.6.7 |
+| `pair_device(token) -> Result<DeviceInfo, String>` | v0.6.7 |
+| `unpair_device(device_id) -> Result<(), String>` | v0.6.7 |
+
+### New IPC Events (v0.7.0)
+
+| Event | Phase | Payload |
+|-------|-------|---------|
+| `scan-batch` | v0.6.1 | `ScanBatch` — streaming scan incremental batch |
+| `anomaly-detected` | v0.6.5 | `AnomalyEvent` — real-time anomaly alert |
+| `device-connected` | v0.6.7 | `DeviceInfo` — new device online |
+| `device-disconnected` | v0.6.7 | `{ device_id }` — device offline |
+| `remote-alert` | v0.6.7 | `{ device_id, alert_payload }` — remote device alert |
+
+### New Frontend Components (v0.7.0)
+
+| Component | Phase | Purpose |
+|-----------|-------|---------|
+| `RuleEditor.tsx` | v0.6.2 | Custom rule name/pattern/level editor |
+| `RuleTester.tsx` | v0.6.2 | Real-time rule pattern tester |
+| `AnomalyCard.tsx` | v0.6.5 | Dashboard anomaly summary card |
+| `useRemoteDevice.ts` (hook) | v0.6.7 | Remote device data query via WS |
+
+### Deferred to v0.8.0
+
+| Item | Rationale |
+|------|-----------|
+| Disk Defrag Analysis | New feature area, v0.7.0 scope full |
+| Deep Learning Anomaly Detection | Validate statistical models first |
+| Mobile App | Architecture decision pending |
+| Cloud Sync | Auth + encryption + cloud infra needed |
+
 ## Safety Baseline
 
 - All cleanup goes to **Recycle Bin** via SHFileOperationW (FOF_ALLOWUNDO).
@@ -273,6 +383,16 @@ v0.6.0 makes DiskPulse fast and everywhere — native kernel FS events, hard-lin
 | v0.3.8 | Wizard + Notifications | Partial | CleanupWizard + NotificationCenter UI shell landed; SQLite notification history pending |
 | v0.3.9 | CLI + Platform Layer | Partial | CLI parser + platform trait landed; full command execution/exit codes pending |
 | v0.4.0 | Production Release | Complete | Integration checks, CLI smoke, installers, docs |
+| v0.5.0 | Integration Excellence | ✅ | Cross-module data flow, CLI completion, configurable weights, wizard + notifications |
+| v0.6.0 | Cross-Platform Perf Foundation | ✅ | 6-trait platform, native watchers, hard-link dedup, sparse files, CI matrix |
+| v0.6.1 | Streaming Scan | ✅ | ScanStage `execute_streaming()`, incremental rescan |
+| v0.6.2 | Custom Rules UI | ✅ | RuleEditor + RuleTester, `test_rule_pattern` |
+| v0.6.3 | MFT Direct Scan | ✅ | FSCTL_ENUM_USN_DATA, MftStage activation |
+| v0.6.4 | Windows Service | ✅ | `--service` mode, Named Pipe IPC, SCM |
+| v0.6.5 | ML Anomaly Detection | ✅ | Holt-Winters + Modified Z-Score, `anomaly` module |
+| v0.6.6 | Smart Recommendations v2 | ✅ | Urgency multiplier, behavior learning, health radar |
+| v0.6.7 | Multi-Device Dashboard | 📋 Planned | WebSocket Hub, mDNS, pairing, `hub/` module |
+| v0.7.0 | Intelligent Ops Release | 📋 Planned | 115+ tests, 3-platform build, docs sync |
 
 ## v0.1.0 Release Checklist
 

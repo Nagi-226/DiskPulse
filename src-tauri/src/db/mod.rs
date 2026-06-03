@@ -84,6 +84,7 @@ pub struct NotificationInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
     pub default_drive: String,
+    pub scan_mode: String,
     pub auto_scan_on_startup: bool,
     pub auto_monitor_on_startup: bool,
     pub watcher_poll_interval_ms: u64,
@@ -106,6 +107,8 @@ pub struct AppSettings {
     pub scoring_weight_duplicate: f64,
     pub scoring_weight_size: f64,
     pub scoring_weight_safety: f64,
+    pub scoring_weight_urgency: f64,
+    pub scoring_weight_pattern: f64,
     pub duplicate_min_size_bytes: u64,
     pub aging_zombie_days: u64,
 }
@@ -114,6 +117,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             default_drive: "C".into(),
+            scan_mode: "exact".into(),
             auto_scan_on_startup: false,
             auto_monitor_on_startup: false,
             watcher_poll_interval_ms: 2000,
@@ -136,6 +140,8 @@ impl Default for AppSettings {
             scoring_weight_duplicate: 0.20,
             scoring_weight_size: 0.20,
             scoring_weight_safety: 0.25,
+            scoring_weight_urgency: 0.15,
+            scoring_weight_pattern: 0.10,
             duplicate_min_size_bytes: 1_048_576,
             aging_zombie_days: 180,
         }
@@ -449,6 +455,13 @@ fn get_settings_with(conn: &rusqlite::Connection) -> Result<AppSettings, String>
         let (key, value) = row.map_err(|e| format!("Row error: {}", e))?;
         match key.as_str() {
             "default_drive" => settings.default_drive = value,
+            "scan_mode" => {
+                settings.scan_mode = if value == "speed" {
+                    "speed".into()
+                } else {
+                    "exact".into()
+                };
+            }
             "auto_scan_on_startup" => settings.auto_scan_on_startup = value == "true",
             "auto_monitor_on_startup" => settings.auto_monitor_on_startup = value == "true",
             "watcher_poll_interval_ms" => {
@@ -515,6 +528,16 @@ fn get_settings_with(conn: &rusqlite::Connection) -> Result<AppSettings, String>
                     settings.scoring_weight_safety = v;
                 }
             }
+            "scoring_weight_urgency" => {
+                if let Ok(v) = value.parse() {
+                    settings.scoring_weight_urgency = v;
+                }
+            }
+            "scoring_weight_pattern" => {
+                if let Ok(v) = value.parse() {
+                    settings.scoring_weight_pattern = v;
+                }
+            }
             "duplicate_min_size_bytes" => {
                 if let Ok(v) = value.parse() {
                     settings.duplicate_min_size_bytes = v;
@@ -534,6 +557,7 @@ fn get_settings_with(conn: &rusqlite::Connection) -> Result<AppSettings, String>
 fn save_settings_with(conn: &rusqlite::Connection, settings: &AppSettings) -> Result<(), String> {
     let pairs = [
         ("default_drive", settings.default_drive.clone()),
+        ("scan_mode", settings.scan_mode.clone()),
         (
             "auto_scan_on_startup",
             settings.auto_scan_on_startup.to_string(),
@@ -611,6 +635,14 @@ fn save_settings_with(conn: &rusqlite::Connection, settings: &AppSettings) -> Re
             settings.scoring_weight_safety.to_string(),
         ),
         (
+            "scoring_weight_urgency",
+            settings.scoring_weight_urgency.to_string(),
+        ),
+        (
+            "scoring_weight_pattern",
+            settings.scoring_weight_pattern.to_string(),
+        ),
+        (
             "duplicate_min_size_bytes",
             settings.duplicate_min_size_bytes.to_string(),
         ),
@@ -668,6 +700,9 @@ fn create_custom_rule_with(
 ) -> Result<crate::risk::RiskRule, String> {
     let level = crate::risk::risk_level_from_str(risk_level)
         .ok_or_else(|| format!("Invalid risk level: {}", risk_level))?;
+    if matches!(level, crate::risk::RiskLevel::High) {
+        return Err("Custom rules can only use low or medium risk levels".into());
+    }
     let id = format!(
         "custom-{}",
         name.to_ascii_lowercase()
@@ -938,6 +973,7 @@ mod tests {
                 file_count: 50000,
                 dir_count: 5000,
                 risk_level: None,
+                is_approximate: false,
             }],
         }
     }
@@ -1038,6 +1074,7 @@ mod tests {
         let conn = setup_test_conn();
         let settings = AppSettings {
             default_drive: "D".into(),
+            scan_mode: "speed".into(),
             auto_scan_on_startup: true,
             auto_monitor_on_startup: false,
             watcher_poll_interval_ms: 5000,
@@ -1060,12 +1097,15 @@ mod tests {
             scoring_weight_duplicate: 0.25,
             scoring_weight_size: 0.15,
             scoring_weight_safety: 0.20,
+            scoring_weight_urgency: 0.35,
+            scoring_weight_pattern: 0.15,
             duplicate_min_size_bytes: 2_097_152,
             aging_zombie_days: 240,
         };
         save_settings_with(&conn, &settings).unwrap();
         let loaded = get_settings_with(&conn).unwrap();
         assert_eq!(loaded.default_drive, "D");
+        assert_eq!(loaded.scan_mode, "speed");
         assert!(loaded.auto_scan_on_startup);
         assert!(!loaded.auto_monitor_on_startup);
         assert_eq!(loaded.watcher_poll_interval_ms, 5000);
@@ -1088,6 +1128,8 @@ mod tests {
         assert_eq!(loaded.scoring_weight_duplicate, 0.25);
         assert_eq!(loaded.scoring_weight_size, 0.15);
         assert_eq!(loaded.scoring_weight_safety, 0.20);
+        assert_eq!(loaded.scoring_weight_urgency, 0.35);
+        assert_eq!(loaded.scoring_weight_pattern, 0.15);
         assert_eq!(loaded.duplicate_min_size_bytes, 2_097_152);
         assert_eq!(loaded.aging_zombie_days, 240);
     }
@@ -1097,6 +1139,7 @@ mod tests {
         let conn = setup_test_conn();
         let settings = get_settings_with(&conn).unwrap();
         assert_eq!(settings.default_drive, "C");
+        assert_eq!(settings.scan_mode, "exact");
         assert!(!settings.auto_scan_on_startup);
         assert_eq!(settings.watcher_poll_interval_ms, 2000);
         assert!(!settings.auto_cleanup_enabled);
@@ -1111,6 +1154,8 @@ mod tests {
         assert_eq!(settings.scoring_weight_duplicate, 0.20);
         assert_eq!(settings.scoring_weight_size, 0.20);
         assert_eq!(settings.scoring_weight_safety, 0.25);
+        assert_eq!(settings.scoring_weight_urgency, 0.15);
+        assert_eq!(settings.scoring_weight_pattern, 0.10);
         assert_eq!(settings.duplicate_min_size_bytes, 1_048_576);
         assert_eq!(settings.aging_zombie_days, 180);
     }
@@ -1168,6 +1213,17 @@ mod tests {
 
         delete_custom_rule_with(&conn, "custom-archives").unwrap();
         assert!(get_custom_rules_with(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn custom_rule_rejects_high_risk_level() {
+        let conn = setup_test_conn();
+        let result = create_custom_rule_with(&conn, "Danger", "Windows/System32", "high");
+
+        assert_eq!(
+            result,
+            Err("Custom rules can only use low or medium risk levels".to_string())
+        );
     }
 
     #[test]

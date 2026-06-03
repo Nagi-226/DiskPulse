@@ -58,7 +58,7 @@ pub struct RiskReport {
 }
 
 /// A risk classification rule
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RiskRule {
     pub id: String,
     pub patterns: Vec<String>,
@@ -82,8 +82,7 @@ impl RiskRule {
         }
 
         self.patterns.iter().any(|pattern| {
-            let pat = normalize_match_text(pattern);
-            lower_path.contains(&pat) || lower_name.contains(&pat)
+            test_rule_pattern(pattern, &lower_path) || test_rule_pattern(pattern, &lower_name)
         })
     }
 }
@@ -371,6 +370,49 @@ fn normalize_match_text(input: &str) -> String {
     input.replace('\\', "/").to_lowercase().trim().to_string()
 }
 
+/// Test whether a user rule pattern matches a path/name.
+///
+/// Plain patterns keep the legacy "contains" behavior; patterns with `*` or `?`
+/// are treated as simple globs against normalized, case-insensitive paths.
+pub fn test_rule_pattern(pattern: &str, test_path: &str) -> bool {
+    let pattern = normalize_match_text(pattern);
+    let test_path = normalize_match_text(test_path);
+    if pattern.is_empty() || test_path.is_empty() {
+        return false;
+    }
+
+    if !pattern.contains('*') && !pattern.contains('?') {
+        return test_path.contains(&pattern);
+    }
+
+    glob_matches(&pattern, &test_path) || glob_matches(&format!("*{}*", pattern), &test_path)
+}
+
+fn glob_matches(pattern: &str, text: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let text = text.as_bytes();
+    let mut matched = vec![vec![false; text.len() + 1]; pattern.len() + 1];
+    matched[0][0] = true;
+
+    for p in 1..=pattern.len() {
+        if pattern[p - 1] == b'*' {
+            matched[p][0] = matched[p - 1][0];
+        }
+    }
+
+    for p in 1..=pattern.len() {
+        for t in 1..=text.len() {
+            matched[p][t] = match pattern[p - 1] {
+                b'*' => matched[p - 1][t] || matched[p][t - 1],
+                b'?' => matched[p - 1][t - 1],
+                value => value == text[t - 1] && matched[p - 1][t - 1],
+            };
+        }
+    }
+
+    matched[pattern.len()][text.len()]
+}
+
 /// Get all rules with user overrides applied.
 pub fn get_rules_with_overrides(
     overrides: &std::collections::HashMap<String, bool>,
@@ -412,6 +454,7 @@ mod tests {
             file_count: 100,
             dir_count: 10,
             risk_level: None,
+            is_approximate: false,
         }
     }
 
@@ -443,6 +486,19 @@ mod tests {
         let (level, _, _, safe) = match_rule(&dir, &rules);
         assert_eq!(level, RiskLevel::Low);
         assert!(safe);
+    }
+
+    #[test]
+    fn test_rule_pattern_matches_plain_text_and_globs() {
+        assert!(test_rule_pattern(
+            "Users/*/AppData/Local/*Cache",
+            r"C:\Users\alice\AppData\Local\ShaderCache"
+        ));
+        assert!(test_rule_pattern("archive-cache", r"D:\data\archive-cache"));
+        assert!(!test_rule_pattern(
+            "Users/*/AppData/Local/*Cache",
+            r"C:\Users\alice\AppData\Roaming\ShaderCache"
+        ));
     }
 
     #[test]

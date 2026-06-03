@@ -50,6 +50,7 @@ export default function Treemap({ data, totalBytes, onDrillDown }: TreemapProps)
       path: dir.path,
       fileCount: dir.file_count,
       dirCount: dir.dir_count,
+      isApproximate: dir.is_approximate,
       category: classifyCategory(dir.name),
       itemStyle: {
         borderColor: "rgba(6, 8, 13, 0.8)",
@@ -76,6 +77,7 @@ export default function Treemap({ data, totalBytes, onDrillDown }: TreemapProps)
                 <div>Share: <span style="color:#e2e8f0;font-family:monospace">${pct}%</span></div>
                 ${d.fileCount ? `<div>Files: <span style="color:#e2e8f0;font-family:monospace">${d.fileCount.toLocaleString()}</span></div>` : ""}
                 ${d.dirCount ? `<div>Subdirs: <span style="color:#e2e8f0;font-family:monospace">${d.dirCount.toLocaleString()}</span></div>` : ""}
+                ${d.isApproximate ? `<div style="margin-top:4px;color:#fbbf24">Approximate MFT result</div>` : ""}
               </div>
               <div style="margin-top:6px;font-size:11px;color:#64748b">Click to drill down</div>
             `;
@@ -92,7 +94,8 @@ export default function Treemap({ data, totalBytes, onDrillDown }: TreemapProps)
               formatter: (params: any) => {
                 const name = params.name ?? "";
                 const pct = totalBytes > 0 ? ((params.value / totalBytes) * 100).toFixed(1) : "0";
-                return `${name}\n${formatSize(params.value)} (${pct}%)`;
+                const approx = params.data?.isApproximate ? " ~" : "";
+                return `${name}${approx}\n${formatSize(params.value)} (${pct}%)`;
               },
               fontSize: 12,
               fontFamily: "'Segoe UI', system-ui, sans-serif",

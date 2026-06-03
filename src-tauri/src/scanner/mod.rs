@@ -3,6 +3,7 @@ use std::cmp::{Ordering as CmpOrdering, Reverse};
 use std::collections::BinaryHeap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver};
 use std::time::SystemTime;
 
 /// Phase of the drive scan pipeline.
@@ -11,6 +12,7 @@ use std::time::SystemTime;
 pub enum ScanPhase {
     Walking,
     Measuring,
+    Streaming,
     Complete,
 }
 
@@ -23,6 +25,14 @@ pub struct ScanProgress {
     pub current_path: Option<String>,
     pub phase: ScanPhase,
     pub partial_results: Option<Vec<DirInfo>>,
+}
+
+/// Incremental directory batch emitted while a drive scan is still running.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ScanBatch {
+    pub dirs: Vec<DirInfo>,
+    pub batch_index: u32,
+    pub is_complete: bool,
 }
 
 /// Fast drive metadata returned before the expensive directory walk finishes.
@@ -47,7 +57,7 @@ pub struct DriveInfo {
 }
 
 /// Directory size information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DirInfo {
     pub name: String,
     pub path: String,
@@ -55,6 +65,8 @@ pub struct DirInfo {
     pub file_count: u64,
     pub dir_count: u64,
     pub risk_level: Option<String>,
+    #[serde(default)]
+    pub is_approximate: bool,
 }
 
 /// Shared input for pluggable scan stages.
@@ -73,6 +85,8 @@ pub struct ScanOutput {
 /// Extension point for replacing scan phases without rewriting callers.
 pub trait ScanStage {
     fn execute(&self, ctx: &ScanContext<'_>) -> Result<ScanOutput, String>;
+
+    fn execute_streaming(&self, ctx: &ScanContext<'_>) -> Receiver<ScanBatch>;
 }
 
 /// Default measurement stage backed by the current walker implementation.
@@ -86,6 +100,31 @@ impl ScanStage for MeasureStage {
             file_count,
             dir_count,
         })
+    }
+
+    fn execute_streaming(&self, ctx: &ScanContext<'_>) -> Receiver<ScanBatch> {
+        let (sender, receiver) = mpsc::channel();
+        if let Ok(output) = self.execute(ctx) {
+            let name = ctx
+                .root
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| ctx.root.to_string_lossy().to_string());
+            let _ = sender.send(ScanBatch {
+                dirs: vec![DirInfo {
+                    name,
+                    path: ctx.root.to_string_lossy().to_string(),
+                    size_bytes: output.size_bytes,
+                    file_count: output.file_count,
+                    dir_count: output.dir_count,
+                    risk_level: None,
+                    is_approximate: false,
+                }],
+                batch_index: 0,
+                is_complete: true,
+            });
+        }
+        receiver
     }
 }
 
@@ -187,6 +226,20 @@ pub fn scan_drive_with_progress_and_cancel<F>(
 where
     F: Fn(ScanProgress) + Sync,
 {
+    scan_drive_with_progress_batches_and_cancel(drive_letter, on_progress, |_| {}, cancel)
+}
+
+/// Scan a drive and emit both progress snapshots and incremental directory batches.
+pub fn scan_drive_with_progress_batches_and_cancel<F, B>(
+    drive_letter: &str,
+    on_progress: F,
+    on_batch: B,
+    cancel: Option<&AtomicBool>,
+) -> Result<DriveInfo, String>
+where
+    F: Fn(ScanProgress) + Sync,
+    B: Fn(ScanBatch) + Sync,
+{
     let drive_path = format!("{}:\\", drive_letter.to_uppercase());
     let path = Path::new(&drive_path);
 
@@ -197,7 +250,7 @@ where
     let (total_space, free_space) = get_drive_space(path);
     let used_space = total_space.saturating_sub(free_space);
 
-    let top_dirs = scan_top_level_dirs(path, drive_letter, &on_progress, cancel)?;
+    let top_dirs = scan_root_dirs_streaming(path, drive_letter, &on_progress, &on_batch, cancel)?;
 
     Ok(DriveInfo {
         drive_letter: drive_letter.to_uppercase(),
@@ -225,18 +278,29 @@ fn drive_key_from_path(path: &Path) -> String {
     }
 }
 
-/// Scan top-level directories of a drive
-fn scan_top_level_dirs<F>(
+fn is_drive_root(path: &Path) -> bool {
+    let text = path.to_string_lossy();
+    let bytes = text.as_bytes();
+    bytes.len() >= 2
+        && bytes.get(1) == Some(&b':')
+        && text[2..].trim_matches(['\\', '/']).is_empty()
+}
+
+fn scan_root_dirs_streaming<F, B>(
     root: &Path,
     drive_letter: &str,
     on_progress: &F,
+    on_batch: &B,
     cancel: Option<&AtomicBool>,
 ) -> Result<Vec<DirInfo>, String>
 where
     F: Fn(ScanProgress) + Sync,
+    B: Fn(ScanBatch) + Sync,
 {
-    use rayon::prelude::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    let providers = crate::platform::providers();
+    if providers.dir_scanner.is_volume_streaming() && is_drive_root(root) {
+        return scan_root_dirs_from_volume_stage(root, drive_letter, on_progress, on_batch, cancel);
+    }
 
     let entries = std::fs::read_dir(root).map_err(|e| format!("Cannot read root: {}", e))?;
     let entries: Vec<_> = entries
@@ -253,7 +317,7 @@ where
         })
         .collect();
     let total = entries.len();
-    let processed = AtomicUsize::new(0);
+    let mut processed = 0usize;
     let drive_letter = drive_letter.to_uppercase();
 
     on_progress(ScanProgress {
@@ -265,50 +329,134 @@ where
         partial_results: None,
     });
 
-    let mut dirs: Vec<DirInfo> = entries
-        .par_iter()
-        .map(|(path, name)| {
-            if is_cancelled(cancel) {
-                return Err("Scan cancelled".to_string());
-            }
+    let mut dirs: Vec<DirInfo> = Vec::with_capacity(total);
 
-            on_progress(ScanProgress {
-                drive_letter: drive_letter.clone(),
-                processed: processed.load(Ordering::Relaxed),
-                total,
-                current_path: Some(path.to_string_lossy().to_string()),
-                phase: ScanPhase::Measuring,
-                partial_results: None,
-            });
+    for (batch_index, (path, name)) in entries.iter().enumerate() {
+        if is_cancelled(cancel) {
+            return Err("Scan cancelled".to_string());
+        }
 
-            let providers = crate::platform::providers();
-            let output = providers.dir_scanner.execute(&ScanContext {
-                root: path.clone(),
-                cancel,
-            })?;
+        on_progress(ScanProgress {
+            drive_letter: drive_letter.clone(),
+            processed,
+            total,
+            current_path: Some(path.to_string_lossy().to_string()),
+            phase: ScanPhase::Streaming,
+            partial_results: None,
+        });
 
-            let dir = DirInfo {
-                name: name.clone(),
-                path: path.to_string_lossy().to_string(),
-                size_bytes: output.size_bytes,
-                file_count: output.file_count,
-                dir_count: output.dir_count,
-                risk_level: None,
-            };
-            let done = processed.fetch_add(1, Ordering::SeqCst) + 1;
+        let providers = crate::platform::providers();
+        let output = providers.dir_scanner.execute(&ScanContext {
+            root: path.clone(),
+            cancel,
+        })?;
 
-            on_progress(ScanProgress {
-                drive_letter: drive_letter.clone(),
-                processed: done,
-                total,
-                current_path: Some(path.to_string_lossy().to_string()),
-                phase: ScanPhase::Complete,
-                partial_results: Some(vec![dir.clone()]),
-            });
+        let dir = DirInfo {
+            name: name.clone(),
+            path: path.to_string_lossy().to_string(),
+            size_bytes: output.size_bytes,
+            file_count: output.file_count,
+            dir_count: output.dir_count,
+            risk_level: None,
+            is_approximate: false,
+        };
+        processed += 1;
 
-            Ok(dir)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+        on_progress(ScanProgress {
+            drive_letter: drive_letter.clone(),
+            processed,
+            total,
+            current_path: Some(path.to_string_lossy().to_string()),
+            phase: ScanPhase::Streaming,
+            partial_results: Some(vec![dir.clone()]),
+        });
+
+        on_batch(ScanBatch {
+            dirs: vec![dir.clone()],
+            batch_index: batch_index as u32,
+            is_complete: false,
+        });
+
+        if is_cancelled(cancel) {
+            return Err("Scan cancelled".to_string());
+        }
+
+        dirs.push(dir);
+    }
+
+    dirs.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    on_progress(ScanProgress {
+        drive_letter,
+        processed,
+        total,
+        current_path: Some(root.to_string_lossy().to_string()),
+        phase: ScanPhase::Complete,
+        partial_results: None,
+    });
+    on_batch(ScanBatch {
+        dirs: Vec::new(),
+        batch_index: processed as u32,
+        is_complete: true,
+    });
+    Ok(dirs)
+}
+
+fn scan_root_dirs_from_volume_stage<F, B>(
+    root: &Path,
+    drive_letter: &str,
+    on_progress: &F,
+    on_batch: &B,
+    cancel: Option<&AtomicBool>,
+) -> Result<Vec<DirInfo>, String>
+where
+    F: Fn(ScanProgress) + Sync,
+    B: Fn(ScanBatch) + Sync,
+{
+    let drive_letter = drive_letter.to_uppercase();
+    on_progress(ScanProgress {
+        drive_letter: drive_letter.clone(),
+        processed: 0,
+        total: 0,
+        current_path: Some(root.to_string_lossy().to_string()),
+        phase: ScanPhase::Streaming,
+        partial_results: None,
+    });
+
+    let providers = crate::platform::providers();
+    let receiver = providers.dir_scanner.execute_streaming(&ScanContext {
+        root: root.to_path_buf(),
+        cancel,
+    });
+    let mut dirs = Vec::new();
+
+    for batch in receiver {
+        if is_cancelled(cancel) {
+            return Err("Scan cancelled".to_string());
+        }
+        if !batch.dirs.is_empty() {
+            dirs.extend(batch.dirs.clone());
+        }
+        on_batch(batch.clone());
+        on_progress(ScanProgress {
+            drive_letter: drive_letter.clone(),
+            processed: dirs.len(),
+            total: dirs.len(),
+            current_path: Some(root.to_string_lossy().to_string()),
+            phase: if batch.is_complete {
+                ScanPhase::Complete
+            } else {
+                ScanPhase::Streaming
+            },
+            partial_results: if batch.dirs.is_empty() {
+                None
+            } else {
+                Some(batch.dirs)
+            },
+        });
+        if batch.is_complete {
+            break;
+        }
+    }
 
     dirs.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
     Ok(dirs)
@@ -554,6 +702,7 @@ pub fn scan_top_level_dir(path: &str, cancel: Option<&AtomicBool>) -> Result<Dir
         file_count: output.file_count,
         dir_count: output.dir_count,
         risk_level: None,
+        is_approximate: false,
     })
 }
 
@@ -592,6 +741,7 @@ pub fn scan_directory(path: &str) -> Result<Vec<DirInfo>, String> {
                 file_count,
                 dir_count,
                 risk_level: None,
+                is_approximate: false,
             });
         } else {
             // Count direct files in this directory
@@ -611,6 +761,7 @@ pub fn scan_directory(path: &str) -> Result<Vec<DirInfo>, String> {
             file_count: files_count,
             dir_count: 0,
             risk_level: None,
+            is_approximate: false,
         });
     }
 
@@ -618,32 +769,27 @@ pub fn scan_directory(path: &str) -> Result<Vec<DirInfo>, String> {
     Ok(dirs)
 }
 
-/// Recursively calculate directory size using walkdir + rayon
+/// Recursively calculate directory size without retaining the whole walk in memory.
 fn calculate_dir_size(path: &Path, cancel: Option<&AtomicBool>) -> Result<(u64, u64, u64), String> {
-    use rayon::prelude::*;
+    let mut file_size = 0u64;
+    let mut file_count = 0u64;
+    let mut dir_count = 0u64;
 
-    let entries: Vec<_> = jwalk::WalkDir::new(path)
-        .follow_links(false)
-        .into_iter()
-        .take_while(|_| !is_cancelled(cancel))
-        .filter_map(|e| e.ok())
-        .collect();
+    for entry in jwalk::WalkDir::new(path).follow_links(false) {
+        if is_cancelled(cancel) {
+            return Err("Scan cancelled".to_string());
+        }
 
-    if is_cancelled(cancel) {
-        return Err("Scan cancelled".to_string());
+        let Ok(entry) = entry else {
+            continue;
+        };
+        if entry.file_type().is_file() {
+            file_count += 1;
+            file_size = file_size.saturating_add(entry.metadata().map(|m| m.len()).unwrap_or(0));
+        } else if entry.file_type().is_dir() && entry.path() != path {
+            dir_count += 1;
+        }
     }
-
-    let file_size: u64 = entries
-        .par_iter()
-        .filter(|e| e.file_type().is_file())
-        .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
-        .sum();
-
-    let file_count = entries.iter().filter(|e| e.file_type().is_file()).count() as u64;
-    let dir_count = entries
-        .iter()
-        .filter(|e| e.file_type().is_dir() && e.path() != path)
-        .count() as u64;
 
     Ok((file_size, file_count, dir_count))
 }
@@ -696,6 +842,114 @@ mod tests {
     }
 
     #[test]
+    fn scan_batch_serializes_completion_state() {
+        let batch = ScanBatch {
+            dirs: Vec::new(),
+            batch_index: 7,
+            is_complete: true,
+        };
+
+        let json = serde_json::to_string(&batch).expect("serialize scan batch");
+        assert!(json.contains("\"batch_index\":7"));
+        assert!(json.contains("\"is_complete\":true"));
+    }
+
+    #[test]
+    fn streaming_scan_emits_ordered_batches_then_completion() {
+        let root =
+            std::env::temp_dir().join(format!("diskpulse-streaming-order-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("a")).expect("create a");
+        std::fs::create_dir_all(root.join("b")).expect("create b");
+        write_sized_file(&root.join("a").join("a.bin"), 10);
+        write_sized_file(&root.join("b").join("b.bin"), 20);
+
+        let batches = std::sync::Mutex::new(Vec::new());
+        let dirs = scan_root_dirs_streaming(
+            &root,
+            "T",
+            &|_| {},
+            &|batch| {
+                batches.lock().unwrap().push(batch);
+            },
+            None,
+        )
+        .expect("streaming scan");
+
+        let batches = batches.into_inner().unwrap();
+        assert_eq!(dirs.len(), 2);
+        assert_eq!(
+            batches
+                .iter()
+                .filter(|batch| !batch.dirs.is_empty())
+                .count(),
+            2
+        );
+        assert_eq!(batches[0].batch_index, 0);
+        assert_eq!(batches[1].batch_index, 1);
+        assert!(batches.last().expect("completion batch").is_complete);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn streaming_scan_reports_first_batch_quickly() {
+        let root =
+            std::env::temp_dir().join(format!("diskpulse-streaming-timing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("fast")).expect("create fast dir");
+        write_sized_file(&root.join("fast").join("fast.bin"), 1);
+
+        let started = std::time::Instant::now();
+        let first_batch_ms = std::sync::Mutex::new(None);
+        scan_root_dirs_streaming(
+            &root,
+            "T",
+            &|_| {},
+            &|batch| {
+                if !batch.dirs.is_empty() {
+                    let mut first = first_batch_ms.lock().unwrap();
+                    if first.is_none() {
+                        *first = Some(started.elapsed().as_millis());
+                    }
+                }
+            },
+            None,
+        )
+        .expect("streaming scan");
+
+        assert!(first_batch_ms.into_inner().unwrap().unwrap() < 500);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn streaming_scan_can_cancel_between_batches() {
+        let root =
+            std::env::temp_dir().join(format!("diskpulse-streaming-cancel-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("a")).expect("create a");
+        std::fs::create_dir_all(root.join("b")).expect("create b");
+        write_sized_file(&root.join("a").join("a.bin"), 10);
+        write_sized_file(&root.join("b").join("b.bin"), 20);
+
+        let cancel = AtomicBool::new(false);
+        let result = scan_root_dirs_streaming(
+            &root,
+            "T",
+            &|_| {},
+            &|batch| {
+                if !batch.dirs.is_empty() {
+                    cancel.store(true, Ordering::Relaxed);
+                }
+            },
+            Some(&cancel),
+        );
+
+        assert_eq!(result, Err("Scan cancelled".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn scan_drive_fails_for_missing_drive() {
         let result = scan_drive("Z");
         assert!(result.is_err());
@@ -715,6 +969,27 @@ mod tests {
         assert_eq!(info.size_bytes, 8);
         assert_eq!(info.file_count, 2);
         assert_eq!(info.dir_count, 1);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn incremental_rescan_reflects_changed_top_level_dir() {
+        let root = std::env::temp_dir().join(format!(
+            "diskpulse-incremental-rescan-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create rescan dir");
+        let file = root.join("payload.bin");
+        write_sized_file(&file, 10);
+
+        let initial = scan_top_level_dir(&root.to_string_lossy(), None).expect("initial scan");
+        write_sized_file(&file, 25);
+        let refreshed = scan_top_level_dir(&root.to_string_lossy(), None).expect("rescan");
+
+        assert_eq!(initial.size_bytes, 10);
+        assert_eq!(refreshed.size_bytes, 25);
 
         let _ = std::fs::remove_dir_all(&root);
     }

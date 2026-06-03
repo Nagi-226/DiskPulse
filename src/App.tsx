@@ -7,6 +7,7 @@ import CleanupPreview from "./components/CleanupPreview";
 import HistoryPage from "./pages/History";
 import SettingsPage from "./pages/Settings";
 import PredictionCard from "./components/PredictionCard";
+import AnomalyCard from "./components/AnomalyCard";
 import LargeFileFinder from "./components/LargeFileFinder";
 import AutoCleanupStatus from "./components/AutoCleanupStatus";
 import DuplicateFinder from "./components/DuplicateFinder";
@@ -20,7 +21,7 @@ import { formatSize } from "./utils/format";
 import { useDriveScan } from "./hooks/useDriveScan";
 import { useFsEvents } from "./hooks/useFsEvents";
 import { useTranslation } from "react-i18next";
-import type { AutoCleanupStatus as AutoCleanupStatusType, CleanItem, CleanProgress, CleanResult, DirInfo, DiskSpaceAlertPayload, RiskItem, ScanProgress } from "./types";
+import type { AnomalyEvent, AutoCleanupStatus as AutoCleanupStatusType, CleanItem, CleanProgress, CleanResult, DirInfo, DiskSpaceAlertPayload, RiskItem, ScanProgress } from "./types";
 
 const EMPTY_RISK_ITEMS: RiskItem[] = [];
 
@@ -229,6 +230,11 @@ function DirBarItem({
         <span className="text-sm text-text-primary truncate" title={dir.path}>
           {dir.name}
         </span>
+        {dir.is_approximate && (
+          <span className="ml-2 rounded-full border border-warning/25 bg-risk-medium-bg px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-warning">
+            approx
+          </span>
+        )}
         <span className="text-xs text-text-secondary font-mono ml-2">
           {formatSize(dir.size_bytes)}
         </span>
@@ -307,6 +313,7 @@ export default function App() {
   const { t } = useTranslation();
   const [cleanProgress, setCleanProgress] = useState<CleanProgress | null>(null);
   const [alertToast, setAlertToast] = useState<DiskSpaceAlertPayload | null>(null);
+  const [anomalyToast, setAnomalyToast] = useState<AnomalyEvent | null>(null);
   const [autoCleanupToast, setAutoCleanupToast] = useState<string | null>(null);
   const [version, setVersion] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -351,6 +358,7 @@ export default function App() {
   const selectedDriveRef = useRef(selectedDrive);
   const isWatchingRef = useRef(isWatching);
   const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const anomalyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoCleanupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   scanDriveRef.current = startDriveScan;
   selectedDriveRef.current = selectedDrive;
@@ -382,6 +390,11 @@ export default function App() {
       setAlertToast(event.payload);
       alertTimerRef.current = setTimeout(() => setAlertToast(null), 8000);
     });
+    const unlistenAnomaly = listen<AnomalyEvent>("anomaly-detected", (event) => {
+      if (anomalyTimerRef.current) clearTimeout(anomalyTimerRef.current);
+      setAnomalyToast(event.payload);
+      anomalyTimerRef.current = setTimeout(() => setAnomalyToast(null), 8000);
+    });
     const unlistenAutoCleanupComplete = listen<CleanResult>("auto-cleanup-complete", (event) => {
       if (autoCleanupTimerRef.current) clearTimeout(autoCleanupTimerRef.current);
       setAutoCleanupToast(
@@ -399,16 +412,58 @@ export default function App() {
     });
     return () => {
       if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
+      if (anomalyTimerRef.current) clearTimeout(anomalyTimerRef.current);
       if (autoCleanupTimerRef.current) clearTimeout(autoCleanupTimerRef.current);
       unlistenTrayScan.then((fn) => fn());
       unlistenTrayMonitor.then((fn) => fn());
       unlistenAutoScan.then((fn) => fn());
       unlistenCleanProgress.then((fn) => fn());
       unlistenAlert.then((fn) => fn());
+      unlistenAnomaly.then((fn) => fn());
       unlistenAutoCleanupComplete.then((fn) => fn());
       unlistenAutoCleanupScheduled.then((fn) => fn());
     };
   }, []);
+
+  useEffect(() => {
+    const current = breadcrumbs[breadcrumbs.length - 1];
+    if (!current || !lastBatch?.events.length) {
+      return;
+    }
+
+    const currentPath = current.path.toLowerCase();
+    const changedInCurrentDir = lastBatch.events.some((event) =>
+      event.path.toLowerCase().startsWith(currentPath),
+    );
+    if (!changedInCurrentDir) {
+      return;
+    }
+
+    let cancelled = false;
+    setDrillLoading(true);
+    invoke<DirInfo[]>("scan_directory", { path: current.path })
+      .then((dirs) => {
+        if (cancelled) {
+          return;
+        }
+        setDrillData(dirs);
+        setDrillTotal(dirs.reduce((sum, dir) => sum + dir.size_bytes, 0));
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(String(e));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDrillLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [breadcrumbs, lastBatch, setError]);
 
   async function loadDrives() {
     try {
@@ -706,6 +761,32 @@ export default function App() {
                 </div>
               )}
 
+              {anomalyToast && (
+                <div className="glass-card p-4 border border-danger/25 bg-risk-high-bg/10 animate-in fade-in">
+                  <div className="flex items-start gap-3">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-danger)" strokeWidth="2" className="flex-shrink-0 mt-0.5">
+                      <path d="M12 2v20M2 12h20" />
+                      <circle cx="12" cy="12" r="4" />
+                    </svg>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold text-danger">Anomaly Detected</div>
+                      <p className="text-sm text-text-secondary mt-1">{anomalyToast.description}</p>
+                      {anomalyToast.path && (
+                        <p className="text-xs text-text-muted mt-1 truncate">{anomalyToast.path}</p>
+                      )}
+                    </div>
+                    <button
+                      className="text-text-muted hover:text-text-primary flex-shrink-0"
+                      onClick={() => setAnomalyToast(null)}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Scan progress */}
               {progress && <ScanProgressBar progress={progress} />}
 
@@ -788,6 +869,8 @@ export default function App() {
 
                   <PredictionCard drive={driveInfo.drive_letter} />
 
+                  <AnomalyCard drive={driveInfo.drive_letter} />
+
                   <AutoCleanupStatus />
 
                   <RecommendationCard drive={driveInfo.drive_letter} onAddToCleanup={handleAddToCleanup} />
@@ -814,6 +897,11 @@ export default function App() {
                           />
                         ))}
                       </div>
+                      {!drillData && driveInfo.top_dirs.some((dir) => dir.is_approximate) && (
+                        <span className="rounded-full border border-warning/25 bg-risk-medium-bg px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-warning">
+                          Approximate MFT
+                        </span>
+                      )}
                     </div>
                   )}
 

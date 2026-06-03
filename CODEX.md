@@ -28,9 +28,9 @@ If documentation conflicts with source code, trust the code and note the mismatc
 ## Current Baseline
 
 - Product: DiskPulse, a Windows 11 desktop app for disk monitoring and safe cleanup.
-- Current release baseline: `v0.4.0`.
-- Next milestone: post-v0.4.0 maintenance / v0.5.0 planning.
-- Full v0.6.0 roadmap: `docs/v0.6.0-plan.md`.
+- Current release baseline: `v0.6.6` (v0.6.1–v0.6.6 implemented; 109 tests).
+- Next milestone: v0.6.7 multi-device dashboard, then v0.7.0 release.
+- Full v0.7.0 roadmap: `docs/v0.7.0-plan.md`.
 - Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite.
 - Build targets: Windows (MSI/NSIS), Linux (.deb/.AppImage), macOS (.dmg).
 - Current state from project docs: v0.5.0 complete (81 tests); v0.6.0 planning complete.
@@ -492,6 +492,219 @@ Phase 4:  S (depends on all above)
 | Q | ✅ | ✅ | ✅ | — | — | `x86_64-apple-darwin` | — |
 | R | — | — | — | — | ✅ | — | CI green |
 | S | ✅ | ✅ | ✅ | ✅ | ✅ | — | Full smoke |
+
+### v0.7.0 Implementation Tasks — Intelligent Operations Platform
+
+> Priority: Execute in Phase order. Each version is independently deliverable.
+> Full roadmap: `docs/v0.7.0-plan.md`
+
+#### Phase 1: Foundation Polish (v0.6.1 — v0.6.2)
+
+**Task T — Streaming incremental scan (v0.6.1) ✅ Complete**
+
+Goal: Replace batch scan with streaming pipeline. First result <500ms, memory <50MB.
+
+Files: `src-tauri/src/scanner/mod.rs`, `src-tauri/src/platform/mod.rs`, `src-tauri/src/platform/windows.rs`, `src-tauri/src/lib.rs`, `src/types.ts`, `src/App.tsx`, `src/hooks/useDriveScan.ts`
+
+Steps:
+1. Add `ScanBatch` struct: `{ dirs: Vec<DirInfo>, batch_index: u32, is_complete: bool }`.
+2. Add `execute_streaming(&self, ctx: &ScanContext) -> Receiver<ScanBatch>` to `ScanStage` trait.
+3. Implement `execute_streaming()` in `JwalkStage`: emit one batch per completed top-level directory.
+4. Add `Streaming` variant to `ScanPhase` enum; emit `scan-batch` IPC event during streaming.
+5. Update `useDriveScan` hook: listen for `scan-batch` events; call `invoke("scan_drive_dirs", ...)` to start streaming.
+6. Update `App.tsx`: render Treemap incrementally as `scan-batch` events arrive (not waiting for Complete).
+7. Add incremental rescan: when watcher detects changes in a directory, call `scan_directory(path)` and refresh that Treemap node only.
+8. Add `cancel_scan` check between each batch.
+9. Add 4+ tests: streaming push ordering, first-batch timing, incremental rescan, cancel mid-stream.
+
+Verify: `cargo test` (90+), `npm run typecheck`, manual: scan C: drive, observe Treemap appearing batch-by-batch.
+
+---
+
+**Task U — Custom rule editor UI (v0.6.2) ✅ Complete**
+
+Goal: UI for creating, editing, testing, and deleting custom risk rules.
+
+Files: `src/components/RuleEditor.tsx` (new), `src/components/RuleTester.tsx` (new), `src/pages/Settings/index.tsx`, `src/types.ts`, `src-tauri/src/risk/mod.rs`, `src-tauri/src/lib.rs`
+
+Steps:
+1. Add `test_rule_pattern(pattern: String, test_path: String) -> bool` to `risk/mod.rs`.
+2. Register `test_rule_pattern` IPC command in `lib.rs`.
+3. Create `RuleEditor.tsx`: form with name input, glob pattern input, risk level select (LOW/MEDIUM only), save/cancel buttons.
+4. Create `RuleTester.tsx`: test path input + "Test" button → displays match/no-match with color indicator.
+5. Add "Custom Rules" sub-tab in Settings page: list existing custom rules, "New Rule" button, per-row edit/delete.
+6. Delete button only shown for custom rules (not built-in). Confirmation dialog before delete.
+7. Add TypeScript types: `CustomRule { id, name, pattern, risk_level, enabled }`.
+8. Add 2+ tests: pattern matching correctness, rule CRUD IPC.
+
+Verify: `cargo test`, `npm run typecheck`, manual: create a rule → test it → see it appear in cleanup report.
+
+---
+
+#### Phase 2: Deep Performance (v0.6.3 — v0.6.4)
+
+**Task V — MFT direct scan activation (v0.6.3) ✅ Complete**
+
+Goal: Activate `MftStage` technical reserve. Use `FSCTL_ENUM_USN_DATA` for fast approximate scanning.
+
+Files: `src-tauri/src/platform/windows_mft.rs`, `src-tauri/src/platform/mod.rs`, `src-tauri/src/scanner/mod.rs`, `src-tauri/Cargo.toml`
+
+Steps:
+1. Implement `MftStage::execute_streaming()`: open volume handle via `CreateFileW(r"\\.\C:", ...)`, call `FSCTL_GET_NTFS_VOLUME_DATA`, enumerate `FSCTL_ENUM_USN_DATA`, parse USN records into `DirInfo`, emit via `ScanBatch`.
+2. Add admin privilege detection: `check_admin_privilege() -> bool` via `OpenProcessToken` + `TokenElevation`.
+3. Update `ScanStrategy::Auto`: if admin → try MftStage; if MFT fails → fallback to JwalkStage.
+4. Add `mft-scanner` feature flag in `Cargo.toml` (default off). Guard MftStage code with `#[cfg(feature = "mft-scanner")]`.
+5. Mark MFT results as "approximate" in UI; JwalkStage remains "exact" default.
+6. Add Settings option: "Scan Mode: Speed (approximate) / Accuracy (exact)".
+7. Add 4+ tests: admin privilege detection, MFT fallback, strategy selection, USN record parsing.
+8. Add benchmark: `cargo bench --bench performance` comparing MFT vs Jwalk on same drive.
+
+Verify: `cargo test`, admin CMD: run MFT scan → compare results with Jwalk → verify faster.
+
+---
+
+**Task W — Windows Service mode (v0.6.4) ✅ Complete**
+
+Goal: Run DiskPulse as a background Windows Service. Monitor/alert/collect snapshots without GUI.
+
+Files: `src-tauri/src/service/mod.rs` (new), `src-tauri/src/main.rs`, `src-tauri/src/lib.rs`, `src/pages/Settings/index.tsx`, `src/types.ts`
+
+Steps:
+1. Create `service/mod.rs`: `install()`, `uninstall()`, `start()`, `stop()`, `status()` using windows crate SCM API (`OpenSCManagerW`, `CreateServiceW`, etc.).
+2. Add `--service` CLI flag in `main.rs`: when present, start background engine (alert monitor + scheduler + snapshot collection), no window.
+3. Implement Named Pipe server in service mode: `\\.\pipe\DiskPulseService` — JSON messages matching IPC command format.
+4. Implement Named Pipe client in GUI mode: auto-connect when service is detected.
+5. Register IPC: `install_service`, `uninstall_service`, `get_service_status`.
+6. Settings UI: "Service" tab with install/uninstall button, status indicator (running/stopped/not installed), auto-start checkbox.
+7. Safety: Service runs as LOCAL SERVICE account. Service NEVER executes cleanup operations.
+8. Add 3+ tests: service IPC, status transitions, pipe message round-trip.
+
+Verify: `cargo test`, manual: install service → start → check GUI detects it → check alerts work → stop → uninstall.
+
+---
+
+#### Phase 3: Intelligence (v0.6.5 — v0.6.6)
+
+**Task X — ML anomaly detection (v0.6.5) ✅ Complete**
+
+Goal: Holt-Winters seasonal forecasting + Modified Z-Score anomaly detection. Pure Rust, zero ML deps.
+
+Files: `src-tauri/src/anomaly/mod.rs` (new), `src-tauri/src/prediction/mod.rs`, `src-tauri/src/lib.rs`, `src/components/AnomalyCard.tsx` (new), `src/pages/History/index.tsx`, `src/types.ts`
+
+Steps:
+1. Create `anomaly/mod.rs` with `AnomalyDetector` struct:
+   - `HoltWinters { alpha: f64, beta: f64, gamma: f64, period: usize }` — triple exponential smoothing.
+   - `ModifiedZScore { threshold: f64 }` — MAD-based outlier detection.
+   - `detect(history: &[Snapshot]) -> Vec<AnomalyEvent>` — run both models, return events.
+2. 4 anomaly types with thresholds: RateAnomaly (|Mi| > 3.5), BurstAnomaly (|Mi| > 10.0), HotspotAnomaly (single-dir growth > 3.5σ), PatternDeviation (seasonal shift).
+3. Upgrade `prediction/mod.rs`: replace OLS with Holt-Winters. Keep OLS as fallback when data points < 2*period.
+4. Extend `predict_disk_usage` response: add `seasonal_component`, `trend_component`, `dynamic_confidence_interval`.
+5. Register `detect_anomalies` IPC command.
+6. Create `AnomalyCard.tsx`: dashboard card showing anomaly count + last anomaly description + severity color.
+7. Add "Anomaly Detection" tab in History page: ECharts time series with anomaly markers (red dots on abnormal points).
+8. Emit `anomaly-detected` event when real-time anomaly detected.
+9. Add 5+ tests: HW forecast accuracy (compare with known series), MAD calculation, anomaly threshold, fallback to OLS, empty history handling.
+
+Verify: `cargo test` (98+), manual: accumulate 2 weeks of snapshots → check anomaly detection output.
+
+---
+
+**Task Y — Smart recommendations v2 (v0.6.6) ✅ Complete**
+
+Goal: Context-aware scoring with urgency multiplier, user behavior learning, and 4D health radar.
+
+Files: `src-tauri/src/recommendations/mod.rs`, `src-tauri/src/db/mod.rs`, `src/components/RecommendationCard.tsx`, `src/components/DiskHealthGauge.tsx`, `src/types.ts`
+
+Steps:
+1. Add `urgency_multiplier` to `score_recommendation()`: query `predict_disk_usage` → `days_until_full` → map to multiplier (1.0 ~ 3.0).
+2. Add `pattern_boost`: query `cleanup_logs` table → group by category → boost score per category (1.0 ~ 1.5x).
+3. Add `correlation_bonus`: if same path appears in multiple detectors (aging + duplicates + anomaly + large files) → +bonus points.
+4. Update `scoring_weights` to include new `urgency_weight` and `pattern_weight` in `AppSettings`.
+5. Redesign `get_disk_health()`: return 4 sub-scores (Space/Waste/Trend/Age) instead of single number.
+6. Create `DiskHealthRadar.tsx`: ECharts radar chart showing 4 health dimensions.
+7. Update `RecommendationCard.tsx`: show urgency badge (🟢 Normal / 🟡 Elevated / 🔴 Critical) based on multiplier.
+8. Add 3+ tests: urgency multiplier calculation, pattern learning from history, health dimension split.
+
+Verify: `cargo test`, `npm run typecheck`, manual: fill disk → see urgency multiplier increase recommendations.
+
+---
+
+#### Phase 4: Ecosystem (v0.6.7)
+
+**Task Z — Multi-device dashboard (v0.6.7)**
+
+Goal: WebSocket-based hub for跨设备监控. One machine sees all devices' disk status.
+
+Files: `src-tauri/src/hub/` (6 new files), `src-tauri/src/lib.rs`, `src-tauri/Cargo.toml`, `src/App.tsx`, `src/types.ts`, `src/hooks/useRemoteDevice.ts` (new), `src/components/*`
+
+Steps:
+1. Add `tokio-tungstenite` and `mdns-sdk` to `Cargo.toml` (cross-platform).
+2. Create `hub/mod.rs`: `Hub` struct with start/stop lifecycle.
+3. Create `hub/server.rs`: `tokio-tungstenite` WS server on configurable port (default 19740).
+4. Create `hub/registry.rs`: `DeviceRegistry` — `HashMap<String, DeviceInfo>` + sender channels.
+5. Create `hub/router.rs`: parse WS messages → route to target device → collect response → send back.
+6. Create `hub/pairing.rs`: generate 6-digit numeric token, verify on first connection, persist token to SQLite.
+7. Create `hub/discovery.rs`: mDNS service advertisement + browser (Bonjour `_diskpulse._tcp`).
+8. Register IPC: `start_hub`, `stop_hub`, `get_connected_devices`, `pair_device`, `unpair_device`.
+9. Create `useRemoteDevice` hook: detect hub status → list devices → query remote device data via WS.
+10. Update `App.tsx`: sidebar device list (online/offline indicator) + dashboard device selector dropdown.
+11. Update dashboard components to accept optional `deviceId` parameter (None = local).
+12. Security: WS binds localhost only. Remote commands whitelist: read-only auto-allow; write commands require Hub user confirmation.
+13. Add 5+ tests: message routing, device registry CRUD, pairing token validation, mDNS ad parsing, remote query.
+
+Verify: `cargo test` (108+), manual: two devices → pair → view remote disk → receive remote alert.
+
+---
+
+#### Phase 5: Release (v0.7.0)
+
+**Task AA — Integration tests + docs sync + release**
+
+Goal: End-to-end verification across all 5 pipelines. Bump version to 0.7.0.
+
+Steps:
+1. Integration test 1 — Scan pipeline: `streaming_scan → MFT_scan → Jwalk_exact → cancel → incremental_rescan`.
+2. Integration test 2 — Intelligence pipeline: `scan → classify → anomaly_detect → recommend_v2 → disk_health_radar`.
+3. Integration test 3 — Cleanup pipeline: `recommend → preview → clean → undo` (with custom rule matches).
+4. Integration test 4 — Service pipeline: `install → start → monitor_alert → snapshot → stop → uninstall`.
+5. Integration test 5 — Hub pipeline: `start_hub → mdns_discover → pair → remote_query → event_forward → stop`.
+6. Update all docs: `CLAUDE.md`, `PROGRESS.md`, `CHANGELOG.md`, `CODEX.md`, `README.md`, `README_zh-CN.md`.
+7. Version bump to `0.7.0` in `Cargo.toml`, `package.json`, `tauri.conf.json`.
+8. `cargo test` — target 115+ tests, all platforms.
+9. `cargo clippy -- -D warnings`, `npm run typecheck`, `npm run build:web`.
+10. `npm run tauri build` — all 3 platforms (Windows MSI/NSIS, Linux .deb/.AppImage, macOS .dmg).
+11. Record release artifact hashes. Create GitHub release tag v0.7.0.
+
+Verify: All checks green, installers generated for all 3 platforms.
+
+---
+
+### v0.7.0 Task Dependency Graph
+
+```
+Phase 1:  T → U (T and U independent, can parallelize)
+              │
+Phase 2:  V ──┤── W (V depends on T for streaming interface; W independent)
+              │
+Phase 3:  X ──┤── Y (X must come before Y, Y uses X's anomaly signals)
+              │
+Phase 4:  Z (depends on T for streaming data over WS; X+Y for multi-device intelligence)
+              │
+Phase 5:  AA (depends on all above)
+```
+
+### v0.7.0 Verification Matrix
+
+| Task | cargo check | cargo test | cargo clippy | npm typecheck | npm build:web | manual |
+|------|:--:|:--:|:--:|:--:|:--:|:--:|
+| T | ✅ | ✅ (90+) | ✅ | ✅ | ✅ | Streaming UI |
+| U | ✅ | ✅ | ✅ | ✅ | ✅ | Rule editor |
+| V | ✅ | ✅ | ✅ | — | — | MFT vs Jwalk |
+| W | ✅ | ✅ | ✅ | ✅ | ✅ | Service smoke |
+| X | ✅ | ✅ (98+) | ✅ | ✅ | ✅ | Anomaly check |
+| Y | ✅ | ✅ | ✅ | ✅ | ✅ | Rec changes |
+| Z | ✅ | ✅ (108+) | ✅ | ✅ | ✅ | Multi-device |
+| AA | ✅ | ✅ (115+) | ✅ | ✅ | ✅ | Full smoke |
 
 ## Non-Negotiable Safety Rules
 

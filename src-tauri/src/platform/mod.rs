@@ -43,6 +43,18 @@ pub trait DirScanner: Send + Sync {
         &self,
         ctx: &crate::scanner::ScanContext<'_>,
     ) -> Result<crate::scanner::ScanOutput, String>;
+
+    fn is_volume_streaming(&self) -> bool {
+        false
+    }
+
+    fn execute_streaming(
+        &self,
+        ctx: &crate::scanner::ScanContext<'_>,
+    ) -> std::sync::mpsc::Receiver<crate::scanner::ScanBatch> {
+        let stage = crate::scanner::MeasureStage;
+        crate::scanner::ScanStage::execute_streaming(&stage, ctx)
+    }
 }
 
 pub trait CleanupProvider: Send + Sync {
@@ -79,10 +91,27 @@ pub enum ScanStrategy {
 impl ScanStrategy {
     pub fn resolve(&self) -> Box<dyn DirScanner> {
         match self {
-            Self::Auto | Self::Jwalk => platform_dir_scanner(),
+            Self::Auto => self.resolve_auto(),
+            Self::Jwalk => platform_dir_scanner(),
             #[cfg(all(target_os = "windows", feature = "mft-scanner"))]
-            Self::Mft { .. } => Box::new(windows_mft::MftStage),
+            Self::Mft { admin } => {
+                if *admin {
+                    Box::new(windows_mft::MftStage)
+                } else {
+                    platform_dir_scanner()
+                }
+            }
         }
+    }
+
+    fn resolve_auto(&self) -> Box<dyn DirScanner> {
+        #[cfg(all(target_os = "windows", feature = "mft-scanner"))]
+        {
+            if windows_mft::check_admin_privilege() {
+                return Box::new(windows_mft::MftStage);
+            }
+        }
+        platform_dir_scanner()
     }
 }
 
@@ -90,10 +119,17 @@ pub fn providers() -> PlatformProviders {
     PlatformProviders {
         disk_info: platform_disk_info(),
         fs_watcher: platform_fs_watcher(),
-        dir_scanner: ScanStrategy::Auto.resolve(),
+        dir_scanner: configured_scan_strategy().resolve(),
         cleanup: platform_cleanup(),
         file_meta: platform_file_meta(),
         system_info: platform_system_info(),
+    }
+}
+
+fn configured_scan_strategy() -> ScanStrategy {
+    match crate::db::get_settings().map(|settings| settings.scan_mode) {
+        Ok(mode) if mode == "speed" => ScanStrategy::Auto,
+        _ => ScanStrategy::Jwalk,
     }
 }
 
@@ -203,5 +239,12 @@ mod tests {
         let providers = providers();
         assert!(providers.cleanup.is_available());
         assert!(!providers.dir_scanner.name().is_empty());
+    }
+
+    #[cfg(all(target_os = "windows", feature = "mft-scanner"))]
+    #[test]
+    fn mft_strategy_requires_admin_flag() {
+        assert_eq!(ScanStrategy::Mft { admin: true }.resolve().name(), "mft");
+        assert_eq!(ScanStrategy::Mft { admin: false }.resolve().name(), "jwalk");
     }
 }

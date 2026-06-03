@@ -2,7 +2,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import * as echarts from "echarts";
 import { formatSize } from "../../utils/format";
-import type { AutoCleanupReport, Snapshot, CleanupLog, DirInfo, CleanItemResult, Prediction } from "../../types";
+import type { AnomalyEvent, AnomalyReport, AutoCleanupReport, Snapshot, CleanupLog, DirInfo, CleanItemResult, Prediction } from "../../types";
 
 const TIME_RANGES = [
   { label: "7d", value: 7 },
@@ -184,6 +184,169 @@ function TrendChart({ snapshots, prediction }: { snapshots: Snapshot[]; predicti
 
 // 鈹€鈹€鈹€ Snapshot Table 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
+function anomalyTypeLabel(type: AnomalyEvent["anomaly_type"]) {
+  switch (type) {
+    case "burst_anomaly":
+      return "Burst growth";
+    case "hotspot_anomaly":
+      return "Hotspot";
+    case "pattern_deviation":
+      return "Pattern shift";
+    default:
+      return "Rate anomaly";
+  }
+}
+
+function AnomalyChart({ snapshots, events }: { snapshots: Snapshot[]; events: AnomalyEvent[] }) {
+  const chartRef = useRef<HTMLDivElement>(null);
+  const instanceRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!chartRef.current || snapshots.length === 0) return;
+
+    if (!instanceRef.current) {
+      instanceRef.current = echarts.init(chartRef.current, undefined);
+    }
+
+    const chart = instanceRef.current;
+    const toGb = (bytes: number) => bytes / (1024 * 1024 * 1024);
+    const sorted = [...snapshots].reverse();
+    const usedByTime = new Map(sorted.map((snapshot) => [snapshot.created_at, toGb(snapshot.used_bytes)]));
+    const anomalyPoints = events.map((event) => ({
+      value: [event.created_at, usedByTime.get(event.created_at) ?? toGb(Math.abs(event.metric_value))],
+      event,
+      itemStyle: {
+        color: event.severity === "critical" ? "#ef4444" : "#f59e0b",
+      },
+    }));
+
+    chart.setOption(
+      {
+        tooltip: {
+          trigger: "item",
+          backgroundColor: "rgba(12, 16, 25, 0.95)",
+          borderColor: "rgba(239, 68, 68, 0.3)",
+          borderWidth: 1,
+          textStyle: { color: "#e2e8f0", fontSize: 12, fontFamily: "'Segoe UI', sans-serif" },
+          formatter: (params: unknown) => {
+            const item = params as { data?: { event?: AnomalyEvent } };
+            const event = item.data?.event;
+            if (!event) return "";
+            return [
+              "<strong>" + anomalyTypeLabel(event.anomaly_type) + "</strong>",
+              event.created_at,
+              event.description,
+              "Z-score: " + event.modified_z_score.toFixed(1),
+              event.path ?? "",
+            ]
+              .filter(Boolean)
+              .join("<br/>");
+          },
+        },
+        legend: {
+          bottom: 0,
+          textStyle: { color: "#94a3b8", fontSize: 12 },
+        },
+        grid: {
+          left: 80,
+          right: 30,
+          top: 20,
+          bottom: 42,
+        },
+        xAxis: {
+          type: "time",
+          axisLine: { lineStyle: { color: "#1e293b" } },
+          axisTick: { show: false },
+          axisLabel: {
+            color: "#64748b",
+            fontSize: 11,
+            formatter: (value: number) => {
+              const d = new Date(value);
+              return `${d.getMonth() + 1}/${d.getDate()}`;
+            },
+          },
+          splitLine: { show: false },
+        },
+        yAxis: {
+          type: "value",
+          name: "GB used",
+          nameTextStyle: { color: "#64748b", fontSize: 11 },
+          axisLabel: { color: "#64748b", fontSize: 11 },
+          splitLine: { lineStyle: { color: "rgba(30, 41, 59, 0.6)" } },
+        },
+        series: [
+          {
+            name: "Used",
+            type: "line",
+            lineStyle: { width: 2 },
+            itemStyle: { color: "#38bdf8" },
+            areaStyle: { color: "rgba(56, 189, 248, 0.06)" },
+            symbol: "none",
+            smooth: true,
+            data: sorted.map((snapshot) => [snapshot.created_at, toGb(snapshot.used_bytes)]),
+          },
+          {
+            name: "Anomaly",
+            type: "scatter",
+            symbolSize: 14,
+            data: anomalyPoints,
+          },
+        ],
+      },
+      { notMerge: true }
+    );
+
+    const handleResize = () => chart.resize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [snapshots, events]);
+
+  useEffect(() => {
+    return () => {
+      instanceRef.current?.dispose();
+      instanceRef.current = null;
+    };
+  }, []);
+
+  if (snapshots.length === 0) return null;
+
+  return <div ref={chartRef} className="w-full rounded-2xl overflow-hidden" style={{ height: 380 }} />;
+}
+
+function AnomalyEventList({ events }: { events: AnomalyEvent[] }) {
+  if (events.length === 0) {
+    return (
+      <div className="rounded-2xl bg-aurora-elevated/40 border border-aurora-border/35 p-4 text-sm text-text-muted">
+        No anomalies detected in this window.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {events.map((event, index) => (
+        <div key={`${event.created_at}-${event.anomaly_type}-${event.path ?? index}`} className="rounded-2xl bg-aurora-elevated/45 border border-aurora-border/35 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className={`w-2.5 h-2.5 rounded-full ${event.severity === "critical" ? "bg-danger" : "bg-warning"}`} />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-text-primary">
+                  {anomalyTypeLabel(event.anomaly_type)}
+                  <span className="ml-2 text-xs font-normal text-text-muted">{formatDate(event.created_at)}</span>
+                </div>
+                <p className="text-xs text-text-secondary mt-1">{event.description}</p>
+                {event.path && <p className="text-xs text-text-muted mt-1 truncate">{event.path}</p>}
+              </div>
+            </div>
+            <span className="text-xs font-mono text-text-muted">
+              z={event.modified_z_score.toFixed(1)}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 function SnapshotTable({ snapshots }: { snapshots: Snapshot[] }) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const selected = selectedId != null ? snapshots.find((s) => s.id === selectedId) : null;
@@ -525,11 +688,13 @@ export default function HistoryPage() {
   const [cleanupLogs, setCleanupLogs] = useState<CleanupLog[]>([]);
   const [autoCleanupReports, setAutoCleanupReports] = useState<AutoCleanupReport[]>([]);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
+  const [anomalyReport, setAnomalyReport] = useState<AnomalyReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDrive, setSelectedDrive] = useState("C");
   const [timeRange, setTimeRange] = useState<number>(30);
   const [drives, setDrives] = useState<string[]>(["C"]);
+  const [historyTab, setHistoryTab] = useState<"trend" | "anomaly">("trend");
 
   useEffect(() => {
     invoke<string[]>("list_drives")
@@ -546,20 +711,24 @@ export default function HistoryPage() {
     setLoading(true);
     setError(null);
     setPrediction(null);
+    setAnomalyReport(null);
     try {
-      const [snaps, logs, autoReports, predicted] = await Promise.all([
+      const [snaps, logs, autoReports, predicted, anomalies] = await Promise.all([
         invoke<Snapshot[]>("get_snapshot_history", { drive, days }),
         invoke<CleanupLog[]>("get_cleanup_history"),
         invoke<AutoCleanupReport[]>("get_auto_cleanup_history"),
         invoke<Prediction>("predict_disk_usage", { drive, days }).catch(() => null),
+        invoke<AnomalyReport>("detect_anomalies", { drive }).catch(() => null),
       ]);
       setSnapshots(snaps);
       setCleanupLogs(logs);
       setAutoCleanupReports(autoReports);
       setPrediction(predicted);
+      setAnomalyReport(anomalies);
     } catch (e) {
       setError(String(e));
       setPrediction(null);
+      setAnomalyReport(null);
     } finally {
       setLoading(false);
     }
@@ -570,6 +739,10 @@ export default function HistoryPage() {
   }, [selectedDrive, timeRange, loadHistory]);
 
   const hasData = snapshots.length > 0 || cleanupLogs.length > 0 || autoCleanupReports.length > 0;
+  const snapshotTimes = new Set(snapshots.map((snapshot) => snapshot.created_at));
+  const visibleAnomalies = (anomalyReport?.events ?? []).filter((event) =>
+    snapshotTimes.has(event.created_at),
+  );
 
   return (
     <div className="p-8 space-y-8">
@@ -679,21 +852,50 @@ export default function HistoryPage() {
 
       {hasData && (
         <>
-          {/* Trend Chart */}
+          {/* Trend / anomaly chart */}
           <div className="glass-card p-6">
-            <div className="flex items-center justify-between mb-6 px-2">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 px-2">
               <div>
                 <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-                  Disk Usage Trend
+                  {historyTab === "trend" ? "Disk Usage Trend" : "Anomaly Detection"}
                 </h3>
                 <p className="text-xs text-text-muted mt-1">
                   {selectedDrive}: Drive 鈥?last {timeRange} days 路 {snapshots.length} snapshot
                   {snapshots.length !== 1 ? "s" : ""}
                 </p>
               </div>
+              <div className="flex rounded-lg bg-aurora-elevated border border-aurora-border/50 overflow-hidden">
+                <button
+                  className={`px-3 py-2 text-xs font-medium transition-colors ${
+                    historyTab === "trend"
+                      ? "bg-accent/20 text-accent-light border-r border-accent/20"
+                      : "text-text-secondary hover:text-text-primary hover:bg-aurora-elevated/80"
+                  }`}
+                  onClick={() => setHistoryTab("trend")}
+                >
+                  Trend
+                </button>
+                <button
+                  className={`px-3 py-2 text-xs font-medium transition-colors ${
+                    historyTab === "anomaly"
+                      ? "bg-danger/15 text-danger border-l border-danger/20"
+                      : "text-text-secondary hover:text-text-primary hover:bg-aurora-elevated/80"
+                  }`}
+                  onClick={() => setHistoryTab("anomaly")}
+                >
+                  Anomaly Detection
+                </button>
+              </div>
             </div>
             {snapshots.length > 0 ? (
-              <TrendChart snapshots={snapshots} prediction={prediction} />
+              historyTab === "trend" ? (
+                <TrendChart snapshots={snapshots} prediction={prediction} />
+              ) : (
+                <div className="space-y-5">
+                  <AnomalyChart snapshots={snapshots} events={visibleAnomalies} />
+                  <AnomalyEventList events={visibleAnomalies} />
+                </div>
+              )
             ) : (
               <div className="flex items-center justify-center h-[380px] text-text-muted text-sm">
                 No snapshots for the selected time range.
@@ -710,9 +912,10 @@ export default function HistoryPage() {
                   </h3>
                   <p className="text-sm text-text-secondary mt-2">{prediction.message}</p>
                 </div>
-                <div className="grid grid-cols-3 gap-3 text-right">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-right">
                   <ForecastStat label="Growth" value={`${formatSize(Math.abs(prediction.growth_bytes_per_day))}/day`} />
                   <ForecastStat label="Confidence" value={`${Math.round(prediction.confidence_score * 100)}%`} />
+                  <ForecastStat label="Seasonal" value={formatSize(Math.abs(prediction.seasonal_component))} />
                   <ForecastStat
                     label="To 95%"
                     value={
@@ -739,3 +942,4 @@ export default function HistoryPage() {
     </div>
   );
 }
+

@@ -1,13 +1,15 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+﻿import { Fragment, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { applyLanguage, LANGUAGE_OPTIONS } from "../../i18n";
+import RuleEditor, { type RuleEditorValue } from "../../components/RuleEditor";
 import { THEME_OPTIONS, useTheme, type ThemeId } from "../../hooks/useTheme";
-import type { AppSettings, AutoCleanupStatus, CleanResult, RiskLevel, RiskRule } from "../../types";
+import type { AppSettings, AutoCleanupStatus, CleanResult, RiskLevel, RiskRule, ServiceStatus } from "../../types";
 import { formatSize } from "../../utils/format";
 
-type SettingsTab = "general" | "appearance" | "rules" | "alerts" | "automation" | "recommendations" | "about";
+type SettingsTab = "general" | "appearance" | "rules" | "alerts" | "automation" | "recommendations" | "service" | "about";
+type RuleScope = "built-in" | "custom";
 
 const RISK_STYLES: Record<RiskLevel, string> = {
   low: "bg-risk-low-bg text-success border-success/20",
@@ -17,6 +19,7 @@ const RISK_STYLES: Record<RiskLevel, string> = {
 
 const DEFAULT_SETTINGS: AppSettings = {
   default_drive: "C",
+  scan_mode: "exact",
   auto_scan_on_startup: false,
   auto_monitor_on_startup: false,
   watcher_poll_interval_ms: 2000,
@@ -39,6 +42,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   scoring_weight_duplicate: 0.20,
   scoring_weight_size: 0.20,
   scoring_weight_safety: 0.25,
+  scoring_weight_urgency: 0.15,
+  scoring_weight_pattern: 0.10,
   duplicate_min_size_bytes: 1_048_576,
   aging_zombie_days: 180,
 };
@@ -138,6 +143,29 @@ function GeneralTab({ settings, drives, saving, onUpdate, onSave, message }: {
 
       <ToggleRow title="Auto scan on startup" detail="Scan the default drive when DiskPulse starts." checked={settings.auto_scan_on_startup} onChange={(v) => onUpdate({ ...settings, auto_scan_on_startup: v })} />
       <ToggleRow title="Auto monitor on startup" detail="Start file-system monitoring when DiskPulse starts." checked={settings.auto_monitor_on_startup} onChange={(v) => onUpdate({ ...settings, auto_monitor_on_startup: v })} />
+
+      <div className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/40 p-4">
+        <div className="mb-3 text-sm font-medium text-text-primary">Scan Mode</div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {([
+            ["exact", "Accuracy (exact)", "Use Jwalk directory measurement with exact sizes. Recommended for cleanup decisions."],
+            ["speed", "Speed (approximate)", "Allow MFT/USN fast scan when available. Results are marked approximate."],
+          ] as const).map(([mode, label, detail]) => (
+            <button
+              key={mode}
+              className={`rounded-xl border p-4 text-left transition-colors ${
+                settings.scan_mode === mode
+                  ? "border-accent/35 bg-accent/15 text-text-primary"
+                  : "border-aurora-border/50 bg-aurora-elevated/50 text-text-secondary hover:text-text-primary"
+              }`}
+              onClick={() => onUpdate({ ...settings, scan_mode: mode })}
+            >
+              <div className="text-sm font-semibold">{label}</div>
+              <p className="mt-1 text-xs leading-5 text-text-muted">{detail}</p>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <PresetRow title="Watcher poll interval" value={settings.watcher_poll_interval_ms} presets={pollPresets} onChange={(v) => onUpdate({ ...settings, watcher_poll_interval_ms: v })} />
       <PresetRow title="Debounce window" value={settings.watcher_debounce_ms} presets={debouncePresets} onChange={(v) => onUpdate({ ...settings, watcher_debounce_ms: v })} />
@@ -240,9 +268,10 @@ function RulesTab() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<RiskLevel | "all">("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [customName, setCustomName] = useState("");
-  const [customPattern, setCustomPattern] = useState("");
-  const [customRisk, setCustomRisk] = useState<RiskLevel>("medium");
+  const [scope, setScope] = useState<RuleScope>("built-in");
+  const [editingRule, setEditingRule] = useState<RiskRule | null>(null);
+  const [showEditor, setShowEditor] = useState(false);
+  const [savingRule, setSavingRule] = useState(false);
 
   async function loadRules() {
     setLoading(true);
@@ -271,27 +300,49 @@ function RulesTab() {
     }
   }
 
-  async function handleCreateCustomRule() {
-    if (!customName.trim() || !customPattern.trim()) {
+  function customRuleName(rule: RiskRule) {
+    return rule.explanation.replace(/^Custom rule:\s*/i, "") || rule.id.replace(/^custom-/, "");
+  }
+
+  function editorInitial(rule: RiskRule | null): RuleEditorValue | undefined {
+    if (!rule) return undefined;
+    return {
+      name: customRuleName(rule),
+      pattern: rule.patterns[0] ?? "",
+      risk_level: rule.risk_level === "low" ? "low" : "medium",
+    };
+  }
+
+  async function handleSaveCustomRule(value: RuleEditorValue) {
+    if (!value.name.trim() || !value.pattern.trim()) {
       setError("Custom rule requires a name and pattern.");
       return;
     }
+    setSavingRule(true);
     setError(null);
     try {
-      await invoke<RiskRule>("create_custom_rule", {
-        name: customName,
-        pattern: customPattern,
-        riskLevel: customRisk,
+      const saved = await invoke<RiskRule>("create_custom_rule", {
+        name: value.name,
+        pattern: value.pattern,
+        riskLevel: value.risk_level,
       });
-      setCustomName("");
-      setCustomPattern("");
+      if (editingRule && editingRule.id !== saved.id) {
+        await invoke("delete_custom_rule", { ruleId: editingRule.id });
+      }
+      setShowEditor(false);
+      setEditingRule(null);
       await loadRules();
     } catch (e) {
       setError(String(e));
+    } finally {
+      setSavingRule(false);
     }
   }
 
   async function handleDeleteCustomRule(ruleId: string) {
+    if (!window.confirm("Delete this custom rule? Built-in rules are not affected.")) {
+      return;
+    }
     try {
       await invoke("delete_custom_rule", { ruleId });
       await loadRules();
@@ -303,14 +354,53 @@ function RulesTab() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rules.filter((rule) => {
+      const isCustom = rule.id.startsWith("custom-");
+      if (scope === "built-in" && isCustom) return false;
+      if (scope === "custom" && !isCustom) return false;
       if (filter !== "all" && rule.risk_level !== filter) return false;
       if (!q) return true;
-      return [rule.id, rule.category, rule.explanation].some((value) => value.toLowerCase().includes(q));
+      return [rule.id, rule.category, rule.explanation, ...rule.patterns].some((value) => value.toLowerCase().includes(q));
     });
-  }, [filter, query, rules]);
+  }, [filter, query, rules, scope]);
+
+  const customCount = rules.filter((rule) => rule.id.startsWith("custom-")).length;
+  const builtInCount = rules.length - customCount;
 
   return (
     <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex rounded-xl border border-aurora-border/50 bg-aurora-elevated/50 p-1">
+          {([
+            ["built-in", `Built-in (${builtInCount})`],
+            ["custom", `Custom Rules (${customCount})`],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              className={`rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors ${
+                scope === id ? "bg-accent/15 text-accent-light" : "text-text-muted hover:text-text-primary"
+              }`}
+              onClick={() => {
+                setScope(id);
+                setExpandedId(null);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {scope === "custom" && !showEditor && (
+          <button
+            className="rounded-xl border border-accent/30 bg-accent/15 px-4 py-2.5 text-sm font-semibold text-accent-light"
+            onClick={() => {
+              setEditingRule(null);
+              setShowEditor(true);
+            }}
+          >
+            New Rule
+          </button>
+        )}
+      </div>
+
       <div className="flex flex-wrap items-center gap-4">
         <input
           value={query}
@@ -340,20 +430,17 @@ function RulesTab() {
         </button>
       </div>
 
-      <div className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/40 p-4">
-        <div className="mb-3 text-sm font-semibold text-text-primary">Custom rule</div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_150px_auto]">
-          <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Rule name" className="rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
-          <input value={customPattern} onChange={(e) => setCustomPattern(e.target.value)} placeholder="Path pattern, e.g. archive-cache" className="rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60" />
-          <select value={customRisk} onChange={(e) => setCustomRisk(e.target.value as RiskLevel)} className="rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-4 py-2.5 text-sm text-text-primary outline-none focus:border-accent/60">
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-          </select>
-          <button className="rounded-xl border border-accent/30 bg-accent/15 px-4 py-2.5 text-sm font-semibold text-accent-light" onClick={() => void handleCreateCustomRule()}>Create</button>
-        </div>
-        <p className="mt-2 text-xs text-text-muted">Custom rules are review-only by default; they do not become safe-to-delete automatically.</p>
-      </div>
+      {scope === "custom" && showEditor && (
+        <RuleEditor
+          initial={editorInitial(editingRule)}
+          saving={savingRule}
+          onCancel={() => {
+            setShowEditor(false);
+            setEditingRule(null);
+          }}
+          onSave={handleSaveCustomRule}
+        />
+      )}
 
       {error && <div className="rounded-xl border border-red-500/20 bg-risk-high-bg/20 p-3 text-sm text-danger">{error}</div>}
 
@@ -368,22 +455,41 @@ function RulesTab() {
                 <th className="px-4 py-3 text-left font-medium">Category</th>
                 <th className="px-4 py-3 text-left font-medium">Risk</th>
                 <th className="w-24 px-4 py-3 text-center font-medium">Safe</th>
-                <th className="w-24 px-4 py-3 text-right font-medium">Action</th>
+                <th className="w-28 px-4 py-3 text-right font-medium">Action</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((rule) => {
                 const expanded = expandedId === rule.id;
+                const isCustom = rule.id.startsWith("custom-");
                 return (
                   <Fragment key={rule.id}>
                     <tr className="cursor-pointer border-b border-aurora-border/20 transition-colors hover:bg-aurora-elevated/40" onClick={() => setExpandedId(expanded ? null : rule.id)}>
                       <td className="px-4 py-3 font-mono text-xs text-text-primary">{rule.id}</td>
                       <td className="px-4 py-3 text-text-secondary">{rule.category}</td>
                       <td className="px-4 py-3"><span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${RISK_STYLES[rule.risk_level]}`}>{rule.risk_level}</span></td>
-                      <td className="px-4 py-3 text-center"><Toggle checked={rule.safe_to_delete} onChange={() => handleToggle(rule.id, rule.safe_to_delete)} /></td>
+                      <td className="px-4 py-3 text-center">
+                        {isCustom ? (
+                          <span className="text-xs text-text-muted">Review</span>
+                        ) : (
+                          <Toggle checked={rule.safe_to_delete} onChange={() => handleToggle(rule.id, rule.safe_to_delete)} />
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right">
-                        {rule.id.startsWith("custom-") && (
-                          <button className="text-xs text-danger hover:text-text-primary" onClick={(e) => { e.stopPropagation(); void handleDeleteCustomRule(rule.id); }}>Delete</button>
+                        {isCustom && (
+                          <div className="flex justify-end gap-3">
+                            <button
+                              className="text-xs text-accent-light hover:text-text-primary"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingRule(rule);
+                                setShowEditor(true);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button className="text-xs text-danger hover:text-text-primary" onClick={(e) => { e.stopPropagation(); void handleDeleteCustomRule(rule.id); }}>Delete</button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -409,7 +515,6 @@ function RulesTab() {
     </div>
   );
 }
-
 function AlertsTab({ settings, saving, onUpdate, onSave, message }: {
   settings: AppSettings;
   saving: boolean;
@@ -575,7 +680,9 @@ function RecommendationSettingsTab({ settings, saving, onUpdate, onSave, message
     settings.scoring_weight_age +
     settings.scoring_weight_duplicate +
     settings.scoring_weight_size +
-    settings.scoring_weight_safety;
+    settings.scoring_weight_safety +
+    settings.scoring_weight_urgency +
+    settings.scoring_weight_pattern;
 
   return (
     <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-6">
@@ -590,6 +697,8 @@ function RecommendationSettingsTab({ settings, saving, onUpdate, onSave, message
         <WeightSlider label="Duplicates" value={settings.scoring_weight_duplicate} onChange={(v) => onUpdate({ ...settings, scoring_weight_duplicate: v })} />
         <WeightSlider label="Size" value={settings.scoring_weight_size} onChange={(v) => onUpdate({ ...settings, scoring_weight_size: v })} />
         <WeightSlider label="Safety" value={settings.scoring_weight_safety} onChange={(v) => onUpdate({ ...settings, scoring_weight_safety: v })} />
+        <WeightSlider label="Urgency" value={settings.scoring_weight_urgency} onChange={(v) => onUpdate({ ...settings, scoring_weight_urgency: v })} />
+        <WeightSlider label="Pattern" value={settings.scoring_weight_pattern} onChange={(v) => onUpdate({ ...settings, scoring_weight_pattern: v })} />
         <div className="rounded-2xl border border-accent/20 bg-accent/10 p-4">
           <div className="text-xs uppercase tracking-wider text-text-muted">Weight total</div>
           <div className="mt-2 text-lg font-semibold text-text-primary">{totalWeight.toFixed(2)}</div>
@@ -627,6 +736,97 @@ function WeightSlider({ label, value, onChange }: { label: string; value: number
         <div className="font-mono text-xs text-text-muted">{value.toFixed(2)}</div>
       </div>
       <input type="range" min={0} max={1} step={0.01} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full accent-accent" />
+    </div>
+  );
+}
+
+function ServiceTab() {
+  const [status, setStatus] = useState<ServiceStatus | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function refresh() {
+    setError(null);
+    try {
+      setStatus(await invoke<ServiceStatus>("get_service_status"));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function runAction(command: string) {
+    setBusy(command);
+    setError(null);
+    try {
+      setStatus(await invoke<ServiceStatus>(command));
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const state = status?.state ?? "unknown";
+  const installed = status?.installed ?? false;
+
+  return (
+    <div className="glass-card p-6 rounded-2xl border border-aurora-border/50 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="text-sm font-semibold text-text-primary">Windows Service</div>
+          <p className="mt-1 text-xs text-text-muted">Run monitoring, alerting, and snapshots in the background without opening the GUI.</p>
+        </div>
+        <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wider ${
+          state === "running"
+            ? "border-success/25 bg-risk-low-bg text-success"
+            : state === "not_installed"
+              ? "border-aurora-border/50 bg-aurora-elevated/60 text-text-muted"
+              : "border-warning/25 bg-risk-medium-bg text-warning"
+        }`}>
+          {state.replace(/_/g, " ")}
+        </span>
+      </div>
+
+      <div className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/40 p-4">
+        <div className="text-xs uppercase tracking-wider text-text-muted">Service account</div>
+        <div className="mt-2 text-sm text-text-primary">LOCAL SERVICE</div>
+        <p className="mt-1 text-xs leading-5 text-text-muted">Background service is constrained to monitoring and alert collection; cleanup execution remains GUI/user initiated.</p>
+      </div>
+
+      {error && <div className="rounded-xl border border-red-500/20 bg-risk-high-bg/20 p-3 text-sm text-danger">{error}</div>}
+      {status?.message && !error && <div className="rounded-xl border border-aurora-border/40 bg-aurora-elevated/40 p-3 text-xs text-text-muted">{status.message}</div>}
+
+      <div className="flex flex-wrap gap-3">
+        {!installed ? (
+          <button className="btn-primary py-2.5 px-5" disabled={busy !== null} onClick={() => void runAction("install_service")}>
+            {busy === "install_service" ? "Installing..." : "Install Service"}
+          </button>
+        ) : (
+          <>
+            {state !== "running" && (
+              <button className="btn-primary py-2.5 px-5" disabled={busy !== null} onClick={() => void runAction("start_service")}>
+                {busy === "start_service" ? "Starting..." : "Start"}
+              </button>
+            )}
+            {state === "running" && (
+              <button className="rounded-xl border border-warning/30 bg-risk-medium-bg px-5 py-2.5 text-sm font-semibold text-warning" disabled={busy !== null} onClick={() => void runAction("stop_service")}>
+                {busy === "stop_service" ? "Stopping..." : "Stop"}
+              </button>
+            )}
+            <button className="rounded-xl border border-danger/30 bg-risk-high-bg px-5 py-2.5 text-sm font-semibold text-danger" disabled={busy !== null} onClick={() => void runAction("uninstall_service")}>
+              {busy === "uninstall_service" ? "Uninstalling..." : "Uninstall"}
+            </button>
+          </>
+        )}
+        <button className="rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-5 py-2.5 text-sm text-text-secondary hover:text-accent-light" disabled={busy !== null} onClick={() => void refresh()}>
+          Refresh
+        </button>
+      </div>
     </div>
   );
 }
@@ -709,6 +909,7 @@ export default function SettingsPage() {
     { id: "alerts", label: "Alerts" },
     { id: "automation", label: "Automation" },
     { id: "recommendations", label: "Recommendations" },
+    { id: "service", label: "Service" },
     { id: "about", label: "About" },
   ];
 
@@ -733,7 +934,9 @@ export default function SettingsPage() {
       {tab === "alerts" && <AlertsTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
       {tab === "automation" && <AutomationTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
       {tab === "recommendations" && <RecommendationSettingsTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
+      {tab === "service" && <ServiceTab />}
       {tab === "about" && <AboutTab />}
     </div>
   );
 }
+

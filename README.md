@@ -12,35 +12,40 @@
 [![Linux](https://img.shields.io/badge/linux-FCC624?logo=linux)](https://kernel.org)
 [![macOS](https://img.shields.io/badge/macOS-000000?logo=apple)](https://www.apple.com/macos)
 
-DiskPulse gives you full visibility into your disk space usage and helps you reclaim wasted gigabytes — safely. Built with an Aurora-designed UI, powered by a high-performance Rust backend with native kernel-level file monitoring, and committed to never losing your data.
+DiskPulse gives you full visibility into your disk space usage and helps you reclaim wasted gigabytes — safely. Built with an Aurora-designed UI, powered by a high-performance Rust backend with native kernel-level file monitoring, intelligent anomaly detection, and committed to never losing your data.
 
 
-## v0.6.0 Cross-Platform Performance Foundation
+## v0.6.6 Intelligent Operations
 
+- **Streaming incremental scan** — first results in <500ms, Treemap updates batch-by-batch. Incremental rescan on FS changes.
+- **MFT direct scan** — NTFS `FSCTL_ENUM_USN_DATA` fast approximate scan. Automatic fallback to JwalkStage.
+- **Windows Service mode** — `diskpulse.exe --service` runs headless background engine with Named Pipe IPC to GUI.
+- **ML anomaly detection** — Holt-Winters seasonal forecasting + Modified Z-Score detector. 4 anomaly types, pure Rust, zero ML deps.
+- **Smart recommendations v2** — context-aware urgency multiplier (1.0x–3.0x), user behavior learning, cross-module correlation bonus.
+- **4D disk health radar** — Space / Waste / Trend / Age sub-scores replacing single health index.
+- **Custom rule editor** — create, edit, test, and delete custom cleanup rules with live pattern tester.
 - **6-trait platform abstraction** — `DiskInfoProvider`, `FsWatcher`, `DirScanner`, `CleanupProvider`, `FileMetaAnalyzer`, `SystemInfo` isolate all OS-specific code behind compile-time dispatch.
-- **Native Windows watcher** — `ReadDirectoryChangesW` kernel-push events replace polling (< 50ms latency, ~0% idle CPU).
-- **Hard-link-aware dedup** — `GetFileInformationByHandle` detects shared files before hashing; duplicate scan skips hard links.
-- **Sparse file detection** — `FILE_ATTRIBUTE_SPARSE_FILE` + `GetCompressedFileSizeW` report apparent vs actual size on disk.
-- **Linux support** — inotify native watcher, statvfs disk info, gio trash, statx metadata.
-- **macOS support** — FSEvents-ready polling fallback, osascript Finder Trash, sysctl RAM, stat metadata.
+- **Native Windows watcher** — `ReadDirectoryChangesW` kernel-push events (< 50ms latency, ~0% idle CPU).
+- **Linux/macOS support** — inotify / FSEvents-ready, CI matrix for 3-platform builds.
 - **CI/CD** — GitHub Actions 3-platform matrix: Windows (MSI + NSIS), Linux (.deb + .AppImage), macOS (.dmg).
-- **MFT technical reserve** — `MftStage` compiled behind `mft-scanner` feature flag for future NTFS direct-scan.
 
 ## ✨ Features
 
 - **Interactive treemap visualization** — see exactly what's eating your disk, drill down to any subdirectory
 - **Smart risk classification** — 16 built-in rules + custom rule editor categorize every directory as Low / Medium / High risk
 - **One-click safe cleanup** — all deletions go to Recycle Bin / Trash, never permanent
-- **Multi-drive support** — scan any drive with real-time progress feedback
+- **Multi-drive support** — scan any drive with real-time streaming progress
 - **Cleanup report** — search, filter, sort classified items; guided 5-step Cleanup Wizard
 - **Native FS monitoring** — kernel-level file change events (Windows ReadDirectoryChangesW, Linux inotify)
 - **Duplicate detection** — 3-phase pipeline (size → 4KB hash → SHA-256) with hard-link awareness
 - **File aging analysis** — 7 time buckets, zombie file finder, growth hotspot detection
-- **Smart recommendations** — weighted scoring engine with configurable weights
-- **Disk health scoring** — composite health index (free space + growth + duplicates + zombies)
-- **Parallel scan engine** — jwalk + rayon; 500GB drives in under 5 seconds
-- **Real-time alerts** — low-space thresholds + sudden growth detection via Windows native notifications
-- **Auto-cleanup scheduler** — configurable LOW-risk automatic cleanup with system tray integration
+- **Smart recommendations v2** — context-aware scoring with urgency multiplier, behavior learning, and correlation bonus
+- **4D disk health radar** — Space / Waste / Trend / Age sub-scores + ECharts radar visualization
+- **ML anomaly detection** — Holt-Winters seasonal forecasting + Modified Z-Score; 4 anomaly types
+- **Parallel scan engine** — jwalk + rayon + streaming; 500GB drives in under 5 seconds
+- **Real-time alerts** — low-space thresholds + sudden growth + anomaly detection via native notifications
+- **Windows Service mode** — headless background monitoring with system tray integration
+- **Auto-cleanup scheduler** — configurable LOW-risk automatic cleanup
 - **i18n** — English + Simplified Chinese, auto-detect OS language
 - **Dark/Light themes** — Aurora design system with CSS variable tokens
 

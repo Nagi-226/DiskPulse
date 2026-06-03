@@ -1,5 +1,6 @@
 mod aging;
 mod alert;
+mod anomaly;
 mod cleaner;
 mod cli;
 mod db;
@@ -11,6 +12,7 @@ mod report;
 mod risk;
 pub mod scanner;
 mod scheduler;
+mod service;
 mod watcher;
 
 use cleaner::{CleanItem, CleanPreview, CleanResult, RestoreResult};
@@ -33,6 +35,7 @@ struct FileMeta {
 }
 
 pub const SCAN_PROGRESS_EVENT: &str = "scan-progress";
+pub const SCAN_BATCH_EVENT: &str = "scan-batch";
 pub const LARGE_FILE_PROGRESS_EVENT: &str = "large-file-progress";
 pub const DUPLICATE_SCAN_PROGRESS_EVENT: &str = "duplicate-scan-progress";
 pub const AGING_SCAN_PROGRESS_EVENT: &str = "aging-scan-progress";
@@ -42,6 +45,7 @@ pub const FS_EVENT_BATCH: &str = "fs-event-batch";
 pub const DRIVE_CACHE_REFRESHED_EVENT: &str = "drive-cache-refreshed";
 pub const AUTO_SCAN_EVENT: &str = "auto-scan";
 pub const DISK_SPACE_ALERT: &str = "disk-space-alert";
+pub const ANOMALY_DETECTED_EVENT: &str = "anomaly-detected";
 
 /// Global watcher guard so we can stop it from another command.
 static WATCHER: Mutex<Option<platform::WatcherGuard>> = Mutex::new(None);
@@ -134,6 +138,23 @@ fn finish_aging_scan_token(token: &Arc<AtomicBool>) {
     }
 }
 
+fn emit_latest_anomaly(app: &AppHandle, drive: &str) {
+    let Ok(history) = db::get_snapshot_history(drive, 365) else {
+        return;
+    };
+    let Some(latest_snapshot_at) = history.iter().map(|snapshot| &snapshot.created_at).max() else {
+        return;
+    };
+    let events = anomaly::AnomalyDetector::default().detect(&history);
+    if let Some(event) = events
+        .into_iter()
+        .filter(|event| event.created_at == *latest_snapshot_at)
+        .max_by(|left, right| left.created_at.cmp(&right.created_at))
+    {
+        let _ = app.emit(ANOMALY_DETECTED_EVENT, event);
+    }
+}
+
 /// Scan a drive and emit progress events
 #[tauri::command]
 fn scan_drive(app: AppHandle, drive: String) -> Result<DriveInfo, String> {
@@ -149,6 +170,8 @@ fn scan_drive(app: AppHandle, drive: String) -> Result<DriveInfo, String> {
     let info = info?;
     if let Err(e) = db::save_snapshot(&info) {
         eprintln!("Failed to save snapshot to history DB: {}", e);
+    } else {
+        emit_latest_anomaly(&app, &info.drive_letter);
     }
     Ok(info)
 }
@@ -172,10 +195,14 @@ fn scan_drive_meta(drive: String) -> Result<DriveMeta, String> {
 #[tauri::command]
 fn scan_drive_dirs(app: AppHandle, drive: String) -> Result<Vec<DirInfo>, String> {
     let token = begin_scan_token();
-    let info = scanner::scan_drive_with_progress_and_cancel(
+    let batch_app = app.clone();
+    let info = scanner::scan_drive_with_progress_batches_and_cancel(
         &drive,
         |progress| {
             let _ = app.emit(SCAN_PROGRESS_EVENT, progress);
+        },
+        |batch| {
+            let _ = batch_app.emit(SCAN_BATCH_EVENT, batch);
         },
         Some(&token),
     );
@@ -183,6 +210,8 @@ fn scan_drive_dirs(app: AppHandle, drive: String) -> Result<Vec<DirInfo>, String
     let info = info?;
     if let Err(e) = db::save_snapshot(&info) {
         eprintln!("Failed to save snapshot to history DB: {}", e);
+    } else {
+        emit_latest_anomaly(&app, &info.drive_letter);
     }
     Ok(info.top_dirs)
 }
@@ -555,6 +584,31 @@ fn save_settings(app: AppHandle, settings: db::AppSettings) -> Result<(), String
     scheduler::apply_auto_cleanup_settings(&app, &settings)
 }
 
+#[tauri::command]
+fn install_service() -> Result<service::ServiceStatus, String> {
+    service::install()
+}
+
+#[tauri::command]
+fn uninstall_service() -> Result<service::ServiceStatus, String> {
+    service::uninstall()
+}
+
+#[tauri::command]
+fn start_service() -> Result<service::ServiceStatus, String> {
+    service::start()
+}
+
+#[tauri::command]
+fn stop_service() -> Result<service::ServiceStatus, String> {
+    service::stop()
+}
+
+#[tauri::command]
+fn get_service_status() -> Result<service::ServiceStatus, String> {
+    service::status()
+}
+
 /// Get all risk rules with user overrides applied.
 #[tauri::command]
 fn get_rules() -> Result<Vec<risk::RiskRule>, String> {
@@ -578,6 +632,12 @@ fn create_custom_rule(
     risk_level: String,
 ) -> Result<risk::RiskRule, String> {
     db::create_custom_rule(&name, &pattern, &risk_level)
+}
+
+/// Test a custom risk rule pattern against a sample path.
+#[tauri::command]
+fn test_rule_pattern(pattern: String, test_path: String) -> Result<bool, String> {
+    Ok(risk::test_rule_pattern(&pattern, &test_path))
 }
 
 /// Delete a custom risk rule.
@@ -626,6 +686,12 @@ fn get_cleanup_history() -> Result<Vec<db::CleanupLog>, String> {
 #[tauri::command]
 fn predict_disk_usage(drive: String, days: u32) -> Result<prediction::Prediction, String> {
     prediction::predict_disk_usage(&drive, days)
+}
+
+/// Detect statistical anomalies from saved snapshot history.
+#[tauri::command]
+fn detect_anomalies(drive: String) -> Result<anomaly::AnomalyReport, String> {
+    anomaly::detect_anomalies(&drive)
 }
 
 /// Run the auto-cleanup pipeline immediately using stored settings.
@@ -938,6 +1004,7 @@ pub fn run() {
             get_snapshot_history,
             get_cleanup_history,
             predict_disk_usage,
+            detect_anomalies,
             run_auto_cleanup_now,
             get_auto_cleanup_status,
             get_auto_cleanup_history,
@@ -950,9 +1017,15 @@ pub fn run() {
             stop_alert_monitor,
             get_settings,
             save_settings,
+            install_service,
+            uninstall_service,
+            start_service,
+            stop_service,
+            get_service_status,
             get_rules,
             save_rule_override,
             create_custom_rule,
+            test_rule_pattern,
             delete_custom_rule,
             get_notifications,
             mark_notifications_read,

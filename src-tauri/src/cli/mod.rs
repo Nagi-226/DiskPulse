@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, PartialEq)]
 pub enum CliCommand {
+    Service,
     Scan {
         drive: String,
     },
@@ -42,6 +43,14 @@ struct CliCleanOutcome {
 }
 
 pub fn parse_cli_args(args: &[String]) -> Result<Option<CliOptions>, String> {
+    if args.iter().any(|arg| arg == "--service") {
+        return Ok(Some(CliOptions {
+            json: false,
+            quiet: true,
+            dry_run: false,
+            command: Some(CliCommand::Service),
+        }));
+    }
     if args.get(1).map(String::as_str) != Some("--cli") {
         return Ok(None);
     }
@@ -105,6 +114,7 @@ pub fn execute_cli_command(options: &CliOptions) -> i32 {
     let result = match command {
         CliCommand::Scan { drive } => crate::scanner::scan_drive_meta(drive, None, None)
             .and_then(|value| render(&value, options)),
+        CliCommand::Service => crate::service::run_service_mode().map(|_| String::new()),
         CliCommand::Duplicates { drive } => {
             crate::duplicates::scan_duplicates_with_progress_and_cancel(
                 drive,
@@ -222,6 +232,20 @@ mod tests {
                 quiet: false,
                 dry_run: false,
                 command: Some(CliCommand::Scan { drive: "C".into() })
+            })
+        );
+    }
+
+    #[test]
+    fn parse_service_flag() {
+        let args = vec!["diskpulse".into(), "--service".into()];
+        assert_eq!(
+            parse_cli_args(&args).unwrap(),
+            Some(CliOptions {
+                json: false,
+                quiet: true,
+                dry_run: false,
+                command: Some(CliCommand::Service)
             })
         );
     }

@@ -5,6 +5,7 @@ export interface DirInfo {
   file_count: number;
   dir_count: number;
   risk_level: string | null;
+  is_approximate: boolean;
 }
 
 export interface DriveInfo {
@@ -24,7 +25,7 @@ export interface DriveMeta {
   cache_age_ms: number | null;
 }
 
-export type ScanPhase = "walking" | "measuring" | "complete";
+export type ScanPhase = "walking" | "measuring" | "streaming" | "complete";
 
 export interface ScanProgress {
   drive_letter: string;
@@ -33,6 +34,12 @@ export interface ScanProgress {
   current_path: string | null;
   phase: ScanPhase;
   partial_results: DirInfo[] | null;
+}
+
+export interface ScanBatch {
+  dirs: DirInfo[];
+  batch_index: number;
+  is_complete: boolean;
 }
 
 export interface FileEntry {
@@ -179,9 +186,37 @@ export interface Prediction {
   days_to_95_percent: number | null;
   projected_95_date: string | null;
   confidence_score: number;
+  seasonal_component: number;
+  trend_component: number;
+  dynamic_confidence_interval: [number, number] | null;
   status: "insufficient_data" | "stable" | "growing" | "shrinking" | "warning" | "critical";
   message: string;
   forecast: ForecastPoint[];
+}
+
+export type AnomalyType =
+  | "rate_anomaly"
+  | "burst_anomaly"
+  | "hotspot_anomaly"
+  | "pattern_deviation";
+
+export type AnomalySeverity = "warning" | "critical";
+
+export interface AnomalyEvent {
+  anomaly_type: AnomalyType;
+  severity: AnomalySeverity;
+  drive_letter: string;
+  created_at: string;
+  metric_value: number;
+  modified_z_score: number;
+  description: string;
+  path: string | null;
+}
+
+export interface AnomalyReport {
+  drive_letter: string;
+  sample_count: number;
+  events: AnomalyEvent[];
 }
 
 export interface CleanupLog {
@@ -197,6 +232,7 @@ export interface CleanupLog {
 
 export interface AppSettings {
   default_drive: string;
+  scan_mode: "exact" | "speed";
   auto_scan_on_startup: boolean;
   auto_monitor_on_startup: boolean;
   watcher_poll_interval_ms: number;
@@ -219,6 +255,8 @@ export interface AppSettings {
   scoring_weight_duplicate: number;
   scoring_weight_size: number;
   scoring_weight_safety: number;
+  scoring_weight_urgency: number;
+  scoring_weight_pattern: number;
   duplicate_min_size_bytes: number;
   aging_zombie_days: number;
 }
@@ -257,6 +295,21 @@ export interface AutoCleanupReport {
   created_at: string;
 }
 
+export type ServiceState =
+  | "not_installed"
+  | "stopped"
+  | "start_pending"
+  | "running"
+  | "stop_pending"
+  | "paused"
+  | "unknown";
+
+export interface ServiceStatus {
+  installed: boolean;
+  state: ServiceState;
+  message: string;
+}
+
 export interface RiskRule {
   id: string;
   patterns: string[];
@@ -265,6 +318,14 @@ export interface RiskRule {
   explanation: string;
   safe_to_delete: boolean;
   name_match: string | null;
+}
+
+export interface CustomRule {
+  id: string;
+  name: string;
+  pattern: string;
+  risk_level: Extract<RiskLevel, "low" | "medium">;
+  enabled: boolean;
 }
 
 export interface DuplicateScanProgress {
@@ -322,6 +383,7 @@ export interface AgingScanProgress {
 export interface RecommendationItem {
   name: string;
   path: string;
+  category: string;
   size_bytes: number;
   risk_level: string;
   safe_to_delete: boolean;
@@ -334,6 +396,10 @@ export interface Recommendation {
   reason: string;
   estimated_size: number;
   action: string;
+  urgency_multiplier: number;
+  pattern_boost: number;
+  correlation_bonus: number;
+  urgency_label: "normal" | "elevated" | "critical";
 }
 
 export interface DiskHealth {
@@ -343,6 +409,11 @@ export interface DiskHealth {
   free_percent: number;
   duplicate_waste_bytes: number;
   zombie_bytes: number;
+  space_score: number;
+  waste_score: number;
+  trend_score: number;
+  age_score: number;
+  trend_growth_percent_per_day: number;
   message: string;
 }
 

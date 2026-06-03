@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DirInfo, DriveInfo, DriveMeta, RiskReport, ScanProgress } from "../types";
+import type { DirInfo, DriveInfo, DriveMeta, RiskReport, ScanBatch, ScanProgress } from "../types";
 
 type DriveDataSource = "empty" | "meta" | "cached" | "fresh";
 
@@ -49,6 +49,22 @@ export function useDriveScan(initialDrive = "C") {
   }, []);
 
   useEffect(() => {
+    const unlistenBatch = listen<ScanBatch>("scan-batch", (event) => {
+      const payload = event.payload;
+      if (payload.is_complete || payload.dirs.length === 0) {
+        return;
+      }
+
+      setDriveInfo((current) => {
+        if (!current || current.drive_letter !== selectedDriveRef.current.toUpperCase()) {
+          return current;
+        }
+        return {
+          ...current,
+          top_dirs: mergeDirs(current.top_dirs, payload.dirs),
+        };
+      });
+    });
     const unlistenScan = listen<ScanProgress>("scan-progress", (event) => {
       const payload = event.payload;
       if (payload.drive_letter !== selectedDriveRef.current.toUpperCase()) {
@@ -81,6 +97,7 @@ export function useDriveScan(initialDrive = "C") {
     });
 
     return () => {
+      unlistenBatch.then((fn) => fn());
       unlistenScan.then((fn) => fn());
       unlistenCacheRefresh.then((fn) => fn());
     };

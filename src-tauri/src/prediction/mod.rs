@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 const TARGET_USAGE_PERCENT: f64 = 95.0;
 const MIN_GROWTH_BYTES_PER_DAY: f64 = 10.0 * 1024.0 * 1024.0;
+const SEASONAL_PERIOD_DAYS: usize = 7;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ForecastPoint {
@@ -24,6 +25,9 @@ pub struct Prediction {
     pub days_to_95_percent: Option<f64>,
     pub projected_95_date: Option<String>,
     pub confidence_score: f64,
+    pub seasonal_component: f64,
+    pub trend_component: f64,
+    pub dynamic_confidence_interval: Option<(f64, f64)>,
     pub status: String,
     pub message: String,
     pub forecast: Vec<ForecastPoint>,
@@ -75,6 +79,9 @@ fn predict_from_snapshots(
             days_to_95_percent: None,
             projected_95_date: None,
             confidence_score: 0.0,
+            seasonal_component: 0.0,
+            trend_component: 0.0,
+            dynamic_confidence_interval: None,
             status: "insufficient_data".into(),
             message: "Need at least 3 snapshots before DiskPulse can estimate a trend.".into(),
             forecast: points
@@ -95,40 +102,79 @@ fn predict_from_snapshots(
         .collect();
 
     let regression = linear_regression(&x_days, &y_used);
-    let sample_factor = (points.len() as f64 / 6.0).min(1.0);
-    let confidence_score = (regression.r_squared * sample_factor).clamp(0.0, 1.0);
-    let growth_percent_per_day = (regression.slope / total) * 100.0;
+    let seasonal_model = if points.len() >= SEASONAL_PERIOD_DAYS * 2 {
+        let model = crate::anomaly::HoltWinters {
+            alpha: 0.35,
+            beta: 0.15,
+            gamma: 0.25,
+            period: SEASONAL_PERIOD_DAYS,
+        };
+        let horizon_days = days.clamp(30, 180);
+        let step_days = (horizon_days / 6).max(1) as usize;
+        Some((model.forecast(&y_used, step_days * 6), step_days))
+    } else {
+        None
+    };
+    let avg_interval_days = average_interval_days(&x_days);
+    let growth_bytes_per_day = seasonal_model
+        .as_ref()
+        .map(|(result, _)| result.trend / avg_interval_days)
+        .unwrap_or(regression.slope);
+    let confidence_score = seasonal_model
+        .as_ref()
+        .map(|(result, _)| seasonal_confidence(&result.residuals, &y_used))
+        .unwrap_or_else(|| {
+            let sample_factor = (points.len() as f64 / 6.0).min(1.0);
+            (regression.r_squared * sample_factor).clamp(0.0, 1.0)
+        });
+    let growth_percent_per_day = (growth_bytes_per_day / total) * 100.0;
 
     let target_used = total * (TARGET_USAGE_PERCENT / 100.0);
     let days_to_95_percent = if latest.used_bytes as f64 >= target_used {
         Some(0.0)
-    } else if regression.slope > MIN_GROWTH_BYTES_PER_DAY {
-        Some(((target_used - latest.used_bytes as f64) / regression.slope).max(0.0))
+    } else if growth_bytes_per_day > MIN_GROWTH_BYTES_PER_DAY {
+        Some(((target_used - latest.used_bytes as f64) / growth_bytes_per_day).max(0.0))
     } else {
         None
     };
     let projected_95_date =
         days_to_95_percent.map(|days_until| format_datetime(add_days(latest_ts, days_until)));
 
-    let status = prediction_status(current_usage_percent, regression.slope, days_to_95_percent);
+    let status = prediction_status(current_usage_percent, growth_bytes_per_day, days_to_95_percent);
     let message = prediction_message(
         status,
         current_usage_percent,
-        regression.slope,
+        growth_bytes_per_day,
         days_to_95_percent,
     );
-    let forecast = build_forecast(&points, regression.slope, latest_ts, latest, days);
+    let seasonal_component = seasonal_model
+        .as_ref()
+        .map(|(result, _)| result.seasonal)
+        .unwrap_or(0.0);
+    let trend_component = growth_bytes_per_day;
+    let dynamic_confidence_interval = seasonal_model
+        .as_ref()
+        .and_then(|(result, _)| result.confidence_interval)
+        .map(|(low, high)| (low.max(0.0), high.min(total)));
+    let forecast = if let Some((result, step_days)) = &seasonal_model {
+        build_holt_winters_forecast(&points, &result.forecast, *step_days, latest_ts, latest, days)
+    } else {
+        build_forecast(&points, regression.slope, latest_ts, latest, days)
+    };
 
     Ok(Prediction {
         drive_letter: drive.to_uppercase(),
         sample_count: points.len(),
         window_days: days,
         current_usage_percent,
-        growth_bytes_per_day: regression.slope,
+        growth_bytes_per_day,
         growth_percent_per_day,
         days_to_95_percent,
         projected_95_date,
         confidence_score,
+        seasonal_component,
+        trend_component,
+        dynamic_confidence_interval,
         status: status.into(),
         message,
         forecast,
@@ -146,6 +192,9 @@ fn empty_prediction(drive: &str, days: u32, sample_count: usize, message: &str) 
         days_to_95_percent: None,
         projected_95_date: None,
         confidence_score: 0.0,
+        seasonal_component: 0.0,
+        trend_component: 0.0,
+        dynamic_confidence_interval: None,
         status: "insufficient_data".into(),
         message: message.into(),
         forecast: Vec::new(),
@@ -186,6 +235,37 @@ fn linear_regression(x: &[f64], y: &[f64]) -> Regression {
     };
 
     Regression { slope, r_squared }
+}
+
+fn average_interval_days(x_days: &[f64]) -> f64 {
+    if x_days.len() < 2 {
+        return 1.0;
+    }
+    let intervals: Vec<f64> = x_days
+        .windows(2)
+        .filter_map(|pair| {
+            let delta = pair[1] - pair[0];
+            (delta > 0.0).then_some(delta)
+        })
+        .collect();
+    if intervals.is_empty() {
+        1.0
+    } else {
+        (intervals.iter().sum::<f64>() / intervals.len() as f64).max(1.0)
+    }
+}
+
+fn seasonal_confidence(residuals: &[f64], values: &[f64]) -> f64 {
+    if residuals.is_empty() || values.is_empty() {
+        return 0.0;
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    if mean.abs() <= f64::EPSILON {
+        return 0.0;
+    }
+    let rmse = (residuals.iter().map(|value| value.powi(2)).sum::<f64>() / residuals.len() as f64)
+        .sqrt();
+    (1.0 - rmse / mean.abs()).clamp(0.0, 1.0)
 }
 
 fn prediction_status(
@@ -264,6 +344,47 @@ fn build_forecast(
         let used = (latest.used_bytes as f64 + slope * future_days)
             .clamp(0.0, total as f64)
             .round() as u64;
+        let free = total.saturating_sub(used);
+        forecast.push(ForecastPoint {
+            created_at: format_datetime(add_days(latest_ts, future_days)),
+            used_bytes: used,
+            free_bytes: free,
+            usage_percent: (used as f64 / total as f64) * 100.0,
+            is_forecast: true,
+        });
+    }
+
+    forecast
+}
+
+fn build_holt_winters_forecast(
+    points: &[(i64, &db::Snapshot)],
+    forecast_values: &[f64],
+    step_days: usize,
+    latest_ts: i64,
+    latest: &db::Snapshot,
+    days: u32,
+) -> Vec<ForecastPoint> {
+    let mut forecast: Vec<ForecastPoint> = points
+        .iter()
+        .map(|(_, snapshot)| snapshot_point(snapshot, false))
+        .collect();
+
+    let horizon_days = days.clamp(30, 180);
+    let step_days = step_days.max(1);
+    let total = latest.total_bytes.max(1);
+
+    for step in 1..=6 {
+        let future_days = (step * step_days) as f64;
+        if future_days > horizon_days as f64 {
+            break;
+        }
+        let value_index = step * step_days;
+        let predicted = forecast_values
+            .get(value_index.saturating_sub(1))
+            .copied()
+            .unwrap_or(latest.used_bytes as f64);
+        let used = predicted.clamp(0.0, total as f64).round() as u64;
         let free = total.saturating_sub(used);
         forecast.push(ForecastPoint {
             created_at: format_datetime(add_days(latest_ts, future_days)),
@@ -412,5 +533,38 @@ mod tests {
         assert_eq!(prediction.status, "insufficient_data");
         assert_eq!(prediction.sample_count, 1);
         assert!(prediction.days_to_95_percent.is_none());
+    }
+
+    #[test]
+    fn short_history_uses_ols_fallback_components() {
+        let snapshots = vec![
+            snapshot(1, "2026-05-01 00:00:00", 50 * GIB),
+            snapshot(2, "2026-05-02 00:00:00", 52 * GIB),
+            snapshot(3, "2026-05-03 00:00:00", 54 * GIB),
+        ];
+
+        let prediction = predict_from_snapshots("C", 30, &snapshots).expect("prediction");
+
+        assert_eq!(prediction.seasonal_component, 0.0);
+        assert!(prediction.trend_component > 0.0);
+    }
+
+    #[test]
+    fn long_history_uses_holt_winters_components() {
+        let snapshots: Vec<_> = (0..21)
+            .map(|i| {
+                snapshot(
+                    i as i64 + 1,
+                    &format!("2026-05-{:02} 00:00:00", i + 1),
+                    (60 + i as u64 + [0, 2, 4, 1, 0, 0, 1][i % 7]) * GIB,
+                )
+            })
+            .collect();
+
+        let prediction = predict_from_snapshots("C", 30, &snapshots).expect("prediction");
+
+        assert!(prediction.seasonal_component.abs() > 0.0);
+        assert!(prediction.dynamic_confidence_interval.is_some());
+        assert!(prediction.forecast.iter().any(|point| point.is_forecast));
     }
 }

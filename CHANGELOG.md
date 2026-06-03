@@ -2,6 +2,59 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [0.6.6] - 2026-06-03
+
+> Phase 1-3 complete. 109 tests. v0.6.7 (multi-device) next.
+
+### Streaming Incremental Scan (v0.6.1)
+
+- `ScanStage::execute_streaming()` with `mpsc::Receiver<ScanBatch>` — first result <500ms.
+- `scan-batch` IPC event for incremental frontend updates; Treemap renders batch-by-batch.
+- Incremental rescan: watcher-detected changes trigger single-directory refresh.
+- Memory target <50MB via streaming release; cancel <200ms between batches.
+
+### Custom Rule Editor UI (v0.6.2)
+
+- `RuleEditor.tsx` + `RuleTester.tsx` components for creating and live-testing custom risk rules.
+- `test_rule_pattern` IPC command; custom rules constrained to LOW/MEDIUM risk levels only.
+- "Custom Rules" sub-tab in Settings with list, create, edit, and delete operations.
+
+### MFT Direct Scan (v0.6.3)
+
+- `MftStage` activated via `FSCTL_ENUM_USN_DATA` — direct NTFS MFT enumeration.
+- Admin privilege detection + automatic fallback to `JwalkStage` for non-admin users.
+- `ScanStrategy::Auto` dispatches MFT (approximate, fast) vs Jwalk (exact, default).
+- Feature-gated behind `mft-scanner` Cargo feature flag.
+
+### Windows Service Mode (v0.6.4)
+
+- `service` module: install/start/stop/uninstall via Windows SCM API.
+- `diskpulse.exe --service` starts headless background engine (monitor + alerts + snapshots).
+- Named Pipe IPC (`\\.\pipe\DiskPulseService`) — JSON messages reuse existing IPC format.
+- Service runs as LOCAL SERVICE account; cleanup operations disabled in service mode.
+- Settings UI: Service tab with status indicator, install/uninstall, auto-start toggle.
+
+### ML Anomaly Detection (v0.6.5)
+
+- `anomaly` module: Holt-Winters triple exponential smoothing + Modified Z-Score detector. Pure Rust, zero ML deps.
+- 4 anomaly types: RateAnomaly, BurstAnomaly, HotspotAnomaly, PatternDeviation.
+- `detect_anomalies` IPC command; `AnomalyCard.tsx` dashboard component.
+- Upgraded `predict_disk_usage`: Holt-Winters seasonal components, dynamic confidence intervals, OLS fallback for short history.
+- `anomaly-detected` IPC event for real-time alerting.
+
+### Smart Recommendations v2 (v0.6.6)
+
+- Context-aware scoring: urgency multiplier (1.0x–3.0x based on days-until-full), user behavior pattern learning from cleanup history, cross-module correlation bonus.
+- 4D disk health radar chart (`DiskHealthRadar.tsx`): Space / Waste / Trend / Age sub-scores.
+- Correlation bonus rewards paths appearing in multiple detectors (aging + duplicates + anomaly + large files).
+
+### Verification (v0.6.6)
+
+- `cargo test`: 109/109 passed (up from 86 in v0.6.0).
+- `cargo clippy -- -D warnings`: 0 warnings (3 fixes applied).
+- `npm run typecheck`: 0 errors.
+- `npm run build:web`: passed (Vite chunk-size warning only).
+
 ## [0.6.0] - 2026-06-02
 
 > Full roadmap: `docs/v0.6.0-plan.md`

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CleanItem, DiskHealth, Recommendation } from "../types";
 import { formatSize } from "../utils/format";
+import DiskHealthRadar from "./DiskHealthRadar";
 
 function toCleanItem(recommendation: Recommendation): CleanItem {
   return {
@@ -67,6 +68,9 @@ export default function RecommendationCard({ drive, onAddToCleanup }: { drive: s
           </div>
           <div className="mt-4 text-sm font-semibold text-text-primary">{health?.status ?? "pending"}</div>
           <p className="mt-2 text-xs leading-5 text-text-muted">{health?.message ?? "Run a health check to compute score."}</p>
+          <div className="mt-4">
+            <DiskHealthRadar health={health} />
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -75,8 +79,19 @@ export default function RecommendationCard({ drive, onAddToCleanup }: { drive: s
               <div className="flex items-center gap-3">
                 <span className="w-8 font-mono text-xs text-accent-light">#{recommendation.rank}</span>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-text-primary" title={recommendation.item.path}>{recommendation.item.name}</div>
-                  <div className="truncate text-xs text-text-muted" title={recommendation.item.path}>{recommendation.reason}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="truncate text-sm font-semibold text-text-primary" title={recommendation.item.path}>{recommendation.item.name}</div>
+                    <UrgencyBadge label={recommendation.urgency_label} />
+                    {recommendation.pattern_boost > 1.0 && (
+                      <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent-light">
+                        pattern {recommendation.pattern_boost.toFixed(1)}x
+                      </span>
+                    )}
+                  </div>
+                  <div className="truncate text-xs text-text-muted" title={recommendation.item.path}>
+                    {recommendation.reason}
+                    {recommendation.correlation_bonus > 0 && ` · +${recommendation.correlation_bonus.toFixed(0)} correlation`}
+                  </div>
                 </div>
                 <span className="font-mono text-xs text-text-muted">{recommendation.score.toFixed(0)}</span>
                 <span className="font-mono text-xs text-text-secondary">{formatSize(recommendation.estimated_size)}</span>
@@ -95,5 +110,21 @@ export default function RecommendationCard({ drive, onAddToCleanup }: { drive: s
         </div>
       )}
     </div>
+  );
+}
+
+function UrgencyBadge({ label }: { label: Recommendation["urgency_label"] }) {
+  const style =
+    label === "critical"
+      ? "border-danger/30 bg-risk-high-bg text-danger"
+      : label === "elevated"
+        ? "border-warning/25 bg-risk-medium-bg text-warning"
+        : "border-success/25 bg-risk-low-bg text-success";
+  const icon = label === "critical" ? "🔴" : label === "elevated" ? "🟡" : "🟢";
+
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${style}`}>
+      {icon} {label}
+    </span>
   );
 }

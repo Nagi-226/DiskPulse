@@ -11,7 +11,8 @@
 - **Type**: Open source desktop application (MIT License)
 - **Repository**: E:\Github Project\DiskPulse
 - **Current Version**: v0.6.0 (cross-platform performance foundation)
-- **Next Milestone**: v0.7.0 intelligent operations planning
+- **Next Milestone**: v0.7.0 intelligent operations platform (see `docs/v0.7.0-plan.md`)
+- **v0.7.0 Plan**: 5 phases, 7 feature versions + release — streaming scan → MFT → service → ML → multi-device
 
 ## Tech Stack (LOCKED 鈥?do not change without explicit user approval)
 
@@ -67,6 +68,9 @@ v0.4.0 introduces a **trait + registry** plugin pattern across core systems:
 - `report/` 鈥?(v0.3.7) Report generation & export (CSV/JSON)
 - `cli/` 鈥?(v0.3.9) CLI mode: scan/duplicates/health/clean/export subcommands
 - `platform/` 鈥?(v0.3.9) Cross-platform abstraction traits (DiskInfo, Cleanup, Notify, Tray)
+- `anomaly/` — (v0.6.5) 异常检测：Holt-Winters 季节性预测 + Modified Z-Score 季节性预测 + Modified Z-Score
+- `service/` — (v0.6.4) Windows Service 管理（安装/启动/停止/卸载）（安装/启动/停止/卸载）
+- `hub/` — (v0.6.7计划) 多设备 WebSocket Hub（server/registry/router/pairing/discovery）（server/registry/router/pairing/discovery）
 
 ### Frontend Structure (src/)
 - `App.tsx` 鈥?Dashboard UI (treemap, ring chart, live feed, nav sidebar)
@@ -117,6 +121,32 @@ Single dispatch point: `platform::providers()` returns `PlatformProviders` struc
 **Technical reserve**: `MftStage` in `platform/windows_mft.rs` — compiled but feature-gated. Reads NTFS MFT directly via `FSCTL_ENUM_USN_DATA`. Activation condition: `ntfs-rs` crate maturity + `mft-scanner` feature flag.
 
 **New crate deps (v0.6.0)**: no new third-party crates are required for the current implementation; Windows uses existing `windows` crate features, Linux inotify is direct FFI, and macOS native FSEvents/objc remain reserved pending CI/platform validation.
+
+### v0.7.0 Implementation Notes (Planned)
+
+> Full plan: `docs/v0.7.0-plan.md` | Implementation tasks: `CODEX.md` § "v0.7.0 Implementation Tasks"
+
+- **Theme**: Intelligent Operations — from "see data" to "understand data and act on it."
+- **5 Phases**: Foundation Polish → Deep Performance → Intelligence → Ecosystem → Release
+- **7 feature versions** (v0.6.1 ~ v0.6.7) + 1 release (v0.7.0)
+
+**v0.7.0 Technical Reserve Activations**:
+- `MftStage` (v0.6.3): Activate via `FSCTL_ENUM_USN_DATA`, no ntfs-rs dependency. Feature-gated behind `mft-scanner`. MFT scan labeled "approximate" with JwalkStage as exact fallback.
+- `ReadDirectoryChangesW` buffer overflow recovery (v0.6.1+): Auto full-refresh on overflow detection.
+
+**New Rust Modules (v0.7.0)**:
+- `anomaly/mod.rs` (v0.6.5): Pure Rust Holt-Winters seasonal forecasting + Modified Z-Score anomaly detector. Zero ML runtime dependencies.
+- `service/mod.rs` (v0.6.4): Windows Service management via SCM API. Same binary, `--service` flag. Named Pipe IPC to GUI.
+- `hub/` (v0.6.7): WebSocket server (tokio-tungstenite), device registry, message router, pairing tokens, mDNS discovery (mdns-sdk).
+
+**New Frontend Components (v0.7.0)**:
+- `RuleEditor.tsx` + `RuleTester.tsx` (v0.6.2): Custom risk rule creation and live pattern testing.
+- `AnomalyCard.tsx` (v0.6.5): Dashboard anomaly summary with 4 anomaly types.
+- `useRemoteDevice.ts` hook (v0.6.7): Remote device data queries over WebSocket.
+
+**New Crate Deps (v0.7.0)**:
+- `tokio-tungstenite` (v0.6.7): WebSocket server for multi-device hub.
+- `mdns-sdk` (v0.6.7): mDNS/Bonjour LAN service discovery.
 
 ## Critical Safety Rules (NEVER VIOLATE)
 
@@ -211,6 +241,18 @@ fn delete_custom_rule(rule_id: String) -> Result<(), String>
 fn export_scan_report(drive: String, format: String) -> Result<String, String>
 fn export_cleanup_history(format: String) -> Result<String, String>
 fn export_duplicates(drive: String, format: String) -> Result<String, String>
+
+// v0.7.0 planned
+fn test_rule_pattern(pattern: String, test_path: String) -> Result<bool, String>
+fn install_service() -> Result<(), String>
+fn uninstall_service() -> Result<(), String>
+fn get_service_status() -> Result<ServiceStatus, String>
+fn detect_anomalies(drive: String) -> Result<AnomalyReport, String>
+fn start_hub(port: u16) -> Result<(), String>
+fn stop_hub() -> Result<(), String>
+fn get_connected_devices() -> Result<Vec<DeviceInfo>, String>
+fn pair_device(token: String) -> Result<DeviceInfo, String>
+fn unpair_device(device_id: String) -> Result<(), String>
 ```
 
 ### IPC Events (Frontend Listeners)
@@ -218,6 +260,7 @@ fn export_duplicates(drive: String, format: String) -> Result<String, String>
 | Event | Payload | Emitted By |
 |-------|---------|------------|
 | `scan-progress` | `ScanProgress` | `scan_drive`, `scan_drive_dirs` |
+| `scan-batch` | `ScanBatch` | `scan_drive_dirs` (v0.7.0 streaming) |
 | `large-file-progress` | `LargeFileProgress` | `find_large_files` |
 | `clean-progress` | `CleanProgress` | `clean_items` |
 | `fs-event-batch` | `FsChangeBatch` | `start_fs_watcher` |
@@ -229,11 +272,17 @@ fn export_duplicates(drive: String, format: String) -> Result<String, String>
 | `tray-toggle-monitor` | `()` | tray menu |
 | `duplicate-scan-progress` | `DuplicateScanProgress` | `scan_duplicates` (v0.3.4) |
 | `aging-scan-progress` | `AgingScanProgress` | `analyze_file_aging` (v0.3.5) |
+| `anomaly-detected` | `AnomalyEvent` | `detect_anomalies` (v0.7.0) |
+| `device-connected` | `DeviceInfo` | `start_hub` (v0.7.0) |
+| `device-disconnected` | `{ device_id }` | `start_hub` (v0.7.0) |
+| `remote-alert` | `{ device_id, alert_payload }` | `start_hub` (v0.7.0) |
 
 ## Current Development State
 
-- **Phase**: v0.4.0 production release complete
-- **Last Updated**: 2026-06-02
+- **Phase**: v0.6.6 complete — v0.6.1–v0.6.6 implemented; v0.6.7 (multi-device) next
+- **Last Updated**: 2026-06-03
+- **Test count**: 109 (up from 86 in v0.6.0)
+- **Verification**: `cargo test` 109/109, `cargo clippy -- -D warnings` clean, `npm run typecheck` 0 errors, `npm run build:web` clean
 - **Full Plan**: `docs/v0.4.0-plan.md`
 
 ### v0.4.0 Roadmap Summary

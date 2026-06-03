@@ -12,35 +12,38 @@
 
 > [English Version](README.md)
 
-DiskPulse 让你全面掌握磁盘空间使用情况，并安全地回收被浪费的存储空间。基于 Aurora 设计系统打造的精美 UI，由高性能 Rust 后端与内核级原生文件监控驱动，恪守"绝不丢失你的数据"的承诺。
+DiskPulse 让你全面掌握磁盘空间使用情况，并安全地回收被浪费的存储空间。基于 Aurora 设计系统打造的精美 UI，由高性能 Rust 后端、内核级原生文件监控与智能异常检测驱动，恪守"绝不丢失你的数据"的承诺。
 
 
-## v0.6.0 跨平台性能基础
+## v0.6.6 智能运维平台
 
-- **6-Trait 平台抽象层** — `DiskInfoProvider`、`FsWatcher`、`DirScanner`、`CleanupProvider`、`FileMetaAnalyzer`、`SystemInfo` 将全部 OS 相关代码隔离在编译期分发的 trait 实现中。
-- **Windows 原生文件监控** — `ReadDirectoryChangesW` 内核推送事件替换轮询（延迟 < 50ms，待机 CPU ~0%）。
-- **硬链接感知去重** — `GetFileInformationByHandle` 在哈希计算前识别共享文件；重复扫描自动跳过硬链接。
-- **稀疏文件检测** — `FILE_ATTRIBUTE_SPARSE_FILE` + `GetCompressedFileSizeW` 报告文件表观大小与实际磁盘占用的差异。
-- **Linux 支持** — inotify 原生文件监控、statvfs 磁盘信息、gio 回收站、statx 元数据。
-- **macOS 支持** — FSEvents 就绪的轮询降级方案、osascript Finder 废纸篓、sysctl 内存信息、stat 元数据。
-- **CI/CD** — GitHub Actions 三平台矩阵构建：Windows（MSI + NSIS）、Linux（.deb + .AppImage）、macOS（.dmg）。
-- **MFT 技术储备** — `MftStage` 在 `mft-scanner` feature flag 下编译，为未来 NTFS 直接扫描做好准备。
+- **流式增量扫描** — 首个结果 < 500ms，Treemap 逐批更新。文件变更时自动增量重扫。
+- **MFT 直读扫描** — NTFS `FSCTL_ENUM_USN_DATA` 快速近似扫描，自动降级到 JwalkStage。
+- **Windows 后台服务** — `diskpulse.exe --service` 无窗口后台运行，通过 Named Pipe 与 GUI 通信。
+- **ML 智能异常检测** — Holt-Winters 季节性预测 + Modified Z-Score 检测器。4 种异常类型，纯 Rust 实现，零外部依赖。
+- **智能推荐引擎 v2** — 上下文感知的紧迫性倍率（1.0x–3.0x）、用户行为学习、跨模块关联加分。
+- **4D 磁盘健康雷达图** — 空间容量 / 垃圾堆积 / 增长趋势 / 碎片老化 四个子维度。
+- **自定义规则编辑器** — 创建、编辑、测试、删除自定义清理规则，实时模式测试器。
+- **6-Trait 平台抽象层** — 将所有 OS 相关代码隔离在编译期分发的 trait 实现中。
+- **三平台支持** — Windows `ReadDirectoryChangesW` / Linux inotify / macOS FSEvents 就绪，CI 矩阵构建。
 
 ## ✨ 功能特性
 
 - **交互式矩形树图** — 直观查看磁盘空间占用，支持逐级下钻到任意子目录
 - **智能风险分类** — 16 条内置规则 + 自定义规则编辑器，将每个目录划分为低/中/高三个风险等级
 - **一键安全清理** — 所有删除操作均进入回收站/废纸篓，绝不永久删除
-- **多驱动器支持** — 可扫描任意盘符，实时进度反馈
+- **多驱动器支持** — 可扫描任意盘符，流式实时进度反馈
 - **清理报告** — 搜索、筛选、排序分类项目；5 步引导式清理向导
 - **原生文件监控** — 内核级文件变更事件（Windows ReadDirectoryChangesW、Linux inotify）
 - **重复文件检测** — 三阶段流水线（大小 → 4KB 哈希 → SHA-256），支持硬链接感知
 - **文件老化分析** — 7 个时间桶、僵尸文件查找、增长热点检测
-- **智能推荐引擎** — 可配置权重的加权评分模型
-- **磁盘健康评分** — 综合健康指数（空闲空间 + 增长趋势 + 重复浪费 + 僵尸文件）
-- **并行扫描引擎** — jwalk + rayon；500GB 驱动器扫描时间 < 5 秒
-- **实时告警** — 低空间阈值 + 突发增长检测，Windows 原生通知
-- **自动清理调度** — 可配置的 LOW 风险自动清理，系统托盘集成
+- **智能推荐引擎 v2** — 上下文感知评分：紧迫性倍率 + 行为学习 + 关联加分
+- **4D 磁盘健康雷达图** — 空间容量 / 垃圾堆积 / 增长趋势 / 碎片老化 + ECharts 雷达图
+- **ML 智能异常检测** — Holt-Winters 季节性预测 + Modified Z-Score；4 种异常类型
+- **并行扫描引擎** — jwalk + rayon + 流式推送；500GB 驱动器扫描时间 < 5 秒
+- **实时告警** — 低空间阈值 + 突发增长 + 异常检测，Windows 原生通知
+- **Windows 后台服务模式** — 无窗口后台监控，系统托盘集成
+- **自动清理调度** — 可配置的 LOW 风险自动清理
 - **国际化** — 英文 + 简体中文，自动检测系统语言
 - **深色/浅色主题** — Aurora 设计系统，CSS 变量令牌
 
