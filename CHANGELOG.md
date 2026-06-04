@@ -2,6 +2,29 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [0.8.0] - Planned
+
+> Production-Ready Deep Intelligence. 2 phases, 10 feature versions.
+> Full plan: `docs/v0.8.0-plan.md`
+
+### Planned Features
+
+- Code signing via SignPath Foundation (Win) + Homebrew Cask (macOS) — $0 OSS distribution
+- Linux/macOS native CI validation + FSEvents activation
+- Frontend code splitting (React.lazy, first screen <300KB gzip)
+- Disk fragmentation analysis (extent-level, all 3 platforms)
+- burn DL anomaly detection (Autoencoder, pure Rust, zero C deps)
+- 6D disk health radar + composite score + health trend tracking
+- Predictive cleanup ("3 days until full" → quantified gain simulation)
+- Smart file classification (3-stage pipeline, 12 categories)
+
+### Known Follow-ups (deferred to v0.9.0)
+
+- Cloud Sync Bridge, Mobile Companion App, Web Dashboard
+- More languages (ko/es/etc.)
+
+---
+
 ## [0.7.0] - 2026-06-04
 
 > Intelligent Operations Platform — released. 119 tests. v0.6.8 hardening was folded into the v0.7.0 release pass.

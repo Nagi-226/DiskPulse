@@ -6,9 +6,9 @@
 ## Current Baseline
 
 - **Current version**: `v0.7.0` — Intelligent Operations Platform
-- **Next target**: Code signing, notarization, and public distribution
-- **Full plan**: `docs/v0.7.0-plan.md` (5 phases, 7 feature versions + release)
-- **Status**: v0.6.1–v0.7.0 complete; all 7 feature versions + release; 119 tests.
+- **Next target**: v0.8.0 — Production-Ready Deep Intelligence (see `docs/v0.8.0-plan.md`)
+- **Full plan**: `docs/v0.8.0-plan.md` (2 phases, 10 feature versions + release)
+- **Status**: v0.7.0 released; v0.8.0 planning complete; 119 tests.
 - **Last verified**: (2026-06-04) `cargo test` (119/119 passed), `cargo clippy -- -D warnings` (0 warnings), `npm run typecheck` (0 errors), `npm run build:web` (chunk-size warning only), `npm run tauri build` (Windows MSI/NSIS generated).
 
 ## What Works Right Now
@@ -348,14 +348,69 @@ v0.6.0 made DiskPulse fast and everywhere. v0.7.0 makes it **smart** — from "s
 | `AnomalyCard.tsx` | v0.6.5 | Dashboard anomaly summary card |
 | `useRemoteDevice.ts` (hook) | v0.6.7 | Remote device data query via WS |
 
-### Deferred to v0.8.0
+## v0.8.0 Roadmap — Production-Ready Deep Intelligence
+
+> Full plan: `docs/v0.8.0-plan.md` | Implementation tasks: `CODEX.md` § "v0.8.0 Implementation Tasks"
+
+### Theme
+
+v0.7.0 made DiskPulse smart. v0.8.0 makes it **shippable to the public** while pushing intelligence to **deep-learning level** — two independent tracks that don't block each other.
+
+### Phase 1: Production-Ready (v0.7.1 — v0.7.5)
+
+| Version | Focus | Key Deliverables | Priority |
+|---------|-------|-----------------|----------|
+| v0.7.1 | Code Signing + Notarization | SignPath Foundation (Win) + Homebrew Cask (macOS), $0 OSS distribution | P0 |
+| v0.7.2 | Linux Native CI | GitHub Actions ubuntu-latest: cargo test + .deb/.AppImage packaging | P0 |
+| v0.7.3 | macOS Native CI + FSEvents | GitHub Actions macos-latest + FSEvents native watcher activation | P0 |
+| v0.7.4 | Code Split + Auto-Update | React.lazy route splitting (first screen <300KB gzip) + GitHub Release update checker | P1 |
+| v0.7.5 | Perf Bench + i18n + Edge Fixes | 10 benchmarks (synthetic fixtures), Japanese locale, 6 edge-case fixes | P1 |
+
+### Phase 2: Deep Intelligence (v0.7.6 — v0.7.10)
+
+| Version | Focus | Key Deliverables | Priority |
+|---------|-------|-----------------|----------|
+| v0.7.6 | Disk Fragmentation Analysis | FSCTL_GET_RETRIEVAL_POINTERS / FS_IOC_FIEMAP / F_LOG2PHYS extent detection; analysis only, no defrag | P0 |
+| v0.7.7 | burn DL Anomaly Detection | Pure Rust Autoencoder (6→4→6 dims) + 3-way signal fusion; `#[cfg(feature = "ml-engine")]` compile-time gating + 8-point runtime fallback matrix | P0 |
+| v0.7.8 | Health Score v2 | 4D→6D radar (Space/Waste/Trend/Age/Frag/Anomaly) + composite score + health trend + actionable advice | P0 |
+| v0.7.9 | Predictive Cleanup | "3 days until full" → quantify gain if cleaned → time-sensitive pre-cleanup list; safety invariant: user confirmation required | P1 |
+| v0.7.10 | Smart File Classification | 3-stage pipeline (extension→magic bytes→burn classifier, 12 categories); `file_category` condition in risk rules | P1 |
+
+### v0.8.0 Release
+
+| Task | Status |
+|------|--------|
+| Target: 155+ tests (119 → 155, +36 new) | 📋 Planned |
+| 10 feature versions (v0.7.1–v0.7.10) | 📋 Planned |
+| 2 new burn models (AE ~50KB + Classifier ~80KB) | 📋 Planned |
+| 3-platform signed CI all green | 📋 Planned |
+| Docs sync: CLAUDE.md, PROGRESS.md, CHANGELOG.md, CODEX.md, README | 📋 Planned |
+
+### New Modules (v0.8.0 planned)
+
+| Module | Phase | Purpose |
+|--------|-------|---------|
+| `fileclass/` (4 files) | v0.7.10 | 3-stage file classification pipeline |
+| `anomaly/ae.rs` | v0.7.7 | burn Autoencoder model, training, inference |
+| `anomaly/features.rs` | v0.7.7 | 6-dim snapshot feature extractor |
+| `anomaly/synthetic.rs` | v0.7.7 | Synthetic training data generator |
+
+### New Crate Deps (v0.8.0 planned)
+
+| Crate | Phase | Purpose |
+|-------|-------|---------|
+| `burn = "0.16"` | v0.7.7 | Pure Rust DL framework |
+| `burn-ndarray = "0.16"` | v0.7.7 | CPU backend for burn |
+
+### Deferred to v0.9.0
 
 | Item | Rationale |
 |------|-----------|
-| Disk Defrag Analysis | New feature area, v0.7.0 scope full |
-| Deep Learning Anomaly Detection | Validate statistical models first |
-| Mobile App | Architecture decision pending |
-| Cloud Sync | Auth + encryption + cloud infra needed |
+| Cloud Sync Bridge | Auth + encryption + cloud infra needed first |
+| Mobile Companion App | React Native / Tauri Mobile, architecture decision pending |
+| External Storage Auto-Detection | Extra platform adaptation work |
+| Web Dashboard (browser access) | Needs Cloud Sync foundation |
+| More languages (ko/es/etc.) | Extend after v0.8.0 i18n framework validation |
 
 ## Safety Baseline
 
@@ -406,6 +461,7 @@ v0.6.0 made DiskPulse fast and everywhere. v0.7.0 makes it **smart** — from "s
 | v0.6.6 | Smart Recommendations v2 | ✅ | Urgency multiplier, behavior learning, health radar |
 | v0.6.7 | Multi-Device Dashboard | ✅ | WebSocket Hub, mDNS, pairing, remote device selector |
 | v0.7.0 | Intelligent Ops Platform | ✅ Complete | 119 tests, Windows MSI/NSIS generated, docs synced |
+| v0.8.0 | Production-Ready Deep Intelligence | 📋 Planned | 10 feature versions, 155+ tests, burn DL, 6D health, signed 3-platform CI |
 
 ## v0.1.0 Release Checklist
 

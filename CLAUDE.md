@@ -11,7 +11,7 @@
 - **Type**: Open source desktop application (MIT License)
 - **Repository**: E:\Github Project\DiskPulse
 - **Current Version**: v0.7.0
-- **Next Milestone**: v0.8.0 (see `docs/v0.7.0-plan.md` for deferred items)
+- **Next Milestone**: v0.8.0 — Production-Ready Deep Intelligence (see `docs/v0.8.0-plan.md`)
 - **v0.7.0 Plan**: 5 phases, 7 feature versions + release — streaming scan → MFT → service → ML → multi-device
 
 ## Tech Stack (LOCKED 鈥?do not change without explicit user approval)

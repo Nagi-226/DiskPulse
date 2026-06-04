@@ -29,11 +29,11 @@ If documentation conflicts with source code, trust the code and note the mismatc
 
 - Product: DiskPulse, a Windows 11 desktop app for disk monitoring and safe cleanup.
 - Current release baseline: `v0.7.0` (v0.6.1–v0.6.7 implemented; 119 tests; released 2026-06-04).
-- Next milestone: v0.8.0 — code signing, notarization, Linux/macOS native CI validation, deferred v0.7.0 items.
-- Full v0.7.0 roadmap: `docs/v0.7.0-plan.md`.
-- Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite.
-- Build targets: Windows (MSI/NSIS), Linux (.deb/.AppImage), macOS (.dmg).
-- Current state from project docs: v0.6.1–v0.7.0 complete; v0.7.0 released with 119 tests.
+- Next milestone: `v0.8.0` — Production-Ready Deep Intelligence (2 phases, 10 feature versions, 155+ tests target).
+- Full v0.8.0 roadmap: `docs/v0.8.0-plan.md`.
+- Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite, burn 0.16 (DL engine).
+- Build targets: Windows (MSI/NSIS, SignPath signed), Linux (.deb/.AppImage), macOS (.dmg, Homebrew Cask).
+- Current state from project docs: v0.7.0 released; v0.8.0 planning complete.
 
 ### v0.5.0 Implementation Tasks — Integration Excellence
 
@@ -707,6 +707,108 @@ Phase 5:  AA (depends on all above)
 | Y | ✅ | ✅ | ✅ | ✅ | ✅ | Rec changes |
 | Z | ✅ | ✅ (108+) | ✅ | ✅ | ✅ | Multi-device |
 | AA | ✅ | ✅ (115+) | ✅ | ✅ | ✅ | Full smoke |
+
+### v0.8.0 Implementation Tasks — Production-Ready Deep Intelligence
+
+> Priority: Execute in Phase order. Each version is independently deliverable.
+> Full roadmap: `docs/v0.8.0-plan.md`
+> Status: Planning complete — tasks to be detailed when implementation begins.
+
+#### Phase 1: Production-Ready (v0.7.1 — v0.7.5)
+
+**Task AB — Code Signing (v0.7.1)**
+- SignPath Foundation setup + `.signpath/config.yml`
+- Homebrew Cask formula creation
+- CI integration for signed artifacts
+
+**Task AC — Linux Native CI (v0.7.2)**
+- GitHub Actions ubuntu-latest build/test/package
+- Fix inotify FFI, gio trash → trash-rs fallback, statx kernel compat
+
+**Task AD — macOS Native CI + FSEvents (v0.7.3)**
+- GitHub Actions macos-latest build/test/package
+- FSEvents native watcher activation (polling → kernel-push)
+
+**Task AE — Code Split + Auto-Update (v0.7.4)**
+- React.lazy route splitting (first screen <300KB gzip)
+- `check_for_update` IPC command via GitHub Release API
+- Installer upgrade data preservation (user data dir isolation)
+
+**Task AF — Perf Bench + i18n + Edge Fixes (v0.7.5)**
+- 10 benchmarks (synthetic fixtures)
+- Japanese locale (`ja.json`)
+- 6 edge-case fixes (empty drive, large single file, deep nesting, etc.)
+
+#### Phase 2: Deep Intelligence (v0.7.6 — v0.7.10)
+
+**Task AG — Disk Fragmentation Analysis (v0.7.6)**
+- 3-platform extent detection (FSCTL/FIEMAP/F_LOG2PHYS)
+- `FragmentationView.tsx` UI component
+- Integration into recommendation engine
+
+**Task AH — burn DL Anomaly Detection (v0.7.7)**
+- burn Autoencoder model (6→4→6 dims, pure Rust)
+- 3-way signal fusion (HW + Z-Score + AE)
+- Compile-time feature gate (`ml-engine`)
+- 8-point runtime fallback matrix
+
+**Task AI — Health Score v2 (v0.7.8)**
+- 4D → 6D radar (Space/Waste/Trend/Age/Frag/Anomaly)
+- Composite health score + trend tracking + actionable advice
+- `health_snapshots` table
+
+**Task AJ — Predictive Cleanup (v0.7.9)**
+- `predict_disk_full()` with confidence intervals
+- `simulate_cleanup_gain()` quantified benefit estimation
+- Time-sensitive pre-cleanup list + user confirmation safety invariant
+
+**Task AK — Smart File Classification (v0.7.10)**
+- 3-stage pipeline: extension → magic bytes → burn classifier
+- 12 output categories + `file_category` risk rule condition
+- `fileclass/` module (4 files)
+
+#### v0.8.0 Task Dependency Graph
+
+```
+Phase 1:
+AB ──┬── AC ──┬── AE ── AF (P1, depends on P0 CI infrastructure)
+     ├── AD ──┤
+     └── (AC/AD independent, can parallelize)
+
+Phase 2:
+AG ──┬── AI ──┬── AJ (P1)
+     ├── AH ──┤
+     └── AK (P1, independent of AG/AH/AI)
+
+AG-AH: independent (fragmentation reads disk, AE reads history)
+AI: depends on AG (Frag score) + AH (Anomaly score)
+AJ: depends on AI (health score → urgency → pre-cleanup)
+AK: independent
+```
+
+#### v0.8.0 Verification Matrix
+
+| Task | cargo test | cargo clippy | npm typecheck | npm build:web | cross-platform CI |
+|------|:--:|:--:|:--:|:--:|:--:|
+| AB | — | — | — | — | SignPath smoke |
+| AC | ✅ (119+) | ✅ | — | — | ubuntu-latest |
+| AD | ✅ (119+) | ✅ | — | — | macos-latest |
+| AE | — | — | ✅ | ✅ (split check) | — |
+| AF | ✅ | ✅ | ✅ | ✅ | — |
+| AG | ✅ (+5) | ✅ | ✅ | ✅ | 3-platform |
+| AH | ✅ (+8) | ✅ | — | — | ml-engine gate test |
+| AI | ✅ (+7) | ✅ | ✅ | ✅ | — |
+| AJ | ✅ (+7) | ✅ | ✅ | ✅ | — |
+| AK | ✅ (+5) | ✅ | ✅ | ✅ | — |
+
+### burn Fallback Verification
+
+| Test | Condition | Expected |
+|------|-----------|----------|
+| `ml-engine` feature OFF | `cargo test --no-default-features` | All 119+ tests pass (statistical-only mode) |
+| AE model missing | Delete `diskpulse_ae.burn` | `ae_disabled=true`, no crash |
+| AE inference timeout | Inject >10ms delay | Batch skipped, next batch retries |
+| AE accuracy degraded | AUC < 0.7 synthetic test | Weights auto-adjust, statistical weight > 0.9 |
 
 ## Non-Negotiable Safety Rules
 
