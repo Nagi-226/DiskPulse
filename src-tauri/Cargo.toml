@@ -1,6 +1,6 @@
 [package]
 name = "diskpulse"
-version = "0.6.0"
+version = "0.7.0"
 description = "Real-time disk space monitor & safe cleanup tool for Windows 11"
 authors = ["FJL03"]
 edition = "2021"
@@ -28,6 +28,10 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 rayon = "1"
 anyhow = "1"
 sha2 = "0.10"
+futures-util = "0.3"
+mdns-sd = "0.20"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time"] }
+tokio-tungstenite = "0.29"
 windows = { version = "0.58", features = [
   "Win32_Storage_FileSystem",
   "Win32_Foundation",

@@ -446,3 +446,45 @@ export interface FileMeta {
   size_on_disk_bytes: number | null;
   identity: FileIdentity | null;
 }
+
+export interface DeviceInfo {
+  device_id: string;
+  name: string;
+  address: string;
+  paired: boolean;
+  connected: boolean;
+  last_seen_epoch_ms: number;
+}
+
+export interface PairingToken {
+  code: string;
+  device_name: string;
+  expires_at_epoch_ms: number;
+}
+
+export interface RemoteAlertPayload {
+  device_id: string;
+  alert_payload: unknown;
+}
+
+export interface HubDiscoveryInfo {
+  service_name: string;
+  mode: "mdns" | "manual";
+  port: number;
+  address_hint: string;
+}
+
+export type DashboardDevice = { kind: "local" } | { kind: "remote"; device: DeviceInfo };
+
+export interface RemoteDeviceRequest {
+  id?: string;
+  command: string;
+  payload?: unknown;
+}
+
+export interface RemoteDeviceResponse<T = unknown> {
+  id: string;
+  ok: boolean;
+  payload: T;
+  error: string | null;
+}

@@ -2,6 +2,54 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [0.7.0] - 2026-06-04
+
+> Intelligent Operations Platform — released. 119 tests. v0.6.8 hardening was folded into the v0.7.0 release pass.
+
+### Release Hardening
+
+- Bumped app/package versions to `0.7.0` across npm, Cargo, Cargo.lock, and Tauri config.
+- Added `tokio`, `tokio-tungstenite`, `futures-util`, and `mdns-sd` for multi-device Hub transport/discovery.
+- Completed v0.7.0 verification: `cargo test`, `cargo clippy -- -D warnings`, `npm run typecheck`, and `npm run build:web`.
+- Produced Windows MSI/NSIS bundles and recorded SHA-256 hashes in `docs/release-notes-v0.7.0.md`.
+- Updated all project documentation: PROGRESS.md, README.md, README_zh-CN.md, CLAUDE.md, CODEX.md.
+
+### Verification (v0.7.0)
+
+- `cargo test`: 119/119 passed.
+- `cargo clippy -- -D warnings`: 0 warnings.
+- `npm run typecheck`: 0 errors.
+- `npm run build:web`: passed (Vite chunk-size warning only).
+- `npm run tauri build`: passed on Windows, generating MSI and NSIS installers.
+
+### Known Follow-ups (deferred to v0.8.0)
+
+- Validate Linux `.deb` / `.AppImage` and macOS `.dmg` on native CI runners.
+- Add code signing and notarization before public distribution.
+- Consider frontend code-splitting to remove the Vite chunk-size warning.
+- Disk Defrag Analysis, Deep Learning Anomaly Detection, Mobile App, Cloud Sync.
+
+## [0.6.7] - 2026-06-04
+
+> Multi-device Dashboard complete. 119 tests.
+
+### Multi-Device Hub MVP
+
+- Added `src-tauri/src/hub/` module with lifecycle, registry, router, pairing, mDNS discovery, and WebSocket server.
+- Added 6-digit single-use pairing tokens and connected-device registry CRUD.
+- Registered Tauri IPC commands: `start_hub`, `stop_hub`, `get_connected_devices`, `get_hub_discovery_info`, `discover_devices`, `create_pairing_token`, `pair_device`, `unpair_device`.
+- Added `device-connected`, `device-disconnected`, and `remote-alert` event constants/emission paths.
+- Added `src/hooks/useRemoteDevice.ts` plus `DeviceInfo`, `PairingToken`, remote alert, discovery, and remote request types.
+- Added Dashboard device selector with local/remote device switching, Hub controls, mDNS discovery, and pairing token controls.
+- Added read-only remote command whitelist for `ping`, `scan_meta`, `scan_drive`, `get_disk_health`, and `detect_anomalies`; cleanup remains blocked remotely.
+
+### Verification (v0.6.7)
+
+- `cargo test`: 119/119 passed (up from 109 in v0.6.6).
+- `cargo clippy -- -D warnings`: 0 warnings.
+- `npm run typecheck`: 0 errors.
+- `npm run build:web`: passed (Vite chunk-size warning only).
+
 ## [0.6.6] - 2026-06-03
 
 > Phase 1-3 complete. 109 tests. v0.6.7 (multi-device) next.

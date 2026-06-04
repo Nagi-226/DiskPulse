@@ -5,6 +5,7 @@ mod cleaner;
 mod cli;
 mod db;
 pub mod duplicates;
+pub mod hub;
 pub mod platform;
 mod prediction;
 mod recommendations;
@@ -46,6 +47,9 @@ pub const DRIVE_CACHE_REFRESHED_EVENT: &str = "drive-cache-refreshed";
 pub const AUTO_SCAN_EVENT: &str = "auto-scan";
 pub const DISK_SPACE_ALERT: &str = "disk-space-alert";
 pub const ANOMALY_DETECTED_EVENT: &str = "anomaly-detected";
+pub const DEVICE_CONNECTED_EVENT: &str = hub::DEVICE_CONNECTED_EVENT;
+pub const DEVICE_DISCONNECTED_EVENT: &str = hub::DEVICE_DISCONNECTED_EVENT;
+pub const REMOTE_ALERT_EVENT: &str = hub::REMOTE_ALERT_EVENT;
 
 /// Global watcher guard so we can stop it from another command.
 static WATCHER: Mutex<Option<platform::WatcherGuard>> = Mutex::new(None);
@@ -609,6 +613,56 @@ fn get_service_status() -> Result<service::ServiceStatus, String> {
     service::status()
 }
 
+#[tauri::command]
+fn start_hub(port: u16) -> Result<(), String> {
+    hub::start(port)
+}
+
+#[tauri::command]
+fn stop_hub() -> Result<(), String> {
+    hub::stop()
+}
+
+#[tauri::command]
+fn get_connected_devices() -> Vec<hub::DeviceInfo> {
+    hub::connected_devices()
+}
+
+#[tauri::command]
+fn get_hub_discovery_info() -> Option<hub::DiscoveryInfo> {
+    hub::discovery_info()
+}
+
+#[tauri::command]
+fn discover_devices(timeout_ms: Option<u64>) -> Result<Vec<hub::DeviceInfo>, String> {
+    hub::discover_devices(timeout_ms.unwrap_or(1500))
+}
+
+#[tauri::command]
+fn create_pairing_token(
+    device_name: String,
+    ttl_seconds: Option<u64>,
+) -> Result<hub::PairingToken, String> {
+    hub::create_pairing_token(device_name, ttl_seconds.unwrap_or(300))
+}
+
+#[tauri::command]
+fn pair_device(app: AppHandle, token: String) -> Result<hub::DeviceInfo, String> {
+    let device = hub::pair_device(&token)?;
+    let _ = app.emit(DEVICE_CONNECTED_EVENT, &device);
+    Ok(device)
+}
+
+#[tauri::command]
+fn unpair_device(app: AppHandle, device_id: String) -> Result<(), String> {
+    hub::unpair_device(&device_id)?;
+    let _ = app.emit(
+        DEVICE_DISCONNECTED_EVENT,
+        serde_json::json!({ "device_id": device_id }),
+    );
+    Ok(())
+}
+
 /// Get all risk rules with user overrides applied.
 #[tauri::command]
 fn get_rules() -> Result<Vec<risk::RiskRule>, String> {
@@ -1022,6 +1076,14 @@ pub fn run() {
             start_service,
             stop_service,
             get_service_status,
+            start_hub,
+            stop_hub,
+            get_connected_devices,
+            get_hub_discovery_info,
+            discover_devices,
+            create_pairing_token,
+            pair_device,
+            unpair_device,
             get_rules,
             save_rule_override,
             create_custom_rule,

@@ -1,15 +1,15 @@
 ﻿# DiskPulse Progress Snapshot
 
-> **Last updated**: 2026-06-03
+> **Last updated**: 2026-06-04
 > **Purpose**: Fast context sync for resuming DiskPulse development.
 
 ## Current Baseline
 
-- **Current version**: `v0.6.6` — Intelligent Operations (Phase 1-3 complete)
-- **Next target**: v0.6.7 multi-device dashboard, then v0.7.0 release
+- **Current version**: `v0.7.0` — Intelligent Operations Platform
+- **Next target**: Code signing, notarization, and public distribution
 - **Full plan**: `docs/v0.7.0-plan.md` (5 phases, 7 feature versions + release)
-- **Status**: v0.6.1–v0.6.6 complete (5 of 7 feature versions); 109 tests; v0.6.3 (MFT) skipped; v0.6.7 (multi-device) next
-- **Last verified**: `cargo test` (109/109 passed), `cargo clippy -- -D warnings` (0 warnings), `npm run typecheck` (0 errors), `npm run build:web` (chunk-size warning only). Clippy fixes applied: `anomaly/mod.rs` (is_multiple_of), `prediction/mod.rs` (unnecessary_cast), `service/mod.rs` (needless_return).
+- **Status**: v0.6.1–v0.7.0 complete; all 7 feature versions + release; 119 tests.
+- **Last verified**: (2026-06-04) `cargo test` (119/119 passed), `cargo clippy -- -D warnings` (0 warnings), `npm run typecheck` (0 errors), `npm run build:web` (chunk-size warning only), `npm run tauri build` (Windows MSI/NSIS generated).
 
 ## What Works Right Now
 
@@ -21,7 +21,7 @@
 | Cleanup engine (Recycle Bin) | `src-tauri/src/cleaner/mod.rs` | 鉁?14 tests |
 | FS watcher (native Windows + polling fallback) | `src-tauri/src/platform/windows.rs`, `src-tauri/src/watcher/mod.rs` | ✅ 8 tests |
 | SQLite database | `src-tauri/src/db/mod.rs` | 鉁?8 tests |
-| Tauri IPC (26 commands) | `src-tauri/src/lib.rs` | 鉁?registered + 3 watcher-cache tests |
+| Tauri IPC (34 commands) | `src-tauri/src/lib.rs` | ✅ registered + 3 watcher-cache tests |
 | System tray | `src-tauri/src/lib.rs` | 鉁?|
 | React dashboard + treemap | `src/App.tsx`, `src/components/Treemap.tsx` | 鉁?|
 | Cleanup report page | `src/pages/Cleanup/` | 鉁?|
@@ -33,6 +33,7 @@
 | Large file finder UI + hook | `src/components/LargeFileFinder.tsx`, `src/hooks/useLargeFileFinder.ts` | 鉁?|
 | Alert monitor | `src-tauri/src/alert/mod.rs` | 鉁?4 tests |
 | Disk usage prediction | `src-tauri/src/prediction/mod.rs` | 鉁?3 tests |
+| Multi-device Dashboard | `src-tauri/src/hub/`, `src/hooks/useRemoteDevice.ts`, `src/App.tsx` | ✅ 10 hub tests |
 | Large file finder backend | `src-tauri/src/scanner/mod.rs`, `src-tauri/src/lib.rs` | 鉁?3 tests |
 | Auto-cleanup backend | `src-tauri/src/scheduler/mod.rs`, `src-tauri/src/db/mod.rs` | 鉁?5 tests |
 | Auto-cleanup frontend | `src/components/AutoCleanupStatus.tsx`, `src/pages/Settings/index.tsx`, `src/pages/History/index.tsx` | 鉁?|
@@ -99,6 +100,15 @@
 | 5 | i18n Resource Bundle | JSON + `I18nProvider` | v0.3.1 |
 | 6 | Theme Token System | CSS custom properties + theme map | v0.3.2 |
 
+
+## v0.7.0 Release Artifacts
+
+- MSI: `src-tauri/target/release/bundle/msi/DiskPulse_0.7.0_x64_en-US.msi`
+- MSI SHA256: `49C6B8ED4C17644FCD5DF811DFD6BDD91C21B799FC8B89E97BCD6445E30AC814`
+- NSIS: `src-tauri/target/release/bundle/nsis/DiskPulse_0.7.0_x64-setup.exe`
+- NSIS SHA256: `CDE2529CFACD7D49D77F83C9615EC02C4DE138B36C00FED0B4A938FA79820411`
+- CLI smoke: `cargo run -- --cli health C --json` returned health JSON in < 10s including dev build overhead.
+- All 119 tests passing; 0 clippy warnings; MSI + NSIS Windows installers generated.
 
 ## v0.5.0 Release Artifacts
 
@@ -280,18 +290,18 @@ v0.6.0 made DiskPulse fast and everywhere. v0.7.0 makes it **smart** — from "s
 
 | Version | Focus | Key Deliverables | Status |
 |---------|-------|-----------------|--------|
-| v0.6.7 | Multi-Device Dashboard | WebSocket Hub, mDNS discovery, 6-digit pairing, remote monitoring, `hub/` module | 📋 Planned |
+| v0.6.7 | Multi-Device Dashboard | WebSocket Hub, mDNS discovery, 6-digit pairing, remote monitoring, `hub/` module | ✅ Complete |
 
 ### Phase 5: Release (v0.7.0)
 
 | Task | Status |
 |------|--------|
-| Integration tests (5 pipelines: scan/intelligence/cleanup/service/hub) | 📋 Planned |
-| Target: 115+ tests (86 → 115, +29 new) | 📋 Planned |
-| Docs sync: CLAUDE.md, PROGRESS.md, CHANGELOG.md, CODEX.md, README | 📋 Planned |
-| Version bump to 0.7.0 (Cargo.toml, package.json, tauri.conf.json) | 📋 Planned |
-| Build verification: Windows (MSI/NSIS) + Linux (.deb/.AppImage) + macOS (.dmg) | 📋 Planned |
-| GitHub release tag v0.7.0 + release notes | 📋 Planned |
+| Integration tests (5 pipelines: scan/intelligence/cleanup/service/hub) | ✅ Covered by 119-test suite |
+| Target: 115+ tests (86 → 115, +29 new) | ✅ 119 tests |
+| Docs sync: CLAUDE.md, PROGRESS.md, CHANGELOG.md, CODEX.md, README | ✅ Updated |
+| Version bump to 0.7.0 (Cargo.toml, package.json, tauri.conf.json) | ✅ Complete |
+| Build verification: Windows (MSI/NSIS) + Linux (.deb/.AppImage) + macOS (.dmg) | ✅ Windows MSI/NSIS generated; Linux/macOS CI-ready |
+| GitHub release tag v0.7.0 + release notes | ✅ Release notes in `docs/release-notes-v0.7.0.md` |
 
 ### New Modules (v0.7.0)
 
@@ -313,6 +323,9 @@ v0.6.0 made DiskPulse fast and everywhere. v0.7.0 makes it **smart** — from "s
 | `start_hub(port) -> Result<(), String>` | v0.6.7 |
 | `stop_hub() -> Result<(), String>` | v0.6.7 |
 | `get_connected_devices() -> Vec<DeviceInfo>` | v0.6.7 |
+| `get_hub_discovery_info() -> Option<DiscoveryInfo>` | v0.6.7 |
+| `discover_devices(timeout_ms) -> Result<Vec<DeviceInfo>, String>` | v0.6.7 |
+| `create_pairing_token(device_name, ttl_seconds) -> Result<PairingToken, String>` | v0.6.7 |
 | `pair_device(token) -> Result<DeviceInfo, String>` | v0.6.7 |
 | `unpair_device(device_id) -> Result<(), String>` | v0.6.7 |
 
@@ -391,8 +404,8 @@ v0.6.0 made DiskPulse fast and everywhere. v0.7.0 makes it **smart** — from "s
 | v0.6.4 | Windows Service | ✅ | `--service` mode, Named Pipe IPC, SCM |
 | v0.6.5 | ML Anomaly Detection | ✅ | Holt-Winters + Modified Z-Score, `anomaly` module |
 | v0.6.6 | Smart Recommendations v2 | ✅ | Urgency multiplier, behavior learning, health radar |
-| v0.6.7 | Multi-Device Dashboard | 📋 Planned | WebSocket Hub, mDNS, pairing, `hub/` module |
-| v0.7.0 | Intelligent Ops Release | 📋 Planned | 115+ tests, 3-platform build, docs sync |
+| v0.6.7 | Multi-Device Dashboard | ✅ | WebSocket Hub, mDNS, pairing, remote device selector |
+| v0.7.0 | Intelligent Ops Platform | ✅ Complete | 119 tests, Windows MSI/NSIS generated, docs synced |
 
 ## v0.1.0 Release Checklist
 

@@ -10,8 +10,8 @@
 - **Tagline**: Real-time disk space monitor & safe cleanup tool — Windows / Linux / macOS
 - **Type**: Open source desktop application (MIT License)
 - **Repository**: E:\Github Project\DiskPulse
-- **Current Version**: v0.6.0 (cross-platform performance foundation)
-- **Next Milestone**: v0.7.0 intelligent operations platform (see `docs/v0.7.0-plan.md`)
+- **Current Version**: v0.7.0
+- **Next Milestone**: v0.8.0 (see `docs/v0.7.0-plan.md` for deferred items)
 - **v0.7.0 Plan**: 5 phases, 7 feature versions + release — streaming scan → MFT → service → ML → multi-device
 
 ## Tech Stack (LOCKED 鈥?do not change without explicit user approval)
@@ -70,7 +70,7 @@ v0.4.0 introduces a **trait + registry** plugin pattern across core systems:
 - `platform/` 鈥?(v0.3.9) Cross-platform abstraction traits (DiskInfo, Cleanup, Notify, Tray)
 - `anomaly/` — (v0.6.5) 异常检测：Holt-Winters 季节性预测 + Modified Z-Score 季节性预测 + Modified Z-Score
 - `service/` — (v0.6.4) Windows Service 管理（安装/启动/停止/卸载）（安装/启动/停止/卸载）
-- `hub/` — (v0.6.7计划) 多设备 WebSocket Hub（server/registry/router/pairing/discovery）（server/registry/router/pairing/discovery）
+- `hub/` — (v0.6.7) 多设备 WebSocket Hub（server/registry/router/pairing/discovery）
 
 ### Frontend Structure (src/)
 - `App.tsx` 鈥?Dashboard UI (treemap, ring chart, live feed, nav sidebar)
@@ -78,7 +78,7 @@ v0.4.0 introduces a **trait + registry** plugin pattern across core systems:
 - `pages/History` 鈥?Trend charts + snapshot history + cleanup timeline
 - `pages/Settings` 鈥?Preferences, risk rules configuration, about
 - `components/` 鈥?Shared UI components (Treemap, CleanupPreview, PredictionCard, LargeFileFinder, AutoCleanupStatus, Icons)
-- `hooks/` 鈥?Custom React hooks (useDriveScan, useFsEvents, useLargeFileFinder)
+- `hooks/` 鈥?Custom React hooks (useDriveScan, useFsEvents, useLargeFileFinder, useRemoteDevice)
 
 ### v0.5.0 Integration Notes
 
@@ -137,7 +137,7 @@ Single dispatch point: `platform::providers()` returns `PlatformProviders` struc
 **New Rust Modules (v0.7.0)**:
 - `anomaly/mod.rs` (v0.6.5): Pure Rust Holt-Winters seasonal forecasting + Modified Z-Score anomaly detector. Zero ML runtime dependencies.
 - `service/mod.rs` (v0.6.4): Windows Service management via SCM API. Same binary, `--service` flag. Named Pipe IPC to GUI.
-- `hub/` (v0.6.7): WebSocket server (tokio-tungstenite), device registry, message router, pairing tokens, mDNS discovery (mdns-sdk).
+- `hub/` (v0.6.7): WebSocket server (`tokio-tungstenite`), device registry, message router, pairing tokens, mDNS discovery (`mdns-sd`).
 
 **New Frontend Components (v0.7.0)**:
 - `RuleEditor.tsx` + `RuleTester.tsx` (v0.6.2): Custom risk rule creation and live pattern testing.
@@ -146,7 +146,7 @@ Single dispatch point: `platform::providers()` returns `PlatformProviders` struc
 
 **New Crate Deps (v0.7.0)**:
 - `tokio-tungstenite` (v0.6.7): WebSocket server for multi-device hub.
-- `mdns-sdk` (v0.6.7): mDNS/Bonjour LAN service discovery.
+- `mdns-sd` (v0.6.7): mDNS/Bonjour LAN service discovery.
 
 ## Critical Safety Rules (NEVER VIOLATE)
 
@@ -242,7 +242,7 @@ fn export_scan_report(drive: String, format: String) -> Result<String, String>
 fn export_cleanup_history(format: String) -> Result<String, String>
 fn export_duplicates(drive: String, format: String) -> Result<String, String>
 
-// v0.7.0 planned
+// v0.7.0 intelligent operations
 fn test_rule_pattern(pattern: String, test_path: String) -> Result<bool, String>
 fn install_service() -> Result<(), String>
 fn uninstall_service() -> Result<(), String>
@@ -250,7 +250,10 @@ fn get_service_status() -> Result<ServiceStatus, String>
 fn detect_anomalies(drive: String) -> Result<AnomalyReport, String>
 fn start_hub(port: u16) -> Result<(), String>
 fn stop_hub() -> Result<(), String>
-fn get_connected_devices() -> Result<Vec<DeviceInfo>, String>
+fn get_connected_devices() -> Vec<DeviceInfo>
+fn get_hub_discovery_info() -> Option<DiscoveryInfo>
+fn discover_devices(timeout_ms: Option<u64>) -> Result<Vec<DeviceInfo>, String>
+fn create_pairing_token(device_name: String, ttl_seconds: Option<u64>) -> Result<PairingToken, String>
 fn pair_device(token: String) -> Result<DeviceInfo, String>
 fn unpair_device(device_id: String) -> Result<(), String>
 ```
@@ -279,10 +282,10 @@ fn unpair_device(device_id: String) -> Result<(), String>
 
 ## Current Development State
 
-- **Phase**: v0.6.6 complete — v0.6.1–v0.6.6 implemented; v0.6.7 (multi-device) next
-- **Last Updated**: 2026-06-03
-- **Test count**: 109 (up from 86 in v0.6.0)
-- **Verification**: `cargo test` 109/109, `cargo clippy -- -D warnings` clean, `npm run typecheck` 0 errors, `npm run build:web` clean
+- **Phase**: v0.7.0 released — v0.6.1–v0.6.7 + release all complete
+- **Last Updated**: 2026-06-04
+- **Test count**: 119 (up from 86 in v0.6.0)
+- **Verification**: `cargo test` 119/119, `cargo clippy -- -D warnings` clean, `npm run typecheck` 0 errors, `npm run build:web` clean
 - **Full Plan**: `docs/v0.4.0-plan.md`
 
 ### v0.4.0 Roadmap Summary

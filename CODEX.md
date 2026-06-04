@@ -28,12 +28,12 @@ If documentation conflicts with source code, trust the code and note the mismatc
 ## Current Baseline
 
 - Product: DiskPulse, a Windows 11 desktop app for disk monitoring and safe cleanup.
-- Current release baseline: `v0.6.6` (v0.6.1–v0.6.6 implemented; 109 tests).
-- Next milestone: v0.6.7 multi-device dashboard, then v0.7.0 release.
+- Current release baseline: `v0.7.0` (v0.6.1–v0.6.7 implemented; 119 tests; released 2026-06-04).
+- Next milestone: v0.8.0 — code signing, notarization, Linux/macOS native CI validation, deferred v0.7.0 items.
 - Full v0.7.0 roadmap: `docs/v0.7.0-plan.md`.
 - Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite.
 - Build targets: Windows (MSI/NSIS), Linux (.deb/.AppImage), macOS (.dmg).
-- Current state from project docs: v0.5.0 complete (81 tests); v0.6.0 planning complete.
+- Current state from project docs: v0.6.1–v0.7.0 complete; v0.7.0 released with 119 tests.
 
 ### v0.5.0 Implementation Tasks — Integration Excellence
 
@@ -635,22 +635,24 @@ Verify: `cargo test`, `npm run typecheck`, manual: fill disk → see urgency mul
 
 Goal: WebSocket-based hub for跨设备监控. One machine sees all devices' disk status.
 
+Current status (2026-06-04): complete. Real `tokio-tungstenite` transport, mDNS advertisement/browser, App UI device selector, pairing token controls, and remote scan command routing are implemented.
+
 Files: `src-tauri/src/hub/` (6 new files), `src-tauri/src/lib.rs`, `src-tauri/Cargo.toml`, `src/App.tsx`, `src/types.ts`, `src/hooks/useRemoteDevice.ts` (new), `src/components/*`
 
 Steps:
-1. Add `tokio-tungstenite` and `mdns-sdk` to `Cargo.toml` (cross-platform).
-2. Create `hub/mod.rs`: `Hub` struct with start/stop lifecycle.
-3. Create `hub/server.rs`: `tokio-tungstenite` WS server on configurable port (default 19740).
-4. Create `hub/registry.rs`: `DeviceRegistry` — `HashMap<String, DeviceInfo>` + sender channels.
-5. Create `hub/router.rs`: parse WS messages → route to target device → collect response → send back.
-6. Create `hub/pairing.rs`: generate 6-digit numeric token, verify on first connection, persist token to SQLite.
-7. Create `hub/discovery.rs`: mDNS service advertisement + browser (Bonjour `_diskpulse._tcp`).
-8. Register IPC: `start_hub`, `stop_hub`, `get_connected_devices`, `pair_device`, `unpair_device`.
-9. Create `useRemoteDevice` hook: detect hub status → list devices → query remote device data via WS.
-10. Update `App.tsx`: sidebar device list (online/offline indicator) + dashboard device selector dropdown.
-11. Update dashboard components to accept optional `deviceId` parameter (None = local).
-12. Security: WS binds localhost only. Remote commands whitelist: read-only auto-allow; write commands require Hub user confirmation.
-13. Add 5+ tests: message routing, device registry CRUD, pairing token validation, mDNS ad parsing, remote query.
+1. DONE: Add `tokio-tungstenite` and `mdns-sd` to `Cargo.toml` (cross-platform).
+2. DONE: Create `hub/mod.rs`: Hub start/stop lifecycle state.
+3. DONE: Create `hub/server.rs`: `tokio-tungstenite` WS server on configurable localhost port.
+4. DONE: Create `hub/registry.rs`: `DeviceRegistry` — `HashMap<String, DeviceInfo>`.
+5. DONE: Create `hub/router.rs`: typed hub event envelope + read-only WS request/response routing.
+6. DONE: Create `hub/pairing.rs`: generate 6-digit numeric token and verify single-use token.
+7. DONE: Create `hub/discovery.rs`: mDNS service advertisement + browser (Bonjour `_diskpulse._tcp`).
+8. DONE: Register IPC: `start_hub`, `stop_hub`, `get_connected_devices`, `get_hub_discovery_info`, `discover_devices`, `create_pairing_token`, `pair_device`, `unpair_device`.
+9. DONE: Create `useRemoteDevice` hook: hub status, device list, pairing, events, remote WS query helper.
+10. DONE: Update `App.tsx`: dashboard device selector, online/offline indicator, Hub controls, pairing token controls.
+11. DONE: Update dashboard data flow to render local or remote drive data.
+12. DONE: Security: WS binds localhost only. Remote command whitelist allows read-only commands; cleanup remains blocked remotely.
+13. DONE: Add 10 hub tests: message routing, device registry CRUD, pairing token validation, mDNS parsing, remote WebSocket query.
 
 Verify: `cargo test` (108+), manual: two devices → pair → view remote disk → receive remote alert.
 
@@ -668,10 +670,10 @@ Steps:
 3. Integration test 3 — Cleanup pipeline: `recommend → preview → clean → undo` (with custom rule matches).
 4. Integration test 4 — Service pipeline: `install → start → monitor_alert → snapshot → stop → uninstall`.
 5. Integration test 5 — Hub pipeline: `start_hub → mdns_discover → pair → remote_query → event_forward → stop`.
-6. Update all docs: `CLAUDE.md`, `PROGRESS.md`, `CHANGELOG.md`, `CODEX.md`, `README.md`, `README_zh-CN.md`.
-7. Version bump to `0.7.0` in `Cargo.toml`, `package.json`, `tauri.conf.json`.
-8. `cargo test` — target 115+ tests, all platforms.
-9. `cargo clippy -- -D warnings`, `npm run typecheck`, `npm run build:web`.
+6. DONE: Update all docs: `CLAUDE.md`, `PROGRESS.md`, `CHANGELOG.md`, `CODEX.md`, `README.md`, `README_zh-CN.md`.
+7. DONE: Version bump to `0.7.0` in `Cargo.toml`, `package.json`, `tauri.conf.json`.
+8. DONE: `cargo test` — target 115+ tests, reached 119 tests locally.
+9. DONE: `cargo clippy -- -D warnings`, `npm run typecheck`, `npm run build:web`.
 10. `npm run tauri build` — all 3 platforms (Windows MSI/NSIS, Linux .deb/.AppImage, macOS .dmg).
 11. Record release artifact hashes. Create GitHub release tag v0.7.0.
 
@@ -869,4 +871,3 @@ Update docs when a change affects architecture, public commands, release status,
 - `README.md` / `README_zh-CN.md`: public setup and feature descriptions.
 
 Keep this `CODEX.md` focused on agent operating context, not detailed changelog history.
-

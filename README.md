@@ -15,7 +15,7 @@
 DiskPulse gives you full visibility into your disk space usage and helps you reclaim wasted gigabytes — safely. Built with an Aurora-designed UI, powered by a high-performance Rust backend with native kernel-level file monitoring, intelligent anomaly detection, and committed to never losing your data.
 
 
-## v0.6.6 Intelligent Operations
+## v0.7.0 Intelligent Operations
 
 - **Streaming incremental scan** — first results in <500ms, Treemap updates batch-by-batch. Incremental rescan on FS changes.
 - **MFT direct scan** — NTFS `FSCTL_ENUM_USN_DATA` fast approximate scan. Automatic fallback to JwalkStage.
@@ -23,6 +23,7 @@ DiskPulse gives you full visibility into your disk space usage and helps you rec
 - **ML anomaly detection** — Holt-Winters seasonal forecasting + Modified Z-Score detector. 4 anomaly types, pure Rust, zero ML deps.
 - **Smart recommendations v2** — context-aware urgency multiplier (1.0x–3.0x), user behavior learning, cross-module correlation bonus.
 - **4D disk health radar** — Space / Waste / Trend / Age sub-scores replacing single health index.
+- **Multi-device Dashboard** — local WebSocket Hub, mDNS discovery, 6-digit pairing tokens, remote read-only scans.
 - **Custom rule editor** — create, edit, test, and delete custom cleanup rules with live pattern tester.
 - **6-trait platform abstraction** — `DiskInfoProvider`, `FsWatcher`, `DirScanner`, `CleanupProvider`, `FileMetaAnalyzer`, `SystemInfo` isolate all OS-specific code behind compile-time dispatch.
 - **Native Windows watcher** — `ReadDirectoryChangesW` kernel-push events (< 50ms latency, ~0% idle CPU).
@@ -45,6 +46,7 @@ DiskPulse gives you full visibility into your disk space usage and helps you rec
 - **Parallel scan engine** — jwalk + rayon + streaming; 500GB drives in under 5 seconds
 - **Real-time alerts** — low-space thresholds + sudden growth + anomaly detection via native notifications
 - **Windows Service mode** — headless background monitoring with system tray integration
+- **Multi-device Dashboard** — discover and monitor paired DiskPulse devices on the LAN
 - **Auto-cleanup scheduler** — configurable LOW-risk automatic cleanup
 - **i18n** — English + Simplified Chinese, auto-detect OS language
 - **Dark/Light themes** — Aurora design system with CSS variable tokens
@@ -145,7 +147,7 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | Layer | Stack |
 |-------|-------|
 | Desktop Shell | Tauri 2.x |
-| Backend | Rust — 20 modules, 6 platform traits, 86 tests |
+| Backend | Rust — 20 modules, 6 platform traits, 119 tests |
 | Frontend | React 19 + TypeScript 5 + Tailwind CSS 4 |
 | Visualization | ECharts 6 + D3 7 |
 | Storage | SQLite (via rusqlite) |
@@ -164,7 +166,7 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | v0.4.0 | Extensible intelligence platform (i18n, themes, duplicates, aging, recommendations) | ✅ |
 | v0.5.0 | Integration excellence (cross-module wiring, CLI, wizard, notifications) | ✅ |
 | **v0.6.0** | **Cross-platform performance foundation (native watcher, 6 traits, Linux, macOS)** | ✅ |
-| v0.7.0 | Intelligent operations (planned) | 📋 |
+| **v0.7.0** | **Intelligent operations platform (119 tests, multi-device dashboard)** | ✅ |
 
 ## ⌨️ IPC Commands
 
@@ -212,6 +214,16 @@ cancel_aging_scan() -> ()
 // Recommendations
 get_recommendations(drive: String) -> Vec<Recommendation>
 get_disk_health(drive: String) -> DiskHealth
+
+// Multi-device Hub
+start_hub(port: u16) -> ()
+stop_hub() -> ()
+get_connected_devices() -> Vec<DeviceInfo>
+get_hub_discovery_info() -> Option<DiscoveryInfo>
+discover_devices(timeout_ms: u64) -> Vec<DeviceInfo>
+create_pairing_token(device_name: String, ttl_seconds: u64) -> PairingToken
+pair_device(token: String) -> DeviceInfo
+unpair_device(device_id: String) -> ()
 
 // Rules & Export
 create_custom_rule(name: String, pattern: String, risk_level: String) -> RiskRule

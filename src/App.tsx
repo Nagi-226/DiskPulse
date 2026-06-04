@@ -20,8 +20,9 @@ import { NavIcons } from "./components/Icons";
 import { formatSize } from "./utils/format";
 import { useDriveScan } from "./hooks/useDriveScan";
 import { useFsEvents } from "./hooks/useFsEvents";
+import { useRemoteDevice } from "./hooks/useRemoteDevice";
 import { useTranslation } from "react-i18next";
-import type { AnomalyEvent, AutoCleanupStatus as AutoCleanupStatusType, CleanItem, CleanProgress, CleanResult, DirInfo, DiskSpaceAlertPayload, RiskItem, ScanProgress } from "./types";
+import type { AnomalyEvent, AutoCleanupStatus as AutoCleanupStatusType, CleanItem, CleanProgress, CleanResult, DeviceInfo, DirInfo, DiskSpaceAlertPayload, DriveInfo, RiskItem, ScanProgress } from "./types";
 
 const EMPTY_RISK_ITEMS: RiskItem[] = [];
 
@@ -198,6 +199,84 @@ function CacheBadge({
   );
 }
 
+function DeviceSelector({
+  devices,
+  selectedDeviceId,
+  isHubRunning,
+  loading,
+  discoveryHint,
+  pairingCode,
+  onSelect,
+  onStartHub,
+  onStopHub,
+  onDiscover,
+  onCreateToken,
+  onPairToken,
+}: {
+  devices: DeviceInfo[];
+  selectedDeviceId: string;
+  isHubRunning: boolean;
+  loading: boolean;
+  discoveryHint: string | null;
+  pairingCode: string | null;
+  onSelect: (deviceId: string) => void;
+  onStartHub: () => void;
+  onStopHub: () => void;
+  onDiscover: () => void;
+  onCreateToken: () => void;
+  onPairToken: (token: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-aurora-border/40 bg-aurora-elevated/50 px-2 py-1.5">
+      <span className={`w-2 h-2 rounded-full ${isHubRunning ? "bg-success live-dot" : "bg-aurora-border"}`} />
+      <select
+        value={selectedDeviceId}
+        onChange={(e) => onSelect(e.target.value)}
+        className="bg-transparent text-xs text-text-primary focus:outline-none min-w-[130px]"
+        title={discoveryHint ?? "Local device"}
+      >
+        <option value="local">Local device</option>
+        {devices.map((device) => (
+          <option key={device.device_id} value={device.device_id}>
+            {device.connected ? "●" : "○"} {device.name}
+          </option>
+        ))}
+      </select>
+      <button
+        className="px-2 py-1 rounded-lg text-[11px] font-semibold border border-aurora-border/50 text-text-secondary hover:text-accent-light hover:border-accent/40 disabled:opacity-50"
+        disabled={loading}
+        onClick={isHubRunning ? onStopHub : onStartHub}
+      >
+        {isHubRunning ? "Stop Hub" : "Start Hub"}
+      </button>
+      <button
+        className="px-2 py-1 rounded-lg text-[11px] font-semibold border border-aurora-border/50 text-text-secondary hover:text-accent-light hover:border-accent/40 disabled:opacity-50"
+        disabled={loading}
+        onClick={onDiscover}
+      >
+        Discover
+      </button>
+      <button
+        className="px-2 py-1 rounded-lg text-[11px] font-semibold border border-aurora-border/50 text-text-secondary hover:text-accent-light hover:border-accent/40 disabled:opacity-50"
+        disabled={loading || !isHubRunning}
+        onClick={onCreateToken}
+      >
+        {pairingCode ?? "Token"}
+      </button>
+      <button
+        className="px-2 py-1 rounded-lg text-[11px] font-semibold border border-aurora-border/50 text-text-secondary hover:text-accent-light hover:border-accent/40 disabled:opacity-50"
+        disabled={loading}
+        onClick={() => {
+          const token = window.prompt("Enter the 6-digit DiskPulse pairing token");
+          if (token) onPairToken(token);
+        }}
+      >
+        Pair
+      </button>
+    </div>
+  );
+}
+
 // --- Navigation Sidebar ---
 const NAV_ITEMS = [
   { id: "dashboard", labelKey: "nav.dashboard", Icon: NavIcons.Dashboard },
@@ -343,14 +422,54 @@ export default function App() {
 
   // File system watcher
   const { isWatching, lastBatch, eventCount, startWatching, stopWatching } = useFsEvents();
+  const {
+    devices,
+    pairingToken,
+    discoveryInfo,
+    isHubRunning,
+    loading: remoteLoading,
+    error: remoteError,
+    setError: setRemoteError,
+    startHub,
+    stopHub,
+    discoverDevices,
+    createToken,
+    pairDevice,
+    queryRemoteDevice,
+  } = useRemoteDevice();
+  const [selectedDeviceId, setSelectedDeviceId] = useState("local");
+  const [remoteDriveInfo, setRemoteDriveInfo] = useState<DriveInfo | null>(null);
+  const [remoteScanLoading, setRemoteScanLoading] = useState(false);
+
+  const selectedRemoteDevice = devices.find((device) => device.device_id === selectedDeviceId) ?? null;
+  const activeDriveInfo = selectedRemoteDevice ? remoteDriveInfo : driveInfo;
+  const activeDeviceLabel = selectedRemoteDevice ? selectedRemoteDevice.name : "Local device";
 
   const startDriveScan = useCallback(
-    (drive: string) => {
+    async (drive: string) => {
       setBreadcrumbs([]);
       setDrillData(null);
+      setRemoteError(null);
+      if (selectedRemoteDevice) {
+        setRemoteScanLoading(true);
+        try {
+          const remoteInfo = await queryRemoteDevice<DriveInfo>(
+            selectedRemoteDevice,
+            { command: "scan_drive", payload: { drive } },
+            60_000,
+          );
+          setRemoteDriveInfo(remoteInfo);
+          return remoteInfo;
+        } catch (e) {
+          setRemoteError(String(e));
+          return null;
+        } finally {
+          setRemoteScanLoading(false);
+        }
+      }
       return scanDrive(drive);
     },
-    [scanDrive],
+    [queryRemoteDevice, scanDrive, selectedRemoteDevice, setRemoteError],
   );
 
   // Refs for tray event closures to access latest state
@@ -521,11 +640,12 @@ export default function App() {
     setActiveTab("cleanup");
   }
 
-  const usedPercent = driveInfo
-    ? (driveInfo.used_bytes / Math.max(driveInfo.total_bytes, 1)) * 100
+  const busy = loading || remoteScanLoading;
+  const usedPercent = activeDriveInfo
+    ? (activeDriveInfo.used_bytes / Math.max(activeDriveInfo.total_bytes, 1)) * 100
     : 0;
 
-  const currentData = drillData ?? driveInfo?.top_dirs ?? [];
+  const currentData = drillData ?? activeDriveInfo?.top_dirs ?? [];
   const maxDirSize = currentData[0]?.size_bytes ?? 1;
 
   return (
@@ -575,7 +695,7 @@ export default function App() {
           <ThemeSwitcher />
           <div className="flex items-center gap-2 text-xs text-text-muted">
             <span className={`${isWatching ? "live-dot" : ""} w-2 h-2 rounded-full ${isWatching ? "bg-success" : "bg-aurora-border"}`} />
-            <span>{loading ? (cleanProgress ? "Cleaning..." : "Scanning...") : drillLoading ? "Loading folder..." : isWatching ? `Live · ${eventCount} events` : "Monitor paused"}</span>
+            <span>{busy ? (cleanProgress ? "Cleaning..." : "Scanning...") : drillLoading ? "Loading folder..." : isWatching ? `Live · ${eventCount} events` : "Monitor paused"}</span>
           </div>
           <button
             className={`w-full px-3 py-2 rounded-xl text-xs font-medium border transition-colors ${
@@ -612,22 +732,43 @@ export default function App() {
               )}
             </div>
             <p className="text-xs text-text-muted mt-0.5">
-              {driveInfo
-                ? `${driveInfo.drive_letter}: Drive — ${formatSize(driveInfo.total_bytes)} total`
+              {activeDriveInfo
+                ? `${activeDeviceLabel} · ${activeDriveInfo.drive_letter}: Drive — ${formatSize(activeDriveInfo.total_bytes)} total`
                 : "Ready"}
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Drive selector */}
             <NotificationCenter />
+
+            <DeviceSelector
+              devices={devices}
+              selectedDeviceId={selectedDeviceId}
+              isHubRunning={isHubRunning}
+              loading={remoteLoading || remoteScanLoading}
+              discoveryHint={discoveryInfo?.address_hint ?? null}
+              pairingCode={pairingToken?.code ?? null}
+              onSelect={(deviceId) => {
+                setSelectedDeviceId(deviceId);
+                setBreadcrumbs([]);
+                setDrillData(null);
+                if (deviceId === "local") {
+                  setRemoteDriveInfo(null);
+                }
+              }}
+              onStartHub={() => void startHub()}
+              onStopHub={() => void stopHub()}
+              onDiscover={() => void discoverDevices()}
+              onCreateToken={() => void createToken(activeDeviceLabel)}
+              onPairToken={(token) => void pairDevice(token)}
+            />
 
             {/* Drive selector */}
             {drives.length > 0 && (
               <select
                 value={selectedDrive}
                 onChange={(e) => startDriveScan(e.target.value)}
-                disabled={loading}
+                disabled={busy}
                 className="px-3 py-2 rounded-lg bg-aurora-elevated border border-aurora-border/50 text-sm text-text-primary
                            focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30
                            disabled:opacity-50 cursor-pointer appearance-none"
@@ -646,7 +787,7 @@ export default function App() {
             )}
 
             {/* Quick stats */}
-            {driveInfo && !loading && (
+            {activeDriveInfo && !busy && (
               <div className="flex items-center gap-4 mr-4 px-4 py-1.5 rounded-lg bg-aurora-elevated/50 border border-aurora-border/30">
                 <div className="flex items-center gap-1.5 text-xs">
                   <span className="text-text-muted">Used</span>
@@ -655,7 +796,7 @@ export default function App() {
                 <div className="w-px h-4 bg-aurora-border/60" />
                 <div className="flex items-center gap-1.5 text-xs">
                   <span className="text-text-muted">Free</span>
-                  <span className="font-mono font-semibold text-success">{formatSize(driveInfo.free_bytes)}</span>
+                  <span className="font-mono font-semibold text-success">{formatSize(activeDriveInfo.free_bytes)}</span>
                 </div>
               </div>
             )}
@@ -663,10 +804,10 @@ export default function App() {
             <button
               className="btn-primary"
               onClick={() => startDriveScan(selectedDrive)}
-              disabled={loading}
+              disabled={busy}
             >
               <span className="flex items-center gap-2">
-                {loading ? (
+                {busy ? (
                   <>
                     <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                       <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="32" />
@@ -679,12 +820,12 @@ export default function App() {
                       <circle cx="11" cy="11" r="8" />
                       <path d="M21 21l-4.35-4.35" />
                     </svg>
-                    Scan {selectedDrive}: Drive
+                    Scan {selectedRemoteDevice ? selectedRemoteDevice.name : `${selectedDrive}: Drive`}
                   </>
                 )}
               </span>
             </button>
-            {loading && (
+            {busy && !selectedRemoteDevice && (
               <button
                 className="px-4 py-2.5 rounded-xl text-sm font-semibold border border-danger/30 bg-risk-high-bg text-danger hover:bg-risk-high-bg/80 transition-colors"
                 onClick={cancelScan}
@@ -696,14 +837,20 @@ export default function App() {
         </header>
 
         {/* Error banner */}
-        {error && (
+        {(error || remoteError) && (
           <div className="mx-8 mt-4 px-4 py-3 rounded-xl bg-risk-high-bg border border-red-500/20 text-sm text-danger flex items-center gap-2">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <circle cx="12" cy="12" r="10" />
               <path d="M12 8v4M12 16h.01" />
             </svg>
-            {error}
-            <button onClick={() => setError(null)} className="ml-auto text-text-muted hover:text-text-primary">
+            {error || remoteError}
+            <button
+              onClick={() => {
+                setError(null);
+                setRemoteError(null);
+              }}
+              className="ml-auto text-text-muted hover:text-text-primary"
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
@@ -857,25 +1004,27 @@ export default function App() {
                 </div>
               )}
 
-              {driveInfo ? (
+              {activeDriveInfo ? (
                 <>
                   <DriveRing
                     usedPercent={usedPercent}
-                    driveLetter={driveInfo.drive_letter}
-                    totalBytes={driveInfo.total_bytes}
-                    usedBytes={driveInfo.used_bytes}
-                    freeBytes={driveInfo.free_bytes}
+                    driveLetter={activeDriveInfo.drive_letter}
+                    totalBytes={activeDriveInfo.total_bytes}
+                    usedBytes={activeDriveInfo.used_bytes}
+                    freeBytes={activeDriveInfo.free_bytes}
                   />
 
-                  <PredictionCard drive={driveInfo.drive_letter} />
+                  {!selectedRemoteDevice && <PredictionCard drive={activeDriveInfo.drive_letter} />}
 
-                  <AnomalyCard drive={driveInfo.drive_letter} />
+                  {!selectedRemoteDevice && <AnomalyCard drive={activeDriveInfo.drive_letter} />}
 
-                  <AutoCleanupStatus />
+                  {!selectedRemoteDevice && <AutoCleanupStatus />}
 
-                  <RecommendationCard drive={driveInfo.drive_letter} onAddToCleanup={handleAddToCleanup} />
+                  {!selectedRemoteDevice && (
+                    <RecommendationCard drive={activeDriveInfo.drive_letter} onAddToCleanup={handleAddToCleanup} />
+                  )}
 
-                  {loading && currentData.length === 0 && (
+                  {busy && currentData.length === 0 && (
                     <div className="glass-card p-6">
                       <div className="flex items-center justify-between mb-5">
                         <div>
@@ -897,7 +1046,7 @@ export default function App() {
                           />
                         ))}
                       </div>
-                      {!drillData && driveInfo.top_dirs.some((dir) => dir.is_approximate) && (
+                      {!drillData && activeDriveInfo.top_dirs.some((dir) => dir.is_approximate) && (
                         <span className="rounded-full border border-warning/25 bg-risk-medium-bg px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-warning">
                           Approximate MFT
                         </span>
@@ -912,7 +1061,7 @@ export default function App() {
                         className="text-text-muted hover:text-accent-light transition-colors px-2 py-0.5 rounded-md hover:bg-aurora-elevated/50"
                         onClick={() => handleBreadcrumbClick(-1)}
                       >
-                        {driveInfo.drive_letter}:\\
+                        {activeDriveInfo.drive_letter}:\\
                       </button>
                       {breadcrumbs.map((crumb, i) => (
                         <span key={crumb.path} className="flex items-center gap-1.5">
@@ -944,13 +1093,13 @@ export default function App() {
                         <p className="text-xs text-text-muted mt-0.5">
                           {drillData
                             ? `${drillData.length} items — click to explore deeper`
-                            : `${driveInfo.top_dirs.length} top-level directories — click to drill down`}
+                            : `${activeDriveInfo.top_dirs.length} top-level directories — click to drill down`}
                         </p>
                       </div>
                     </div>
                     <Treemap
-                      data={drillData ?? driveInfo.top_dirs}
-                      totalBytes={drillData ? drillTotal : driveInfo.total_bytes}
+                      data={drillData ?? activeDriveInfo.top_dirs}
+                      totalBytes={drillData ? drillTotal : activeDriveInfo.total_bytes}
                       onDrillDown={handleDrillDown}
                     />
                   </div>
@@ -979,7 +1128,7 @@ export default function App() {
                     </div>
                   </div>
                 </>
-              ) : !error && !loading ? (
+              ) : !error && !remoteError && !busy ? (
                 <div className="flex flex-col items-center justify-center py-32 text-text-muted">
                   <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" opacity="0.3">
                     <circle cx="11" cy="11" r="8" />
