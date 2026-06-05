@@ -16,6 +16,14 @@ const cargoToml = read("src-tauri/Cargo.toml");
 const linuxPlatform = read("src-tauri/src/platform/linux.rs");
 const docs = read("docs/linux-ci.md");
 
+function stepBlock(name) {
+  const match = workflow.match(new RegExp(`- name: ${name}[\\s\\S]*?(?=\\n      - name:|\\n$)`));
+  return match?.[0] ?? "";
+}
+
+const linuxVerify = stepBlock("Verify Linux bundles");
+const macVerify = stepBlock("Verify macOS bundles");
+
 check("CI includes ubuntu-latest matrix", /ubuntu-latest/.test(workflow));
 check("Linux deps include WebKitGTK 4.1", /libwebkit2gtk-4\.1-dev/.test(workflow));
 check("Linux deps include AppIndicator", /libayatana-appindicator3-dev/.test(workflow));
@@ -25,6 +33,9 @@ check("Linux deps include libssl-dev", /libssl-dev/.test(workflow));
 check("Linux deps include pkg-config", /pkg-config/.test(workflow));
 check("Linux deps include libfuse2 for AppImage validation", /libfuse2/.test(workflow));
 check("Linux build validates bundle files", /Verify Linux bundles/.test(workflow));
+check("Linux verify step checks .deb", /deb=\(.*\.deb/.test(linuxVerify));
+check("Linux verify step checks .AppImage", /appimage=\(.*\.AppImage/.test(linuxVerify));
+check("macOS verify step does not check AppImage", !/AppImage/.test(macVerify));
 check("Linux upload fails if bundle files are missing", /if-no-files-found:\s*error/.test(workflow));
 check("Linux upload includes deb artifact path", /bundle\/deb\/\*\.deb/.test(workflow));
 check("Linux upload includes AppImage artifact path", /bundle\/appimage\/\*\.AppImage/.test(workflow));

@@ -2,6 +2,40 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [1.0.0] — Planned (target: mid-July 2026)
+
+> Full plan: `docs/v1.0.0-plan.md`. 4 milestones (M1–M4), 14 feature versions, 180+ tests target.
+
+### M1: Production Verification (v0.8.1–v0.8.3)
+- SignPath Foundation OSS approval + Windows EV signing
+- Linux ubuntu-latest native CI: cargo test + .deb/.AppImage packaging
+- macOS macos-latest native CI: FSEvents activation + .dmg packaging
+
+#### Local readiness update (2026-06-05)
+- Added `npm run verify:m1-release` and `docs/m1-release-readiness.md` to keep the v0.8.1-v0.8.2 gate explicit and repeatable.
+- Hardened Windows release artifacts: unsigned and signed installer uploads now fail if missing, signed output is checked for MSI/EXE files, and artifacts use 14-day retention.
+- Fixed Linux/macOS bundle verification split: Linux now validates both `.deb` and `.AppImage`; macOS validates `.dmg` only.
+- External gates remain pending: SignPath Foundation approval/secrets and a real `ubuntu-latest` GitHub Actions run.
+
+### M2: Full Intelligence → v0.9.0 (v0.8.4–v0.8.8)
+- burn Autoencoder anomaly detection (6-dim→4-dim→6-dim, ~50KB model)
+- burn file classifier Stage 3 (12-class softmax, ~80KB model)
+- External storage auto-detection (WM_DEVICECHANGE / udev / IOKit)
+- Korean + Spanish locales (5 languages total)
+- Model fine-tune UI (Settings → AI Model panel)
+
+### M3: Ecosystem → v0.10.0 (v0.9.1–v0.9.3)
+- Self-hosted relay server (Rust binary, systemd/Docker, E2E encryption)
+- Cloud Sync Bridge (WAN device pairing, relay-based)
+- Web Dashboard (embedded HTTP server, shared React dual-build, interactive mode)
+
+### M4: Public Release → v1.0.0
+- 5 integration test pipelines, 10 real-hardware benchmarks
+- 3-platform signed artifacts (SignPath Windows, Homebrew macOS, Snap Linux)
+- 180+ Rust tests, all docs synced
+
+---
+
 ## [0.8.0] - 2026-06-05
 
 > Production-Ready Deep Intelligence. Local v0.7.6-v0.8.0 implementation is complete with 129 Rust tests. Native Linux/macOS runner validation and true platform extent APIs remain external validation/follow-up items.
@@ -618,4 +652,3 @@ First production-ready release. All core features implemented and tested.
 - Disk scanner with Win32 GetDiskFreeSpaceExW
 - Aurora design system with CSS custom properties
 - SVG ring chart + top-20 directory bar chart
-

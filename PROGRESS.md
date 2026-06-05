@@ -5,11 +5,11 @@
 
 ## Current Baseline
 
-- **Current version**: `v0.8.0` — Production-Ready Deep Intelligence local implementation
-- **Next target**: v0.9.0 follow-ups / native runner validation
-- **Full plan**: `docs/v0.8.0-plan.md` (2 phases, 10 feature versions + release)
-- **Status**: v0.8.0 local implementation complete. Native Linux/macOS CI artifacts and real platform fragmentation APIs still require native runner validation.
-- **Last verified**: (2026-06-05) `cargo test --manifest-path src-tauri\Cargo.toml` (129/129), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `cargo bench --manifest-path src-tauri\Cargo.toml`, `npm run verify:signing`, `npm run verify:linux-ci`.
+- **Current version**: `v0.8.0` — Production-Ready Deep Intelligence local implementation (committed & pushed)
+- **Next target**: M1 v0.8.1–v0.8.3 (Native Runner + Signing) → M2 v0.9.0 (burn DL + Extended Storage + i18n) → M3 v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0
+- **Full plans**: `docs/v0.8.0-plan.md` (M1 details) + `docs/v1.0.0-plan.md` (M1–M4 master plan, 4 milestones, 14 feature versions)
+- **Status**: v0.8.0 local implementation complete and pushed. v0.8.1-v0.8.2 local readiness is complete; SignPath approval/secrets and a GitHub Actions `ubuntu-latest` run remain external/native gates. M2 (burn DL development) can proceed in parallel.
+- **Last verified**: (2026-06-05) `cargo test --manifest-path src-tauri\Cargo.toml` (129/129), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `cargo bench --manifest-path src-tauri\Cargo.toml`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`.
 
 ## What Works Right Now
 
@@ -411,6 +411,117 @@ v0.7.0 made DiskPulse smart. v0.8.0 makes it **shippable to the public** while p
 | External Storage Auto-Detection | Extra platform adaptation work |
 | Web Dashboard (browser access) | Needs Cloud Sync foundation |
 | More languages (ko/es/etc.) | Extend after v0.8.0 i18n framework validation |
+
+## v0.8.0→v1.0.0 Master Roadmap — Public Release Journey
+
+> Full plan: `docs/v1.0.0-plan.md` | 4 milestones, 14 feature versions
+
+### Theme
+
+v0.8.0 made DiskPulse production-ready with deep intelligence. The v1.0.0 journey makes it **publicly shippable** — signed, cross-platform, with burn deep learning, cloud sync, and a Web Dashboard.
+
+**Key decisions**: A+B fusion (Public Release + Full Features), burn DL complete (AE + Classifier), progressive Cloud Sync (relay → accounts), interactive Web Dashboard (embedded HTTP + shared React codebase), milestone-driven versioning.
+
+### M1: v0.8.1–v0.8.3 — Production Verification (target: mid-June 2026)
+
+> Can run in PARALLEL with M2. M1 is ops/verification; M2 is dev/feature.
+
+| Version | Focus | Key Deliverables | Priority |
+|---------|-------|-----------------|----------|
+| v0.8.1 | SignPath Approval + Windows Signing | OSS application submission, GitHub Secrets, CI signing webhook test, signed MSI/NSIS | ✅ Local-ready / ⏳ External |
+| v0.8.2 | Linux Native Runner | ubuntu-latest: cargo test + inotify FFI verification + .deb/.AppImage packaging | ✅ Local-ready / ⏳ Native |
+| v0.8.3 | macOS Native Runner + FSEvents | macos-latest: FSEvents activation + .dmg packaging + trash-rs verification | P0 |
+
+**M1 completion**: 3-platform CI all green + Windows signed artifacts → "minimum shippable version"
+
+**Local readiness note**: `docs/m1-release-readiness.md` captures the v0.8.1-v0.8.2 local gate. The current local checks cover SignPath workflow shape, signed artifact verification, Ubuntu dependency setup, and `.deb`/`.AppImage` bundle assertions; they do not replace external SignPath approval or a real Linux native runner result.
+
+### M2: v0.8.4–v0.8.8 → v0.9.0 — Full Intelligence (target: late June 2026)
+
+| Version | Focus | Key Deliverables | Priority |
+|---------|-------|-----------------|----------|
+| v0.8.4 | burn AE Anomaly Detection | burn Autoencoder (6→4→6), synthetic training pipeline, 3-way signal fusion, 8 risk mitigations | P0 |
+| v0.8.5 | burn File Classifier Stage 3 | burn 12-class softmax (8→32→16→12), 5000+ training samples, file_category risk rules | P0 |
+| v0.8.6 | Extended Storage | external drive hot-plug detection (WM_DEVICECHANGE/udev/IOKit), new storage-attached events | P1 |
+| v0.8.7 | i18n Expansion | Korean (ko) + Spanish (es) locales — total 5 languages (en/zh-CN/ja/ko/es) | P1 |
+| v0.8.8 | Model Fine-tune UI | Settings → AI Model panel, AUC metrics, user fine-tune trigger (>60 snapshots), model reset | P2 |
+
+**M2 completion**: 152+ tests, burn AE AUC > 0.85, classifier accuracy > 85%, 5 languages, external storage hot-plug
+
+### M3: v0.9.1–v0.9.3 → v0.10.0 — Ecosystem Connection (target: early July 2026)
+
+| Version | Focus | Key Deliverables | Priority |
+|---------|-------|-----------------|----------|
+| v0.9.1 | Relay Server | Self-hosted relay (Rust binary, systemd/Docker), public community relay (wss://relay.diskpulse.dev), E2E encryption | P0 |
+| v0.9.2 | Cloud Sync Bridge | WAN device pairing via relay, existing Hub protocol reuse, 4 new IPC commands | P0 |
+| v0.9.3 | Web Dashboard | Embedded HTTP server (axum), shared React codebase dual-build (Tauri/Web), interactive mode with cleanup confirmation guard | P0 |
+
+**M3 completion**: 167+ tests, two devices paired across internet, Web Dashboard at localhost:PORT
+
+### M4: v1.0.0 — Public Release (target: mid-July 2026)
+
+| Task | Status |
+|------|--------|
+| 5 integration test pipelines (scan/intelligence/cleanup/cloud/web) | ⏳ |
+| 10 performance benchmarks on real hardware (3 platforms) | ⏳ |
+| Target: 180+ tests | ⏳ |
+| Windows (SignPath signed MSI/NSIS) + Linux (.deb/.AppImage/Snap) + macOS (.dmg/Homebrew) | ⏳ |
+| Docs sync: all MD files | ⏳ |
+| GitHub Release tag v1.0.0 + release notes | ⏳ |
+
+### Risk Matrix (all 9 risks mitigated)
+
+| # | Risk | Level | Mitigation |
+|---|------|-------|------------|
+| R1 | SignPath delay | 🔴 | Sigstore fallback; M1/M2 parallel |
+| R2 | burn compile failure | 🟡 | feature-gate `ml-engine`, statistical fallback |
+| R3 | AE accuracy < 0.7 | 🟡 | dynamic weight degradation, auto-disable |
+| R4 | Relay ops burden | 🟡 | self-hosted design, LAN mode zero-dependency |
+| R5 | Web Dashboard scope | 🟡 | shared codebase, degradable to read-only |
+| R6 | Native CI bugs | 🟡 | polling fallback, fix-then-release |
+| R7 | 14 versions too long | 🟢 | P0 priority, P1/P2 deferrable |
+| R8 | FS extent APIs denied | 🟢 | sampling fallback, unreadable marker |
+| R9 | macOS FSEvents issues | 🟡 | polling fallback retained |
+
+### Deferred to v1.1+
+
+| Item | Rationale |
+|------|-----------|
+| Tauri Mobile Companion App | Architecture decision + development scope |
+| Plugin Marketplace | Stable API needed first |
+| OAuth Account System | Pairing-code model sufficient for v1.0 |
+| More languages (fr/de/pt) | 5 languages cover primary user base |
+| Cloud Backup | Relay server does not decrypt data |
+
+### New Crate Deps (M2)
+
+| Crate | Version | Purpose | Feature-gate |
+|-------|---------|---------|-------------|
+| `burn` | 0.16 | DL framework (Autoencoder + Classifier) | `ml-engine` |
+| `burn-ndarray` | 0.16 | CPU backend | `ml-engine` |
+
+### New Modules (M2–M3)
+
+| Module | Milestone | Purpose |
+|--------|-----------|---------|
+| `anomaly/ae.rs` | M2 | burn AE model + training + inference |
+| `anomaly/features.rs` | M2 | 6-dim snapshot feature extraction |
+| `anomaly/synthetic.rs` | M2 | synthetic training data generator |
+| `fileclass/model.rs` | M2 | burn classifier + inference |
+| `fileclass/features.rs` | M2 | 8-dim file feature extraction |
+| `storage/mod.rs` | M2 | external storage hot-plug detection |
+| `relay/mod.rs` | M3 | relay client (connect/auth/route) |
+| `web/mod.rs` | M3 | embedded HTTP server for Web Dashboard |
+
+### Target Test Counts
+
+| Milestone | Test Count |
+|-----------|-----------|
+| v0.8.0 (baseline) | 129 |
+| M1 (v0.8.1–0.8.3) | 130+ |
+| M2 (v0.9.0) | 152+ |
+| M3 (v0.10.0) | 167+ |
+| M4 (v1.0.0) | 180+ |
 
 ## Safety Baseline
 

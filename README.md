@@ -179,6 +179,14 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | **v0.7.2** | **Linux native CI configuration (ubuntu-latest deps, .deb/.AppImage verification, trash-rs fallback)** | ✅ Local |
 | **v0.7.5** | **Production-ready hardening (macOS FSEvents, code splitting, update check, perf bench, Japanese locale)** | ✅ Local |
 | **v0.8.0** | **Production-Ready Deep Intelligence (fragmentation, anomaly fusion, 6D health, predictive cleanup, file classification)** | ✅ Local |
+| **v0.8.1** | **SignPath Approval + Windows Signing** | ✅ Local-ready / ⏳ External |
+| **v0.8.2** | **Linux Native Runner (ubuntu-latest CI)** | ✅ Local-ready / ⏳ Native |
+| **v0.8.3** | **macOS Native Runner + FSEvents** | ⏳ Native |
+| **v0.9.0** | **Full Intelligence: burn DL (AE + Classifier), Extended Storage, Korean/Spanish** | ⏳ Planned |
+| **v0.10.0** | **Ecosystem: Cloud Sync Bridge + Web Dashboard** | ⏳ Planned |
+| **v1.0.0** | **Public Release (180+ tests, 3-platform signed, docs synced)** | ⏳ Planned |
+
+> Full master plan: [`docs/v1.0.0-plan.md`](docs/v1.0.0-plan.md)
 
 ## ⌨️ IPC Commands
 

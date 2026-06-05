@@ -29,9 +29,9 @@ If documentation conflicts with source code, trust the code and note the mismatc
 
 - Product: DiskPulse, a Windows 11 desktop app for disk monitoring and safe cleanup.
 - Current release baseline: `v0.8.0` local Production-Ready Deep Intelligence complete (fragmentation analysis, anomaly fusion fallback, 6D health, predictive cleanup, file classification; native runner validation pending).
-- Next milestone: `v0.9.0` follow-ups / native runner validation.
-- Full v0.8.0 roadmap: `docs/v0.8.0-plan.md`.
-- Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite, burn 0.16 (DL engine).
+- Next milestone: M1 v0.8.1–v0.8.3 (Native Runner + Signing) → M2 v0.9.0 (burn DL + Extended Storage + i18n) → M3 v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0 (Public Release).
+- Full v1.0.0 roadmap: `docs/v1.0.0-plan.md` (master plan). M1 details: `docs/v0.8.0-plan.md`.
+- Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite, burn 0.16 (DL engine, feature-gated behind `ml-engine`).
 - Build targets: Windows (MSI/NSIS, SignPath signed), Linux (.deb/.AppImage), macOS (.dmg, Homebrew Cask).
 - Current state from project docs: v0.8.0 implemented locally; native runner validation and true platform extent counters remain follow-ups.
 
@@ -814,6 +814,176 @@ AK: independent
 | AE model missing | Delete `diskpulse_ae.burn` | `ae_disabled=true`, no crash |
 | AE inference timeout | Inject >10ms delay | Batch skipped, next batch retries |
 | AE accuracy degraded | AUC < 0.7 synthetic test | Weights auto-adjust, statistical weight > 0.9 |
+
+### v0.8→v1.0.0 Implementation Tasks — Public Release Journey
+
+> Priority: Execute M1 and M2 in PARALLEL. M1 is ops/verification; M2 is dev/feature.
+> Full roadmap: `docs/v1.0.0-plan.md`
+> Status: Planning complete — tasks to be detailed as implementation begins.
+
+#### M1: Production Verification (v0.8.1 — v0.8.3)
+
+**Task AL — SignPath Approval + Windows Signing (v0.8.1)**
+- Status: ✅ Local-ready / ⏳ External SignPath approval + secrets pending
+- Submit OSS application to SignPath Foundation
+- Configure GitHub Secrets (`SIGNPATH_API_TOKEN`, `SIGNPATH_ORGANIZATION_ID`)
+- Test CI release-tag signing webhook
+- Verify signed MSI/NSIS artifacts
+- Fallback: Sigstore ($0, GitHub OIDC) if SignPath not approved
+- External dependency: SignPath review (1-3 days typical)
+- Files: `.github/workflows/ci.yml`, `.signpath/config.yml`, `docs/m1-release-readiness.md`
+
+**Task AM — Linux Native Runner Validation (v0.8.2)**
+- Status: ✅ Local-ready / ⏳ `ubuntu-latest` native GitHub Actions run pending
+- Push to GitHub → trigger `ubuntu-latest` CI job
+- Install GTK/WebKit/FUSE system deps in CI
+- Run `cargo test` full suite on Linux (verify inotify FFI tests pass)
+- Run `npm run tauri build` → verify `.deb` + `.AppImage` output
+- Fix any `#[cfg]` gating or FFI issues found on native runner
+- Fallback: `npm run verify:linux-ci` already passes locally
+- Files: `.github/workflows/ci.yml`, `src-tauri/src/platform/linux.rs`, `docs/m1-release-readiness.md`
+
+**Task AN — macOS Native Runner + FSEvents Activation (v0.8.3)**
+- Push to GitHub → trigger `macos-latest` CI job
+- Activate FSEvents native watcher (code already written, needs real macOS test)
+- Run `cargo test` full suite on macOS
+- Run `npm run tauri build` → verify `.dmg` output
+- Verify `/System/Volumes/Data` synthetic volume filtering
+- Fallback: polling watcher retained if FSEvents has issues
+- Files: `.github/workflows/ci.yml`, `src-tauri/src/platform/macos.rs`
+
+#### M2: Full Intelligence (v0.8.4 — v0.8.8) → v0.9.0
+
+**Task AO — burn Autoencoder Anomaly Detection (v0.8.4) P0**
+- Add `burn = "0.16"` and `burn-ndarray = "0.16"` to Cargo.toml (feature-gated `ml-engine`)
+- Create `anomaly/ae.rs`: AE model (6→16→8→4→8→16→6, ReLU), training loop, inference
+- Create `anomaly/features.rs`: 6-dim feature extraction from snapshot history
+- Create `anomaly/synthetic.rs`: generate 1000 normal + 200 anomaly snapshots for training
+- Implement 3-way signal fusion with dynamic weights (healthy/degraded/disabled)
+- Add 8 runtime fallback scenarios (model missing, corrupted, timeout, accuracy degradation)
+- Embed pre-trained `diskpulse_ae.burn` (~50KB) or download from GitHub Release
+- Add Settings toggle: "AI-enhanced anomaly detection"
+- Target: +8 tests (AE training convergence, fusion weights, fallback scenarios)
+- Files: `src-tauri/src/anomaly/{ae,features,synthetic}.rs`, `src-tauri/Cargo.toml`
+
+**Task AP — burn File Classifier Stage 3 (v0.8.5) P0**
+- Create `fileclass/model.rs`: 12-class burn classifier (8→32→16→12, softmax)
+- Create `fileclass/features.rs`: 8-dim file feature extractor (size_log, extension_entropy, byte_entropy, null_byte_ratio, printable_ratio, path_depth, parent_dir_type)
+- Generate 5000+ synthetic training samples across 12 categories
+- Wire Stage 3 into existing 3-stage pipeline (extensions → magic → burn)
+- Add `file_category` condition to risk rule engine
+- Embed pre-trained `diskpulse_classifier.burn` (~80KB) or download from GitHub Release
+- Add `classify_files` and `classify_file` IPC commands
+- Target: +5 tests (feature extraction, classifier accuracy, pipeline integration)
+- Files: `src-tauri/src/fileclass/{model,features}.rs`, `src-tauri/src/risk/mod.rs`
+
+**Task AQ — External Storage Auto-Detection (v0.8.6) P1**
+- Create `storage/mod.rs` with `ExternalStorageDetector` trait
+- Windows: `WM_DEVICECHANGE` message handler
+- Linux: udev monitor via `libudev` FFI
+- macOS: IOKit notification via `objc`
+- Emit `storage-attached` / `storage-detached` IPC events
+- Add `list_external_storage()` and `get_storage_info(path)` IPC commands
+- Target: +4 tests (mock device events, platform detection)
+- Files: `src-tauri/src/storage/mod.rs` (new), `src-tauri/src/platform/{windows,linux,macos}.rs`
+
+**Task AR — Korean + Spanish Locales (v0.8.7) P1**
+- Create `src/i18n/locales/ko.json` — Korean translation
+- Create `src/i18n/locales/es.json` — Spanish translation
+- Update Settings language selector: en / zh-CN / ja / ko / es (5 languages)
+- Target: no new Rust tests (i18n is frontend-only)
+- Files: `src/i18n/locales/{ko,es}.json`, `src/pages/Settings/index.tsx`
+
+**Task AS — Model Fine-tune UI (v0.8.8) P2**
+- Add Settings → "AI Model" sub-tab
+- Show: model version, online AUC, fusion weight status
+- Add "Fine-tune" button (requires >60 snapshots in history)
+- Add "Reset Model" button (restore pre-trained weights)
+- Add `fine_tune_model()` and `reset_model()` IPC commands
+- Target: +2 tests (fine-tune eligibility check, reset restores default)
+- Files: `src-tauri/src/anomaly/ae.rs`, `src/components/ModelPanel.tsx` (new)
+
+#### M3: Ecosystem Connection (v0.9.1 — v0.9.3) → v0.10.0
+
+**Task AT — Relay Server (v0.9.1) P0**
+- Create separate Rust binary `diskpulse-relay` in `src-relay/`
+- WebSocket relay: accept client connections, route messages by device ID
+- E2E encryption: relay cannot decrypt device messages (NaCl box or similar)
+- Configuration: single YAML (port, TLS cert path, rate limits)
+- Deployment artifacts: systemd unit, Dockerfile
+- Public community relay: `wss://relay.diskpulse.dev` (free, no SLA)
+- Target: +6 tests (connection routing, E2E encryption, rate limiting)
+- Files: `src-relay/` (new directory, separate crate)
+
+**Task AU — Cloud Sync Bridge (v0.9.2) P0**
+- Create `relay/mod.rs`: relay client (connect, authenticate, route)
+- Extend existing Hub: support cloud device registry alongside LAN devices
+- Reuse 6-digit pairing token mechanism for WAN pairing
+- Add IPC: `connect_relay(url)`, `disconnect_relay()`, `get_relay_status()`, `list_cloud_devices()`
+- Auto-discovery: try LAN first (mDNS), fallback to relay query
+- Target: +4 tests (relay connect/disconnect, cloud pairing, message routing)
+- Files: `src-tauri/src/relay/mod.rs` (new), `src-tauri/src/hub/{mod,registry,router}.rs`
+
+**Task AV — Web Dashboard (v0.9.3) P0**
+- Create `web/mod.rs`: embedded HTTP server (axum) on localhost:PORT
+- Serve React Web build from static files (same source, dual Vite build)
+- Create `src/api/index.ts`: auto-detect environment → `invoke` (Tauri) or `fetch` (Web)
+- WebSocket proxy: `/ws` → Hub for real-time data
+- REST API: `/api/cmd/*` → read-only Tauri command whitelist
+- Safety: Web mode CANNOT execute cleanup (only read + trigger desktop confirmation)
+- Dual Vite build: `npm run build:web` (existing) + `npm run build:webui` (new target)
+- Target: +3 tests (HTTP server startup, API routing, WebSocket proxy)
+- Files: `src-tauri/src/web/mod.rs` (new), `vite.config.ts`, `src/api/index.ts` (new)
+
+#### M4: Public Release (v1.0.0)
+
+**Task AW — Integration + Performance + Docs + Release**
+- 5 integration test pipelines (scan, intelligence, cleanup, cloud, web)
+- 10 real-hardware performance benchmarks (3 platforms)
+- Target: 180+ tests total
+- Version bump to `1.0.0` in Cargo.toml, package.json, tauri.conf.json
+- 3-platform signed build: Windows MSI/NSIS (SignPath), Linux .deb/.AppImage, macOS .dmg (Homebrew)
+- Docs sync all MD files
+- GitHub Release tag `v1.0.0` + release notes
+- Submit/update Homebrew Cask formula
+
+### v0.8→v1.0.0 Task Dependency Graph
+
+```
+M1 (Ops):  AL ──┬── AM ── AN
+                │
+M2 (Dev):  AO ──┤── AP ──┬── AQ ── AS
+                │        ├── AR
+                │        └── (AO/AP key, AQ/AR independent)
+M3:             │
+         AT ────┤─── AU ── AV
+                │
+M4:             │
+         AW (depends on ALL above)
+```
+
+- **M1 and M2 can run in PARALLEL** (different types of work, different people/agents)
+- AO (burn AE) and AP (burn classifier) are sequential (shared burn infra knowledge)
+- AQ (storage) and AR (i18n) are independent
+- AT (relay) must come before AU (cloud sync) which must come before AV (web dashboard)
+- AW (release) depends on ALL milestones
+
+### v0.8→v1.0.0 Verification Matrix
+
+| Task | cargo test | cargo clippy | npm typecheck | npm build:web | cross-platform CI |
+|------|:--:|:--:|:--:|:--:|:--:|
+| AL | — | — | — | — | SignPath smoke |
+| AM | ✅ (130+) | ✅ | — | — | ubuntu-latest |
+| AN | ✅ (130+) | ✅ | — | — | macos-latest |
+| AO | ✅ (+8) | ✅ | ✅ | — | ml-engine gate test |
+| AP | ✅ (+5) | ✅ | ✅ | ✅ | ml-engine gate test |
+| AQ | ✅ (+4) | ✅ | ✅ | — | 3-platform |
+| AR | — | — | ✅ | ✅ | — |
+| AS | ✅ (+2) | ✅ | ✅ | ✅ | — |
+| AT | ✅ (+6) | ✅ | — | — | 3-platform |
+| AU | ✅ (+4) | ✅ | ✅ | ✅ | — |
+| AV | ✅ (+3) | ✅ | ✅ | ✅ | — |
+| AW | ✅ (+13) | ✅ | ✅ | ✅ | 3-platform signed |
 
 ## Non-Negotiable Safety Rules
 

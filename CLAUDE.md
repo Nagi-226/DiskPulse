@@ -10,9 +10,10 @@
 - **Tagline**: Real-time disk space monitor & safe cleanup tool — Windows / Linux / macOS
 - **Type**: Open source desktop application (MIT License)
 - **Repository**: E:\Github Project\DiskPulse
-- **Current Version**: v0.8.0 local Production-Ready Deep Intelligence
-- **Next Milestone**: v0.9.0 follow-ups / native runner validation
-- **v0.7.0 Plan**: 5 phases, 7 feature versions + release — streaming scan → MFT → service → ML → multi-device
+- **Current Version**: v0.8.0 local Production-Ready Deep Intelligence (committed & pushed)
+- **Next Milestone**: M1 v0.8.1–v0.8.3 (Native Runner + Signing) → M2 v0.9.0 (burn DL) → M3 v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0
+- **v1.0.0 Master Plan**: `docs/v1.0.0-plan.md` — 4 milestones, 14 feature versions, 180+ tests target
+- **v0.8.0 Plan**: `docs/v0.8.0-plan.md` — 2 phases, 10 feature versions (complete)
 
 ## Tech Stack (LOCKED 鈥?do not change without explicit user approval)
 

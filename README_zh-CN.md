@@ -177,6 +177,14 @@ diskpulse --cli export C json scan
 | **v0.7.2** | **Linux 原生 CI 配置（ubuntu-latest 依赖、.deb/.AppImage 校验、trash-rs 兜底）** | ✅ Local |
 | **v0.7.5** | **生产就绪强化（macOS FSEvents、代码拆分、更新检查、性能基准、日语 locale）** | ✅ Local |
 | **v0.8.0** | **生产就绪深度智能（碎片分析、异常融合、6D 健康、预测性清理、文件分类）** | ✅ Local |
+| **v0.8.1** | **SignPath 审批 + Windows 签名** | ✅ Local-ready / ⏳ External |
+| **v0.8.2** | **Linux 原生 Runner（ubuntu-latest CI）** | ✅ Local-ready / ⏳ Native |
+| **v0.8.3** | **macOS 原生 Runner + FSEvents** | ⏳ Native |
+| **v0.9.0** | **完整智能：burn DL（AE + 分类器）、扩展存储、韩语/西班牙语** | ⏳ Planned |
+| **v0.10.0** | **生态连接：Cloud Sync Bridge + Web Dashboard** | ⏳ Planned |
+| **v1.0.0** | **公开发布（180+ 测试、三平台签名、文档同步）** | ⏳ Planned |
+
+> 完整路线图：[`docs/v1.0.0-plan.md`](docs/v1.0.0-plan.md)
 
 ## ⌨️ IPC 命令
 

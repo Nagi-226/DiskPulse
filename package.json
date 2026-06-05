@@ -11,6 +11,7 @@
     "bench": "cargo bench --manifest-path src-tauri/Cargo.toml",
     "verify:signing": "node scripts/verify-signing-config.mjs",
     "verify:linux-ci": "node scripts/verify-linux-ci.mjs",
+    "verify:m1-release": "node scripts/verify-m1-release.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

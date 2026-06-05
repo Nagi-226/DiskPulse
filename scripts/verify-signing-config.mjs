@@ -37,9 +37,13 @@ check("SignPath policy disallows reruns", /disallow_reruns:\s*true/.test(policy)
 const ci = read(".github/workflows/ci.yml");
 check("CI exposes actions read permission", /actions:\s*read/.test(ci));
 check("CI uploads unsigned Windows artifact", /upload-unsigned-windows-artifacts/.test(ci));
+check("CI fails unsigned upload if installers are missing", /upload-unsigned-windows-artifacts[\s\S]*if-no-files-found:\s*error/.test(ci));
 check("CI submits SignPath request", /signpath\/github-action-submit-signing-request@v2/.test(ci));
 check("CI references SIGNPATH_API_TOKEN secret", /secrets\.SIGNPATH_API_TOKEN/.test(ci));
+check("CI references SIGNPATH_ORGANIZATION_ID secret", /secrets\.SIGNPATH_ORGANIZATION_ID/.test(ci));
+check("CI verifies signed Windows artifacts", /Verify signed Windows artifacts/.test(ci));
 check("CI uploads signed Windows artifact", /diskpulse-windows-signed/.test(ci));
+check("CI fails signed upload if artifacts are missing", /diskpulse-windows-signed[\s\S]*if-no-files-found:\s*error/.test(ci));
 
 const cask = read("packaging/homebrew/diskpulse.rb");
 check("Cask uses current version", new RegExp(`version "${version}"`).test(cask));
