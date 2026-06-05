@@ -83,17 +83,23 @@ impl DirScanner for LinuxWalkStage {
 
 impl CleanupProvider for LinuxCleanupProvider {
     fn move_to_trash(&self, path: &str) -> TrashResult {
-        let result = std::process::Command::new("gio")
-            .args(["trash", path])
-            .status();
-        let success = result.map(|status| status.success()).unwrap_or(false);
-        TrashResult {
-            success,
-            original_path: path.into(),
-            reason: if success {
-                None
-            } else {
-                Some("gio trash failed or unavailable".into())
+        match trash_with_crate(path) {
+            Ok(()) => TrashResult {
+                success: true,
+                original_path: path.into(),
+                reason: None,
+            },
+            Err(primary_error) => match trash_with_gio(path) {
+                Ok(()) => TrashResult {
+                    success: true,
+                    original_path: path.into(),
+                    reason: None,
+                },
+                Err(fallback_error) => TrashResult {
+                    success: false,
+                    original_path: path.into(),
+                    reason: Some(format!("{primary_error}; {fallback_error}")),
+                },
             },
         }
     }
@@ -189,6 +195,22 @@ fn unix_nlink(path: &str) -> Result<u64, String> {
     Ok(std::fs::metadata(path)
         .map_err(|e| format!("metadata: {e}"))?
         .nlink())
+}
+
+fn trash_with_crate(path: &str) -> Result<(), String> {
+    trash::delete(path).map_err(|e| format!("trash-rs failed: {e}"))
+}
+
+fn trash_with_gio(path: &str) -> Result<(), String> {
+    let status = std::process::Command::new("gio")
+        .args(["trash", path])
+        .status()
+        .map_err(|e| format!("gio trash unavailable: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("gio trash exited with {status}"))
+    }
 }
 
 fn start_inotify_watcher(
@@ -419,4 +441,49 @@ unsafe extern "C" {
     fn poll(fds: *mut PollFd, nfds: usize, timeout: i32) -> i32;
     fn read(fd: i32, buf: *mut std::os::raw::c_void, count: usize) -> isize;
     fn close(fd: i32) -> i32;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_inotify_events_reads_multiple_records() {
+        let mut wd_to_dir = HashMap::new();
+        wd_to_dir.insert(7, "/tmp/diskpulse-watch".to_string());
+
+        let mut buffer = Vec::new();
+        append_inotify_event(&mut buffer, 7, IN_CREATE, "alpha.txt");
+        append_inotify_event(&mut buffer, 7, IN_DELETE | IN_ISDIR, "old-cache");
+
+        let events = parse_inotify_events(&buffer, &wd_to_dir);
+
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].0, "/tmp/diskpulse-watch");
+        assert_eq!(events[0].1.kind, crate::watcher::FsEventKind::Added);
+        assert!(events[0].1.path.ends_with("alpha.txt"));
+        assert_eq!(events[1].1.kind, crate::watcher::FsEventKind::Removed);
+        assert!(events[1].1.is_directory);
+        assert!(events[1].1.path.ends_with("old-cache"));
+    }
+
+    fn append_inotify_event(buffer: &mut Vec<u8>, wd: i32, mask: u32, name: &str) {
+        let mut name_bytes = name.as_bytes().to_vec();
+        name_bytes.push(0);
+        while name_bytes.len() % 4 != 0 {
+            name_bytes.push(0);
+        }
+
+        let raw = InotifyEvent {
+            wd,
+            mask,
+            cookie: 0,
+            len: name_bytes.len() as u32,
+        };
+        buffer.extend_from_slice(&raw.wd.to_ne_bytes());
+        buffer.extend_from_slice(&raw.mask.to_ne_bytes());
+        buffer.extend_from_slice(&raw.cookie.to_ne_bytes());
+        buffer.extend_from_slice(&raw.len.to_ne_bytes());
+        buffer.extend_from_slice(&name_bytes);
+    }
 }

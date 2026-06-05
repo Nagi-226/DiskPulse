@@ -1,33 +1,122 @@
-# Changelog
+﻿# Changelog
 
 All notable changes to DiskPulse will be documented in this file.
 
-## [0.8.0] - Planned
+## [0.8.0] - 2026-06-05
 
-> Production-Ready Deep Intelligence. 2 phases, 10 feature versions.
-> Full plan: `docs/v0.8.0-plan.md`
+> Production-Ready Deep Intelligence. Local v0.7.6-v0.8.0 implementation is complete with 129 Rust tests. Native Linux/macOS runner validation and true platform extent APIs remain external validation/follow-up items.
 
-### Planned Features
+### Deep Intelligence
 
-- Code signing via SignPath Foundation (Win) + Homebrew Cask (macOS) — $0 OSS distribution
-- Linux/macOS native CI validation + FSEvents activation
-- Frontend code splitting (React.lazy, first screen <300KB gzip)
-- Disk fragmentation analysis (extent-level, all 3 platforms)
-- burn DL anomaly detection (Autoencoder, pure Rust, zero C deps)
-- 6D disk health radar + composite score + health trend tracking
-- Predictive cleanup ("3 days until full" → quantified gain simulation)
-- Smart file classification (3-stage pipeline, 12 categories)
+- Added sampled fragmentation analysis (`analyze_fragmentation`, `get_file_fragmentation`, `cancel_fragmentation_scan`) with top directory/file summaries and a new `FragmentationView`.
+- Added anomaly fusion primitives and fallback weighting (`healthy`, `degraded`, `disabled`) for Holt-Winters + Modified Z-Score + optional Autoencoder signals.
+- Upgraded disk health to 6D scoring with Space/Waste/Trend/Age/Frag/Anomaly dimensions plus `health_snapshots` persistence and `get_health_history`.
+- Added predictive cleanup APIs (`predict_disk_full`, `simulate_cleanup_gain`, `get_pre_cleanup_candidates`, `execute_pre_cleanup`) and a dashboard `PredictiveCleanupCard`.
+- Added Stage 1/2 file classification helpers and `file_category` on large-file, duplicate, and aging file entries.
+- Bumped app/package versions to `0.8.0`.
+
+### Verification (v0.8.0)
+
+- `cargo test --manifest-path src-tauri\Cargo.toml`: 129/129 passed.
+- `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`: passed.
+- `npm run typecheck`: passed.
+- `npm run build:web`: passed; first app chunk gzip is 3.76KB, React vendor gzip is 76.50KB, ECharts remains lazy-loaded.
+- `cargo bench --manifest-path src-tauri\Cargo.toml`: 10 synthetic budget checks passed.
+- `npm run verify:signing`: passed.
+- `npm run verify:linux-ci`: passed.
 
 ### Known Follow-ups (deferred to v0.9.0)
 
-- Cloud Sync Bridge, Mobile Companion App, Web Dashboard
-- More languages (ko/es/etc.)
+- Real Windows `FSCTL_GET_RETRIEVAL_POINTERS`, Linux `FS_IOC_FIEMAP`, and macOS `F_LOG2PHYS` extent counters on native runners.
+- Full `burn` model packaging/fine-tuning; current v0.8.0 uses the statistical fallback/fusion interfaces.
+- Risk-rule persistence for `file_category` conditions and additional classifier model coverage.
+- Cloud Sync Bridge, Mobile Companion App, Web Dashboard, and more languages (ko/es/etc.).
 
 ---
 
+## [0.7.5] - 2026-06-05
+
+> Phase 1 production-ready hardening for v0.7.3-v0.7.5. Local implementation and verification are complete; final FSEvents and `.dmg` confidence still requires a real macOS runner.
+
+### macOS Native CI + FSEvents
+
+- Added `macos-latest` `.dmg` bundle verification in CI and hardened macOS artifact upload.
+- Replaced the macOS watcher polling path with a native CoreServices FSEvents stream plus polling fallback.
+- Changed macOS trash handling to use the native trash provider through `trash-rs`.
+- Filtered `/System/Volumes/Data` synthetic macOS volume entries from root scans.
+
+### Code Split + Update Check
+
+- Added React lazy route/component splitting with Suspense skeletons and Vite manual chunks.
+- Added a GitHub Releases update check after launch with a persisted Settings toggle.
+- Extended the Tauri CSP for the GitHub Releases API and bumped source-of-truth app versions to `0.7.5`.
+
+### Perf Bench + i18n + Edge Fixes
+
+- Expanded the synthetic performance bench to cover 10 v0.7.5 budget scenarios.
+- Added Japanese locale support (`ja`) to the i18n framework and Settings language selector.
+- Added an empty-drive/no-readable-folders dashboard state instead of showing a blank treemap.
+
+### Verification (v0.7.5)
+
+- `cargo test --manifest-path src-tauri\Cargo.toml`: 120/120 passed.
+- `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`: passed.
+- `npm run typecheck`: passed.
+- `npm run build:web`: passed; first app chunk gzip is 3.76KB and React vendor gzip is 76.50KB, with ECharts deferred to a lazy vendor chunk.
+- `cargo bench --manifest-path src-tauri\Cargo.toml`: 10 synthetic budget checks passed.
+
+---
+
+## [0.7.2] - 2026-06-04
+
+> Phase 1 Linux native CI validation. Local workflow/configuration is complete; the final native confidence gate is a GitHub Actions run on `ubuntu-latest`.
+
+### Linux Native CI
+
+- Updated `.github/workflows/ci.yml` with additional Ubuntu system dependencies: `libssl-dev`, `pkg-config`, and `libfuse2`.
+- Added a `Verify Linux bundles` step that fails when `.deb` or `.AppImage` packages are missing after `npm run tauri build`.
+- Hardened Linux artifact upload with `if-no-files-found: error` and 14-day retention.
+- Added `trash-rs` as a Linux-only dependency and changed Linux cleanup to prefer `trash::delete` with `gio trash` fallback.
+- Added a Linux-only inotify parser unit test for multiple records in one kernel buffer.
+- Added `docs/linux-ci.md` and `npm run verify:linux-ci` to document and validate the Linux release path.
+- Bumped app/package versions to `0.7.2` across npm, Cargo, Cargo.lock, Tauri config, and Homebrew Cask metadata.
+
+### Verification (v0.7.2)
+
+- `npm run verify:linux-ci`: passed.
+- `cargo check --manifest-path src-tauri\Cargo.toml`: passed.
+- `cargo test --manifest-path src-tauri\Cargo.toml`: 119/119 passed.
+- `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`: passed.
+- `npm run verify:signing`: passed.
+- `npm run typecheck`: passed.
+- `npm run build:web`: passed (existing Vite chunk-size warning only).
+- `npm run tauri build`: passed on Windows, generating MSI and NSIS installers.
+
+---
+
+## [0.7.1] - 2026-06-04
+
+> Phase 1 production-ready signing foundation. Local configuration complete; external SignPath Foundation approval and repository secrets are still required before signed artifacts can be produced.
+
+### Code Signing + Distribution
+
+- Added `.signpath/config.yml` and `.signpath/policies/diskpulse/release-signing.yml` for Windows SignPath Foundation signing.
+- Updated `.github/workflows/ci.yml` with release/tag signing flow, unsigned Windows artifact upload, SignPath request submission, and signed artifact upload.
+- Added `packaging/homebrew/diskpulse.rb` as the Homebrew Cask starting point for macOS distribution.
+- Added `docs/signing.md` with SignPath application steps, required GitHub secrets, CI flow, and Homebrew Cask submission checklist.
+- Added `npm run verify:signing` and `scripts/verify-signing-config.mjs` to keep signing configuration testable.
+- Bumped app/package versions to `0.7.1` across npm, Cargo, Cargo.lock, and Tauri config.
+
+### Verification (v0.7.1)
+
+- `npm run verify:signing`: passed.
+- `cargo check --manifest-path src-tauri\Cargo.toml`: passed.
+- `npm run typecheck`: passed.
+
+---
 ## [0.7.0] - 2026-06-04
 
-> Intelligent Operations Platform — released. 119 tests. v0.6.8 hardening was folded into the v0.7.0 release pass.
+> Intelligent Operations Platform 鈥?released. 119 tests. v0.6.8 hardening was folded into the v0.7.0 release pass.
 
 ### Release Hardening
 
@@ -79,7 +168,7 @@ All notable changes to DiskPulse will be documented in this file.
 
 ### Streaming Incremental Scan (v0.6.1)
 
-- `ScanStage::execute_streaming()` with `mpsc::Receiver<ScanBatch>` — first result <500ms.
+- `ScanStage::execute_streaming()` with `mpsc::Receiver<ScanBatch>` 鈥?first result <500ms.
 - `scan-batch` IPC event for incremental frontend updates; Treemap renders batch-by-batch.
 - Incremental rescan: watcher-detected changes trigger single-directory refresh.
 - Memory target <50MB via streaming release; cancel <200ms between batches.
@@ -92,7 +181,7 @@ All notable changes to DiskPulse will be documented in this file.
 
 ### MFT Direct Scan (v0.6.3)
 
-- `MftStage` activated via `FSCTL_ENUM_USN_DATA` — direct NTFS MFT enumeration.
+- `MftStage` activated via `FSCTL_ENUM_USN_DATA` 鈥?direct NTFS MFT enumeration.
 - Admin privilege detection + automatic fallback to `JwalkStage` for non-admin users.
 - `ScanStrategy::Auto` dispatches MFT (approximate, fast) vs Jwalk (exact, default).
 - Feature-gated behind `mft-scanner` Cargo feature flag.
@@ -101,7 +190,7 @@ All notable changes to DiskPulse will be documented in this file.
 
 - `service` module: install/start/stop/uninstall via Windows SCM API.
 - `diskpulse.exe --service` starts headless background engine (monitor + alerts + snapshots).
-- Named Pipe IPC (`\\.\pipe\DiskPulseService`) — JSON messages reuse existing IPC format.
+- Named Pipe IPC (`\\.\pipe\DiskPulseService`) 鈥?JSON messages reuse existing IPC format.
 - Service runs as LOCAL SERVICE account; cleanup operations disabled in service mode.
 - Settings UI: Service tab with status indicator, install/uninstall, auto-start toggle.
 
@@ -115,7 +204,7 @@ All notable changes to DiskPulse will be documented in this file.
 
 ### Smart Recommendations v2 (v0.6.6)
 
-- Context-aware scoring: urgency multiplier (1.0x–3.0x based on days-until-full), user behavior pattern learning from cleanup history, cross-module correlation bonus.
+- Context-aware scoring: urgency multiplier (1.0x鈥?.0x based on days-until-full), user behavior pattern learning from cleanup history, cross-module correlation bonus.
 - 4D disk health radar chart (`DiskHealthRadar.tsx`): Space / Waste / Trend / Age sub-scores.
 - Correlation bonus rewards paths appearing in multiple detectors (aging + duplicates + anomaly + large files).
 
@@ -166,7 +255,7 @@ All notable changes to DiskPulse will be documented in this file.
 - Artifact upload: MSI + NSIS (Windows), .deb + .AppImage (Linux), .dmg (macOS).
 
 **Technical Reserve:**
-- `MftStage` in `platform/windows_mft.rs` — compiled behind `mft-scanner` feature flag, not yet wired.
+- `MftStage` in `platform/windows_mft.rs` 鈥?compiled behind `mft-scanner` feature flag, not yet wired.
 
 ### Verification
 
@@ -175,7 +264,7 @@ All notable changes to DiskPulse will be documented in this file.
 - `npm run typecheck`: 0 errors.
 - `npm run build:web`: passed (Vite chunk-size warning only).
 - `npm run tauri build`: Windows MSI + NSIS generated.
-- Linux cross-compilation blocked by GTK sysroot on Windows dev machine — CI matrix handles native Linux builds.
+- Linux cross-compilation blocked by GTK sysroot on Windows dev machine 鈥?CI matrix handles native Linux builds.
 
 ## [0.5.0] - 2026-06-02
 
@@ -217,7 +306,7 @@ All notable changes to DiskPulse will be documented in this file.
 
 ### v0.4.0 Theme: Extensible Intelligence Platform
 
-Transform DiskPulse from a monitoring & cleanup tool into an extensible disk intelligence platform — with plugin-style architecture, multi-dimensional space analysis, and guided optimization.
+Transform DiskPulse from a monitoring & cleanup tool into an extensible disk intelligence platform 鈥?with plugin-style architecture, multi-dimensional space analysis, and guided optimization.
 
 #### Planned Versions
 
@@ -226,7 +315,7 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 | v0.3.1 | i18n | `react-i18next`, en/zh-CN locales, language setting |
 | v0.3.2 | Themes | CSS variable tokens, Light/Dark themes, ThemeProvider |
 | v0.3.3 | Performance | jwalk, streaming scan, incremental update, ScanStage trait, memory < 100MB |
-| v0.3.4 | Duplicates | 3-phase detection (size→4KB→SHA-256), DuplicateFinder, cleanup integration |
+| v0.3.4 | Duplicates | 3-phase detection (size鈫?KB鈫扴HA-256), DuplicateFinder, cleanup integration |
 | v0.3.5 | Aging | 7 aging buckets, zombie finder, growth hotspots, ECharts stacked bar |
 | v0.3.6 | Recommendations | Weighted scoring model, disk health gauge, RecommendationCard |
 | v0.3.7 | Rules + Export | RiskRule trait + registry, custom rule editor, CSV/JSON export |
@@ -235,22 +324,22 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 | v0.4.0 | Release | Integration tests, benchmarks, MSI + NSIS, docs |
 
 **Extensibility Architecture (6 extension points):**
-1. Risk Rule Registry (`trait RiskRule`) — new rules without touching core
-2. Scanner Pipeline (`trait ScanStage`) — new scan types as plugins
-3. Notification Channel (`trait NotifyChannel`) — Slack, Email, etc.
-4. Cleanup Provider (`trait CleanupProvider`) — per-platform implementations
-5. i18n Resource Bundle (JSON) — new language = new JSON file
-6. Theme Token System (CSS variables) — new theme = new variable set
+1. Risk Rule Registry (`trait RiskRule`) 鈥?new rules without touching core
+2. Scanner Pipeline (`trait ScanStage`) 鈥?new scan types as plugins
+3. Notification Channel (`trait NotifyChannel`) 鈥?Slack, Email, etc.
+4. Cleanup Provider (`trait CleanupProvider`) 鈥?per-platform implementations
+5. i18n Resource Bundle (JSON) 鈥?new language = new JSON file
+6. Theme Token System (CSS variables) 鈥?new theme = new variable set
 
-### Known Issues — Resolved in v0.5.0
+### Known Issues 鈥?Resolved in v0.5.0
 
 | # | Issue | Resolution | Priority |
 |---|-------|------------|----------|
-| 1 | `RecommendationInput.age_days` always `None` | ✅ Wired aging analysis into `get_recommendations()` | 🔴 → ✅ |
-| 2 | `get_disk_health()` passes hardcoded `0` for duplicate/zombie data | ✅ Full health check now scans duplicates + aging | 🔴 → ✅ |
-| 3 | CLI `export` subcommand hardcodes `"C"` drive | ✅ Added `drive` field to `CliCommand::Export` | 🟡 → ✅ |
-| 4 | Scoring weights and `min_size` constants are magic numbers | ✅ 7 new `AppSettings` fields + Settings UI | 🟡 → ✅ |
-| 5 | `CleanupWizard` + `NotificationCenter` are UI shells | ✅ 5-step wizard + real-time polling + badge | 🟡 → ✅ |
+| 1 | `RecommendationInput.age_days` always `None` | 鉁?Wired aging analysis into `get_recommendations()` | 馃敶 鈫?鉁?|
+| 2 | `get_disk_health()` passes hardcoded `0` for duplicate/zombie data | 鉁?Full health check now scans duplicates + aging | 馃敶 鈫?鉁?|
+| 3 | CLI `export` subcommand hardcodes `"C"` drive | 鉁?Added `drive` field to `CliCommand::Export` | 馃煛 鈫?鉁?|
+| 4 | Scoring weights and `min_size` constants are magic numbers | 鉁?7 new `AppSettings` fields + Settings UI | 馃煛 鈫?鉁?|
+| 5 | `CleanupWizard` + `NotificationCenter` are UI shells | 鉁?5-step wizard + real-time polling + badge | 馃煛 鈫?鉁?|
 
 ## [0.3.9] - 2026-06-01
 
@@ -291,7 +380,7 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 - `npm run typecheck` passed.
 - `npm run build:web` passed with the existing chunk-size warning.
 
-## [0.3.0] — 2026-05-31
+## [0.3.0] 鈥?2026-05-31
 
 ### Production Release
 
@@ -305,9 +394,9 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 - MSI SHA256: `48F124C83A1FCCCE9C175B6A5778FBCCB1E3433CABCD917134035C85F53208E4`
 - NSIS SHA256: `55589EED8D6BAABE393AB29AED081FB185CC07D7E4A46EA02F9826E65DCED094`
 
-## [0.2.9] — 2026-05-31
+## [0.2.9] 鈥?2026-05-31
 
-### Auto-Cleanup — Frontend
+### Auto-Cleanup 鈥?Frontend
 
 - Added Automation settings tab with enable toggle, frequency, run time, minimum-free-space threshold, LOW-only safety copy, Save Automation, and Run Now actions.
 - Added `AutoCleanupStatus` dashboard card backed by `get_auto_cleanup_status`, `run_auto_cleanup_now`, and auto-cleanup scheduler events.
@@ -317,11 +406,11 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 - Verified `cargo check`, `cargo test` (56/56), `cargo clippy -- -D warnings`, `npm run typecheck`, and `npm run build:web` (chunk-size warning only).
 
 **Next:**
-- [0.3.0] — Production release: integration polish, build verified, MSI + NSIS
+- [0.3.0] 鈥?Production release: integration polish, build verified, MSI + NSIS
 
-## [0.2.8] — 2026-05-31
+## [0.2.8] 鈥?2026-05-31
 
-### Auto-Cleanup — Backend
+### Auto-Cleanup 鈥?Backend
 
 - Added `scheduler` Rust module with schedule calculation, status model, run-now orchestration, and scheduler thread startup.
 - Added `auto_cleanup_reports` SQLite table plus save/query CRUD.
@@ -332,12 +421,12 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 - Added 5 tests covering schedule calculation, LOW-risk filtering, DB report CRUD, and settings round-trip/defaults.
 
 **Next:**
-- [0.2.9] — Auto-Cleanup: Frontend UI (settings tab, status card, history)
-- [0.3.0] — Production release: integration polish, build verified, MSI + NSIS
+- [0.2.9] 鈥?Auto-Cleanup: Frontend UI (settings tab, status card, history)
+- [0.3.0] 鈥?Production release: integration polish, build verified, MSI + NSIS
 
-## [0.2.7] — 2026-05-31
+## [0.2.7] 鈥?2026-05-31
 
-### Large File Finder — Frontend
+### Large File Finder 鈥?Frontend
 
 - Added `useLargeFileFinder` hook for `find_large_files`, `large-file-progress`, and cancellation lifecycle.
 - Added `LargeFileFinder` UI with drive selector, minimum-size filter, result limit, scan progress, and sortable table.
@@ -346,12 +435,12 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 - Verified manual C: scan for files over 500MB: 6 files found in 76 seconds.
 
 **Next:**
-- [0.2.9] — Auto-Cleanup: Frontend UI (settings tab, status card, history)
-- [0.3.0] — Production release: integration polish, build verified, MSI + NSIS
+- [0.2.9] 鈥?Auto-Cleanup: Frontend UI (settings tab, status card, history)
+- [0.3.0] 鈥?Production release: integration polish, build verified, MSI + NSIS
 
-## [0.2.6] — 2026-05-31
+## [0.2.6] 鈥?2026-05-31
 
-### Large File Finder — Backend
+### Large File Finder 鈥?Backend
 
 - Added `FileEntry` and `LargeFileProgress` shared backend models.
 - Added large-file scanner using `walkdir` plus a bounded `BinaryHeap<Reverse<FileEntry>>` top-N selection.
@@ -361,26 +450,26 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 - Added 3 scanner tests covering top-N ordering, min-size filtering, and cancellation.
 
 **Next:**
-- [0.2.8] — Auto-Cleanup: Backend scheduler (scheduler module, DB table, commands, tests)
-- [0.2.9] — Auto-Cleanup: Frontend UI (settings tab, status card, history)
-- [0.3.0] — Production release: integration polish, build verified, MSI + NSIS
+- [0.2.8] 鈥?Auto-Cleanup: Backend scheduler (scheduler module, DB table, commands, tests)
+- [0.2.9] 鈥?Auto-Cleanup: Frontend UI (settings tab, status card, history)
+- [0.3.0] 鈥?Production release: integration polish, build verified, MSI + NSIS
 
-## [0.2.5] — 2026-05-07
+## [0.2.5] 鈥?2026-05-07
 
-### Intelligent Insights — Alerts & Prediction
+### Intelligent Insights 鈥?Alerts & Prediction
 
 > Full plan: `docs/v0.3.0-plan.md`
 
-**Sprint 1 — Disk Space Alerts:**
-- Disk space alert monitor — background thread with configurable check interval
+**Sprint 1 鈥?Disk Space Alerts:**
+- Disk space alert monitor 鈥?background thread with configurable check interval
 - Low space threshold notification via tauri-plugin-notification (percentage or absolute GB)
 - Sudden growth detection with configurable time window and growth percent
 - New `alert` Rust module with `AlertConfig`, threshold checks, 4 unit tests
-- Settings UI: new "Alerts" tab — enable/disable, threshold type/value, growth params
+- Settings UI: new "Alerts" tab 鈥?enable/disable, threshold type/value, growth params
 - Dashboard: in-app alert toast banner with auto-dismiss
 - 6 new `AppSettings` fields for alert configuration
 
-**Sprint 3 — Disk Usage Prediction:**
+**Sprint 3 鈥?Disk Usage Prediction:**
 - New `prediction` Rust module with simple OLS linear regression over SQLite snapshots
 - `predict_disk_usage` IPC command returning forecast status, confidence, growth rate, and projected 95% date
 - Dashboard prediction card between drive ring and treemap
@@ -388,11 +477,11 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 - 3 unit tests for date parsing, growth projection, and insufficient-history behavior
 
 **Upcoming:**
-- [0.2.8] — Auto-Cleanup: Backend scheduler (scheduler module, DB table, commands, tests)
-- [0.2.9] — Auto-Cleanup: Frontend UI (settings tab, status card, history)
-- [0.3.0] — Production release: integration polish, build verified, MSI + NSIS
+- [0.2.8] 鈥?Auto-Cleanup: Backend scheduler (scheduler module, DB table, commands, tests)
+- [0.2.9] 鈥?Auto-Cleanup: Frontend UI (settings tab, status card, history)
+- [0.3.0] 鈥?Production release: integration polish, build verified, MSI + NSIS
 
-## [0.2.0] — 2026-05-07
+## [0.2.0] 鈥?2026-05-07
 
 ### Performance & UX Optimization
 
@@ -400,16 +489,16 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 - Split scan: `scan_drive_meta` (<50ms) + `scan_drive_dirs` (background) commands
 - `useDriveScan` lazy loading hook with request cancellation
 - Rayon-parallel top-level directory scanning with incremental `partial_results`
-- Phase-based scan progress (Walking → Measuring → Complete)
+- Phase-based scan progress (Walking 鈫?Measuring 鈫?Complete)
 - SQLite `DriveMeta` caching with freshness badges (Live / Cached / Metadata)
 - Skeleton treemap placeholder during background scan
 - `cancel_scan` command with AtomicBool cancellation token + UI cancel button
-- Watcher cache refresh: detect FS changes → selective dirty top-level directory re-scan → refreshed treemap cache event
+- Watcher cache refresh: detect FS changes 鈫?selective dirty top-level directory re-scan 鈫?refreshed treemap cache event
 
 **Deferred**:
 - jwalk parallel walkdir evaluation (optional)
 
-## [0.0.9] — 2026-05-05
+## [0.0.9] 鈥?2026-05-05
 
 ### Added
 - Settings page with General/Rules/About tabs
@@ -418,7 +507,7 @@ Transform DiskPulse from a monitoring & cleanup tool into an extensible disk int
 - About page with version info and tech stack grid
 - Settings persistence via SQLite (key-value store)
 
-## [0.1.0] — 2026-05-06
+## [0.1.0] 鈥?2026-05-06
 
 ### Production Release
 
@@ -437,7 +526,7 @@ First production-ready release. All core features implemented and tested.
 
 #### Safe Cleanup Engine
 - Recycle Bin integration via SHFileOperationW (FOF_ALLOWUNDO)
-- Pre-delete validation pipeline: whitelist check → system path block → runtime lock check
+- Pre-delete validation pipeline: whitelist check 鈫?system path block 鈫?runtime lock check
 - Cancellation token support for aborting mid-cleanup
 - Progress events during batch cleanup
 - Restore from Recycle Bin ($I info file parsing)
@@ -467,7 +556,7 @@ First production-ready release. All core features implemented and tested.
 - SVG ring chart for drive usage visualization
 - Animated progress bars and transitions
 
-## [0.0.8] — 2026-04-30
+## [0.0.8] 鈥?2026-04-30
 
 ### Added
 - SQLite database module (snapshots, cleanup_logs tables)
@@ -476,7 +565,7 @@ First production-ready release. All core features implemented and tested.
 - Cleanup timeline with per-item expansion
 - Auto-save on scan and cleanup operations
 
-## [0.0.7] — 2026-04-30
+## [0.0.7] 鈥?2026-04-30
 
 ### Added
 - Real-time file system watcher (polling-based)
@@ -484,7 +573,7 @@ First production-ready release. All core features implemented and tested.
 - System tray icon with menu (quick scan, pause, exit)
 - Chinese README (README_zh-CN.md)
 
-## [0.0.6] — 2026-04-29
+## [0.0.6] 鈥?2026-04-29
 
 ### Added
 - Safe cleanup engine with Recycle Bin integration
@@ -493,35 +582,35 @@ First production-ready release. All core features implemented and tested.
 - Undo/restore from Recycle Bin
 - 16 unit tests for cleaner module
 
-## [0.0.5] — 2026-04-29
+## [0.0.5] 鈥?2026-04-29
 
 ### Added
 - Cleanup report page with risk-grouped layout
 - Search, sort, and risk-level filter controls
 - HTML and CSV export functionality
 
-## [0.0.4] — 2026-04-28
+## [0.0.4] 鈥?2026-04-28
 
 ### Added
 - Risk classification engine with 16 default rules
 - RiskReport, RiskItem, RiskRule, RiskSummary data structures
 - Developer project detection heuristic
 
-## [0.0.3] — 2026-04-28
+## [0.0.3] 鈥?2026-04-28
 
 ### Added
 - ECharts treemap visualization
 - Drill-down navigation with breadcrumb trail
 - Color-coded directory categories
 
-## [0.0.2] — 2026-04-28
+## [0.0.2] 鈥?2026-04-28
 
 ### Added
 - Scan progress callback with current path
 - Multi-drive support via GetLogicalDrives
 - Unit tests for scanner module
 
-## [0.0.1] — 2026-04-28
+## [0.0.1] 鈥?2026-04-28
 
 ### Added
 - Initial project scaffold
@@ -529,3 +618,4 @@ First production-ready release. All core features implemented and tested.
 - Disk scanner with Win32 GetDiskFreeSpaceExW
 - Aurora design system with CSS custom properties
 - SVG ring chart + top-20 directory bar chart
+

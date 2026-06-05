@@ -28,12 +28,12 @@ If documentation conflicts with source code, trust the code and note the mismatc
 ## Current Baseline
 
 - Product: DiskPulse, a Windows 11 desktop app for disk monitoring and safe cleanup.
-- Current release baseline: `v0.7.0` (v0.6.1–v0.6.7 implemented; 119 tests; released 2026-06-04).
-- Next milestone: `v0.8.0` — Production-Ready Deep Intelligence (2 phases, 10 feature versions, 155+ tests target).
+- Current release baseline: `v0.8.0` local Production-Ready Deep Intelligence complete (fragmentation analysis, anomaly fusion fallback, 6D health, predictive cleanup, file classification; native runner validation pending).
+- Next milestone: `v0.9.0` follow-ups / native runner validation.
 - Full v0.8.0 roadmap: `docs/v0.8.0-plan.md`.
 - Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite, burn 0.16 (DL engine).
 - Build targets: Windows (MSI/NSIS, SignPath signed), Linux (.deb/.AppImage), macOS (.dmg, Homebrew Cask).
-- Current state from project docs: v0.7.0 released; v0.8.0 planning complete.
+- Current state from project docs: v0.8.0 implemented locally; native runner validation and true platform extent counters remain follow-ups.
 
 ### v0.5.0 Implementation Tasks — Integration Excellence
 
@@ -716,14 +716,19 @@ Phase 5:  AA (depends on all above)
 
 #### Phase 1: Production-Ready (v0.7.1 — v0.7.5)
 
-**Task AB — Code Signing (v0.7.1)**
+**Task AB — Code Signing (v0.7.1) ✅ Local Complete**
 - SignPath Foundation setup + `.signpath/config.yml`
 - Homebrew Cask formula creation
 - CI integration for signed artifacts
+- Remaining external prerequisites: SignPath Foundation approval, `SIGNPATH_API_TOKEN`, `SIGNPATH_ORGANIZATION_ID`, signed artifact smoke on release tag.
 
-**Task AC — Linux Native CI (v0.7.2)**
-- GitHub Actions ubuntu-latest build/test/package
-- Fix inotify FFI, gio trash → trash-rs fallback, statx kernel compat
+**Task AC — Linux Native CI (v0.7.2) ✅ Local Complete**
+- GitHub Actions ubuntu-latest build/test/package configuration
+- Linux GTK/WebKit/OpenSSL/FUSE dependencies installed in CI
+- `.deb` + `.AppImage` bundle verification and strict artifact upload
+- Linux cleanup uses trash-rs first with `gio trash` fallback
+- Inotify FFI parser has Linux-only multi-record coverage
+- Remaining native prerequisite: GitHub Actions run on `ubuntu-latest`
 
 **Task AD — macOS Native CI + FSEvents (v0.7.3)**
 - GitHub Actions macos-latest build/test/package

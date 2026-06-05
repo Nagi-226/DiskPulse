@@ -1,13 +1,16 @@
 {
   "name": "diskpulse",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "build:web": "vite build",
     "build": "npm run typecheck && npm run build:web",
+    "bench": "cargo bench --manifest-path src-tauri/Cargo.toml",
+    "verify:signing": "node scripts/verify-signing-config.mjs",
+    "verify:linux-ci": "node scripts/verify-linux-ci.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -36,3 +39,4 @@
     "vite": "^7.0.4"
   }
 }
+

@@ -1,0 +1,24 @@
+name: DiskPulse Release Signing
+description: Sign Windows MSI and NSIS installers built by GitHub Actions.
+
+trusted_build_system:
+  type: github
+  repository: Nagi-226/DiskPulse
+  workflow: ci.yml
+  require_github_hosted: true
+  disallow_reruns: true
+
+allowed_sources:
+  branches:
+    - main
+    - master
+    - release/**
+  tags:
+    - v*
+
+artifact_configuration_slug: windows-installers
+signing_policy_slug: release-signing
+
+outputs:
+  signed_artifact_name: diskpulse-windows-signed
+  unsigned_artifact_name: diskpulse-windows-unsigned

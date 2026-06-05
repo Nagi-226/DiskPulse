@@ -1,30 +1,48 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import Treemap from "./components/Treemap";
-import CleanupPage from "./pages/Cleanup";
-import CleanupPreview from "./components/CleanupPreview";
-import HistoryPage from "./pages/History";
-import SettingsPage from "./pages/Settings";
-import PredictionCard from "./components/PredictionCard";
-import AnomalyCard from "./components/AnomalyCard";
-import LargeFileFinder from "./components/LargeFileFinder";
-import AutoCleanupStatus from "./components/AutoCleanupStatus";
-import DuplicateFinder from "./components/DuplicateFinder";
-import AgingAnalysis from "./components/AgingAnalysis";
-import RecommendationCard from "./components/RecommendationCard";
-import CleanupWizard from "./components/CleanupWizard";
-import NotificationCenter from "./components/NotificationCenter";
-import ThemeSwitcher from "./components/ThemeSwitcher";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { NavIcons } from "./components/Icons";
 import { formatSize } from "./utils/format";
 import { useDriveScan } from "./hooks/useDriveScan";
 import { useFsEvents } from "./hooks/useFsEvents";
 import { useRemoteDevice } from "./hooks/useRemoteDevice";
 import { useTranslation } from "react-i18next";
-import type { AnomalyEvent, AutoCleanupStatus as AutoCleanupStatusType, CleanItem, CleanProgress, CleanResult, DeviceInfo, DirInfo, DiskSpaceAlertPayload, DriveInfo, RiskItem, ScanProgress } from "./types";
+import type { AnomalyEvent, AppSettings, AutoCleanupStatus as AutoCleanupStatusType, CleanItem, CleanProgress, CleanResult, DeviceInfo, DirInfo, DiskSpaceAlertPayload, DriveInfo, RiskItem, ScanProgress } from "./types";
 
 const EMPTY_RISK_ITEMS: RiskItem[] = [];
+const Treemap = lazy(() => import("./components/Treemap"));
+const CleanupPage = lazy(() => import("./pages/Cleanup"));
+const CleanupPreview = lazy(() => import("./components/CleanupPreview"));
+const HistoryPage = lazy(() => import("./pages/History"));
+const SettingsPage = lazy(() => import("./pages/Settings"));
+const PredictionCard = lazy(() => import("./components/PredictionCard"));
+const AnomalyCard = lazy(() => import("./components/AnomalyCard"));
+const LargeFileFinder = lazy(() => import("./components/LargeFileFinder"));
+const AutoCleanupStatus = lazy(() => import("./components/AutoCleanupStatus"));
+const DuplicateFinder = lazy(() => import("./components/DuplicateFinder"));
+const AgingAnalysis = lazy(() => import("./components/AgingAnalysis"));
+const RecommendationCard = lazy(() => import("./components/RecommendationCard"));
+const PredictiveCleanupCard = lazy(() => import("./components/PredictiveCleanupCard"));
+const FragmentationView = lazy(() => import("./components/FragmentationView"));
+const CleanupWizard = lazy(() => import("./components/CleanupWizard"));
+const NotificationCenter = lazy(() => import("./components/NotificationCenter"));
+const ThemeSwitcher = lazy(() => import("./components/ThemeSwitcher"));
+const RELEASE_API_URL = "https://api.github.com/repos/Nagi-226/DiskPulse/releases/latest";
+
+function PageSkeleton({ label = "Loading module" }: { label?: string }) {
+  return (
+    <div className="glass-card mx-8 my-6 rounded-2xl border border-aurora-border/40 p-6">
+      <div className="mb-4 h-4 w-40 animate-pulse rounded-full bg-aurora-border/50" />
+      <div className="grid grid-cols-3 gap-3">
+        <div className="h-24 animate-pulse rounded-2xl bg-aurora-elevated/60" />
+        <div className="h-24 animate-pulse rounded-2xl bg-aurora-elevated/40" />
+        <div className="h-24 animate-pulse rounded-2xl bg-aurora-elevated/30" />
+      </div>
+      <p className="mt-4 text-xs uppercase tracking-wider text-text-muted">{label}</p>
+    </div>
+  );
+}
 
 // --- Drive ring chart ---
 function DriveRing({
@@ -199,6 +217,34 @@ function CacheBadge({
   );
 }
 
+function compareVersions(left: string, right: string) {
+  const parse = (value: string) =>
+    value
+      .replace(/^v/i, "")
+      .split(".")
+      .map((part) => Number.parseInt(part, 10) || 0);
+  const a = parse(left);
+  const b = parse(right);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+async function notifyUpdate(tagName: string, releaseUrl: string) {
+  let granted = await isPermissionGranted();
+  if (!granted) {
+    granted = (await requestPermission()) === "granted";
+  }
+  if (granted) {
+    sendNotification({
+      title: "DiskPulse update available",
+      body: `${tagName} is available. Open GitHub Releases to download it: ${releaseUrl}`,
+    });
+  }
+}
+
 function DeviceSelector({
   devices,
   selectedDeviceId,
@@ -284,6 +330,7 @@ const NAV_ITEMS = [
   { id: "large-files", labelKey: "nav.largeFiles", Icon: NavIcons.LargeFiles },
   { id: "duplicates", labelKey: "nav.duplicates", Icon: NavIcons.LargeFiles },
   { id: "aging", labelKey: "nav.aging", Icon: NavIcons.History },
+  { id: "fragmentation", labelKey: "nav.fragmentation", Icon: NavIcons.History },
   { id: "wizard", labelKey: "nav.wizard", Icon: NavIcons.Cleanup },
   { id: "history", labelKey: "nav.history", Icon: NavIcons.History },
   { id: "settings", labelKey: "nav.settings", Icon: NavIcons.Settings },
@@ -545,6 +592,33 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const settings = await invoke<AppSettings>("get_settings");
+          if (!settings.update_check_enabled || cancelled) return;
+          const response = await fetch(RELEASE_API_URL, {
+            headers: { Accept: "application/vnd.github+json" },
+          });
+          if (!response.ok || cancelled) return;
+          const release = (await response.json()) as { tag_name?: string; html_url?: string };
+          const latest = release.tag_name;
+          if (latest && compareVersions(latest, __APP_VERSION__) > 0) {
+            await notifyUpdate(latest, release.html_url ?? "https://github.com/Nagi-226/DiskPulse/releases");
+          }
+        } catch (e) {
+          console.debug("update check skipped:", e);
+        }
+      })();
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
     const current = breadcrumbs[breadcrumbs.length - 1];
     if (!current || !lastBatch?.events.length) {
       return;
@@ -692,7 +766,9 @@ export default function App() {
         </nav>
 
         <div className="px-4 py-4 border-t border-aurora-border/40 space-y-3">
-          <ThemeSwitcher />
+          <Suspense fallback={null}>
+            <ThemeSwitcher />
+          </Suspense>
           <div className="flex items-center gap-2 text-xs text-text-muted">
             <span className={`${isWatching ? "live-dot" : ""} w-2 h-2 rounded-full ${isWatching ? "bg-success" : "bg-aurora-border"}`} />
             <span>{busy ? (cleanProgress ? "Cleaning..." : "Scanning...") : drillLoading ? "Loading folder..." : isWatching ? `Live · ${eventCount} events` : "Monitor paused"}</span>
@@ -739,7 +815,9 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            <NotificationCenter />
+            <Suspense fallback={null}>
+              <NotificationCenter />
+            </Suspense>
 
             <DeviceSelector
               devices={devices}
@@ -860,6 +938,7 @@ export default function App() {
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto page-enter">
+          <Suspense fallback={<PageSkeleton />}>
           {activeTab === "dashboard" && (
             <div className="p-8 space-y-8">
               {/* Alert toast */}
@@ -1024,6 +1103,10 @@ export default function App() {
                     <RecommendationCard drive={activeDriveInfo.drive_letter} onAddToCleanup={handleAddToCleanup} />
                   )}
 
+                  {!selectedRemoteDevice && (
+                    <PredictiveCleanupCard drive={activeDriveInfo.drive_letter} onAddToCleanup={handleAddToCleanup} />
+                  )}
+
                   {busy && currentData.length === 0 && (
                     <div className="glass-card p-6">
                       <div className="flex items-center justify-between mb-5">
@@ -1081,52 +1164,68 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* Treemap Visualization */}
-                  <div className="glass-card p-4">
-                    <div className="flex items-center justify-between mb-4 px-2">
-                      <div>
-                        <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-                          {breadcrumbs.length > 0
-                            ? breadcrumbs[breadcrumbs.length - 1].name
-                            : "Disk Space Treemap"}
-                        </h3>
-                        <p className="text-xs text-text-muted mt-0.5">
-                          {drillData
-                            ? `${drillData.length} items — click to explore deeper`
-                            : `${activeDriveInfo.top_dirs.length} top-level directories — click to drill down`}
-                        </p>
-                      </div>
-                    </div>
-                    <Treemap
-                      data={drillData ?? activeDriveInfo.top_dirs}
-                      totalBytes={drillData ? drillTotal : activeDriveInfo.total_bytes}
-                      onDrillDown={handleDrillDown}
-                    />
-                  </div>
-
-                  {/* Directory List (detailed view below treemap) */}
-                  <div className="glass-card p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <div>
-                        <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
-                          Directory List
-                        </h3>
-                        <p className="text-xs text-text-muted mt-0.5">
-                          Ranked by size — showing top 20
-                        </p>
-                      </div>
-                    </div>
-                    <div className="space-y-0.5">
-                      {currentData.slice(0, 20).map((dir, i) => (
-                        <DirBarItem
-                          key={dir.path}
-                          dir={dir}
-                          maxSize={maxDirSize}
-                          rank={i + 1}
+                  {currentData.length > 0 ? (
+                    <>
+                      {/* Treemap Visualization */}
+                      <div className="glass-card p-4">
+                        <div className="flex items-center justify-between mb-4 px-2">
+                          <div>
+                            <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
+                              {breadcrumbs.length > 0
+                                ? breadcrumbs[breadcrumbs.length - 1].name
+                                : "Disk Space Treemap"}
+                            </h3>
+                            <p className="text-xs text-text-muted mt-0.5">
+                              {drillData
+                                ? `${drillData.length} items — click to explore deeper`
+                                : `${activeDriveInfo.top_dirs.length} top-level directories — click to drill down`}
+                            </p>
+                          </div>
+                        </div>
+                        <Treemap
+                          data={drillData ?? activeDriveInfo.top_dirs}
+                          totalBytes={drillData ? drillTotal : activeDriveInfo.total_bytes}
+                          onDrillDown={handleDrillDown}
                         />
-                      ))}
+                      </div>
+
+                      {/* Directory List (detailed view below treemap) */}
+                      <div className="glass-card p-6">
+                        <div className="flex items-center justify-between mb-6">
+                          <div>
+                            <h3 className="text-sm font-semibold text-text-primary uppercase tracking-wider">
+                              Directory List
+                            </h3>
+                            <p className="text-xs text-text-muted mt-0.5">
+                              Ranked by size — showing top 20
+                            </p>
+                          </div>
+                        </div>
+                        <div className="space-y-0.5">
+                          {currentData.slice(0, 20).map((dir, i) => (
+                            <DirBarItem
+                              key={dir.path}
+                              dir={dir}
+                              maxSize={maxDirSize}
+                              rank={i + 1}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  ) : !busy ? (
+                    <div className="glass-card p-8 text-center">
+                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-aurora-border/50 bg-aurora-elevated/60 text-text-muted">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                          <path d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                      </div>
+                      <h3 className="text-base font-semibold text-text-primary">No scannable content</h3>
+                      <p className="mt-2 text-sm text-text-muted">
+                        DiskPulse found this drive, but there are no readable top-level folders to visualize.
+                      </p>
                     </div>
-                  </div>
+                  ) : null}
                 </>
               ) : !error && !remoteError && !busy ? (
                 <div className="flex flex-col items-center justify-center py-32 text-text-muted">
@@ -1188,11 +1287,13 @@ export default function App() {
               onAddToCleanup={handleAddToCleanup}
             />
           )}
+          {activeTab === "fragmentation" && <FragmentationView selectedDrive={selectedDrive} />}
           {activeTab === "wizard" && (
             <CleanupWizard selectedDrive={selectedDrive} onStartScan={(drive) => void startDriveScan(drive)} />
           )}
           {activeTab === "history" && <HistoryPage />}
           {activeTab === "settings" && <SettingsPage />}
+          </Suspense>
         </div>
       </main>
     </div>

@@ -225,6 +225,9 @@ fn file_entry_from_path(path: &Path, size_bytes: u64, metadata: &std::fs::Metada
             .unwrap_or(0),
         hard_link_count: meta.hard_link_count(&path_text).unwrap_or(1),
         size_on_disk_bytes: meta.size_on_disk(&path_text).ok().flatten(),
+        file_category: Some(
+            crate::fileclass::category_id(&crate::fileclass::classify_path(path)).into(),
+        ),
     }
 }
 

@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   auto_cleanup_min_free_gb: 50,
   language: "auto",
   theme: "auto",
+  update_check_enabled: true,
   scoring_weight_risk: 0.20,
   scoring_weight_age: 0.15,
   scoring_weight_duplicate: 0.20,
@@ -143,6 +144,7 @@ function GeneralTab({ settings, drives, saving, onUpdate, onSave, message }: {
 
       <ToggleRow title="Auto scan on startup" detail="Scan the default drive when DiskPulse starts." checked={settings.auto_scan_on_startup} onChange={(v) => onUpdate({ ...settings, auto_scan_on_startup: v })} />
       <ToggleRow title="Auto monitor on startup" detail="Start file-system monitoring when DiskPulse starts." checked={settings.auto_monitor_on_startup} onChange={(v) => onUpdate({ ...settings, auto_monitor_on_startup: v })} />
+      <ToggleRow title="Check for updates" detail="After launch, query GitHub Releases and notify when a newer version is available." checked={settings.update_check_enabled} onChange={(v) => onUpdate({ ...settings, update_check_enabled: v })} />
 
       <div className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/40 p-4">
         <div className="mb-3 text-sm font-medium text-text-primary">Scan Mode</div>

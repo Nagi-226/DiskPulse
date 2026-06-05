@@ -10,8 +10,8 @@
 - **Tagline**: Real-time disk space monitor & safe cleanup tool — Windows / Linux / macOS
 - **Type**: Open source desktop application (MIT License)
 - **Repository**: E:\Github Project\DiskPulse
-- **Current Version**: v0.7.0
-- **Next Milestone**: v0.8.0 — Production-Ready Deep Intelligence (see `docs/v0.8.0-plan.md`)
+- **Current Version**: v0.8.0 local Production-Ready Deep Intelligence
+- **Next Milestone**: v0.9.0 follow-ups / native runner validation
 - **v0.7.0 Plan**: 5 phases, 7 feature versions + release — streaming scan → MFT → service → ML → multi-device
 
 ## Tech Stack (LOCKED 鈥?do not change without explicit user approval)
@@ -282,11 +282,11 @@ fn unpair_device(device_id: String) -> Result<(), String>
 
 ## Current Development State
 
-- **Phase**: v0.7.0 released — v0.6.1–v0.6.7 + release all complete
-- **Last Updated**: 2026-06-04
-- **Test count**: 119 (up from 86 in v0.6.0)
-- **Verification**: `cargo test` 119/119, `cargo clippy -- -D warnings` clean, `npm run typecheck` 0 errors, `npm run build:web` clean
-- **Full Plan**: `docs/v0.4.0-plan.md`
+- **Phase**: v0.8.0 local implementation complete — native Linux/macOS validation pending
+- **Last Updated**: 2026-06-05
+- **Test count**: 129 (up from 86 in v0.6.0)
+- **Verification**: `cargo test --manifest-path src-tauri\Cargo.toml`, `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `cargo bench --manifest-path src-tauri\Cargo.toml`, `npm run verify:signing`, `npm run verify:linux-ci`
+- **Full Plan**: `docs/v0.8.0-plan.md`
 
 ### v0.4.0 Roadmap Summary
 

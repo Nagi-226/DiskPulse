@@ -80,6 +80,32 @@ pub struct NotificationInput {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthSnapshot {
+    pub id: i64,
+    pub drive_letter: String,
+    pub score: u8,
+    pub space_score: u8,
+    pub waste_score: u8,
+    pub trend_score: u8,
+    pub age_score: u8,
+    pub frag_score: u8,
+    pub anomaly_score: u8,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthSnapshotInput {
+    pub drive_letter: String,
+    pub score: u8,
+    pub space_score: u8,
+    pub waste_score: u8,
+    pub trend_score: u8,
+    pub age_score: u8,
+    pub frag_score: u8,
+    pub anomaly_score: u8,
+}
+
 /// Application settings persisted across sessions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -102,6 +128,7 @@ pub struct AppSettings {
     pub auto_cleanup_min_free_gb: f64,
     pub language: String,
     pub theme: String,
+    pub update_check_enabled: bool,
     pub scoring_weight_risk: f64,
     pub scoring_weight_age: f64,
     pub scoring_weight_duplicate: f64,
@@ -135,6 +162,7 @@ impl Default for AppSettings {
             auto_cleanup_min_free_gb: 50.0,
             language: "auto".into(),
             theme: "auto".into(),
+            update_check_enabled: true,
             scoring_weight_risk: 0.20,
             scoring_weight_age: 0.15,
             scoring_weight_duplicate: 0.20,
@@ -242,9 +270,81 @@ fn ensure_tables_with(conn: &rusqlite::Connection) -> Result<(), String> {
             message TEXT NOT NULL,
             read INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS health_snapshots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            drive_letter TEXT NOT NULL,
+            score INTEGER NOT NULL,
+            space_score INTEGER NOT NULL,
+            waste_score INTEGER NOT NULL,
+            trend_score INTEGER NOT NULL,
+            age_score INTEGER NOT NULL,
+            frag_score INTEGER NOT NULL,
+            anomaly_score INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );",
     )
     .map_err(|e| format!("Cannot create tables: {}", e))
+}
+
+fn save_health_snapshot_with(
+    conn: &rusqlite::Connection,
+    input: &HealthSnapshotInput,
+) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO health_snapshots
+         (drive_letter, score, space_score, waste_score, trend_score, age_score, frag_score, anomaly_score)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![
+            input.drive_letter,
+            input.score,
+            input.space_score,
+            input.waste_score,
+            input.trend_score,
+            input.age_score,
+            input.frag_score,
+            input.anomaly_score,
+        ],
+    )
+    .map_err(|e| format!("Save health snapshot error: {}", e))?;
+    Ok(())
+}
+
+fn get_health_history_with(
+    conn: &rusqlite::Connection,
+    drive: &str,
+    limit: usize,
+) -> Result<Vec<HealthSnapshot>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, drive_letter, score, space_score, waste_score, trend_score,
+                    age_score, frag_score, anomaly_score, created_at
+             FROM health_snapshots
+             WHERE drive_letter = ?1
+             ORDER BY datetime(created_at) DESC, id DESC
+             LIMIT ?2",
+        )
+        .map_err(|e| format!("Query error: {}", e))?;
+    let rows = stmt
+        .query_map(rusqlite::params![drive, limit as i64], |row| {
+            Ok(HealthSnapshot {
+                id: row.get(0)?,
+                drive_letter: row.get(1)?,
+                score: row.get::<_, i64>(2)? as u8,
+                space_score: row.get::<_, i64>(3)? as u8,
+                waste_score: row.get::<_, i64>(4)? as u8,
+                trend_score: row.get::<_, i64>(5)? as u8,
+                age_score: row.get::<_, i64>(6)? as u8,
+                frag_score: row.get::<_, i64>(7)? as u8,
+                anomaly_score: row.get::<_, i64>(8)? as u8,
+                created_at: row.get(9)?,
+            })
+        })
+        .map_err(|e| format!("Query error: {}", e))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Row error: {}", e))
 }
 
 fn save_snapshot_with(
@@ -503,6 +603,7 @@ fn get_settings_with(conn: &rusqlite::Connection) -> Result<AppSettings, String>
             }
             "language" => settings.language = value,
             "theme" => settings.theme = value,
+            "update_check_enabled" => settings.update_check_enabled = value == "true",
             "scoring_weight_risk" => {
                 if let Ok(v) = value.parse() {
                     settings.scoring_weight_risk = v;
@@ -614,6 +715,10 @@ fn save_settings_with(conn: &rusqlite::Connection, settings: &AppSettings) -> Re
         ),
         ("language", settings.language.clone()),
         ("theme", settings.theme.clone()),
+        (
+            "update_check_enabled",
+            settings.update_check_enabled.to_string(),
+        ),
         (
             "scoring_weight_risk",
             settings.scoring_weight_risk.to_string(),
@@ -882,6 +987,16 @@ pub fn get_auto_cleanup_history() -> Result<Vec<AutoCleanupReport>, String> {
     get_auto_cleanup_history_with(&conn)
 }
 
+pub fn save_health_snapshot(snapshot: &HealthSnapshotInput) -> Result<(), String> {
+    let conn = open_connection()?;
+    save_health_snapshot_with(&conn, snapshot)
+}
+
+pub fn get_health_history(drive: &str, limit: usize) -> Result<Vec<HealthSnapshot>, String> {
+    let conn = open_connection()?;
+    get_health_history_with(&conn, drive, limit)
+}
+
 pub fn get_settings() -> Result<AppSettings, String> {
     let conn = open_connection()?;
     get_settings_with(&conn)
@@ -1092,6 +1207,7 @@ mod tests {
             auto_cleanup_min_free_gb: 25.0,
             language: "zh-CN".into(),
             theme: "dark".into(),
+            update_check_enabled: false,
             scoring_weight_risk: 0.30,
             scoring_weight_age: 0.10,
             scoring_weight_duplicate: 0.25,
@@ -1123,6 +1239,7 @@ mod tests {
         assert_eq!(loaded.auto_cleanup_min_free_gb, 25.0);
         assert_eq!(loaded.language, "zh-CN");
         assert_eq!(loaded.theme, "dark");
+        assert!(!loaded.update_check_enabled);
         assert_eq!(loaded.scoring_weight_risk, 0.30);
         assert_eq!(loaded.scoring_weight_age, 0.10);
         assert_eq!(loaded.scoring_weight_duplicate, 0.25);
@@ -1149,6 +1266,7 @@ mod tests {
         assert_eq!(settings.auto_cleanup_min_free_gb, 50.0);
         assert_eq!(settings.language, "auto");
         assert_eq!(settings.theme, "auto");
+        assert!(settings.update_check_enabled);
         assert_eq!(settings.scoring_weight_risk, 0.20);
         assert_eq!(settings.scoring_weight_age, 0.15);
         assert_eq!(settings.scoring_weight_duplicate, 0.20);
@@ -1181,6 +1299,29 @@ mod tests {
         assert_eq!(reports[0].drive_letter, "C");
         assert_eq!(reports[0].freed_bytes, 1234);
         assert_eq!(reports[0].status, "completed");
+    }
+
+    #[test]
+    fn save_and_query_health_snapshot() {
+        let conn = setup_test_conn();
+        let input = HealthSnapshotInput {
+            drive_letter: "C".into(),
+            score: 84,
+            space_score: 90,
+            waste_score: 80,
+            trend_score: 70,
+            age_score: 75,
+            frag_score: 65,
+            anomaly_score: 95,
+        };
+
+        save_health_snapshot_with(&conn, &input).unwrap();
+        let history = get_health_history_with(&conn, "C", 10).unwrap();
+
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].score, 84);
+        assert_eq!(history[0].frag_score, 65);
+        assert_eq!(history[0].anomaly_score, 95);
     }
 
     #[test]

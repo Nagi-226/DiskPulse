@@ -49,6 +49,7 @@ export interface FileEntry {
   modified_epoch_ms: number;
   hard_link_count: number;
   size_on_disk_bytes: number | null;
+  file_category?: string | null;
 }
 
 export interface LargeFileProgress {
@@ -250,6 +251,7 @@ export interface AppSettings {
   auto_cleanup_min_free_gb: number;
   language: string;
   theme: string;
+  update_check_enabled: boolean;
   scoring_weight_risk: number;
   scoring_weight_age: number;
   scoring_weight_duplicate: number;
@@ -371,6 +373,50 @@ export interface AgingReport {
   zombie_files: FileEntry[];
   hotspots: Hotspot[];
   file_ages?: FileAge[];
+}
+
+export interface FileFragmentation {
+  path: string;
+  size_bytes: number;
+  extent_count: number;
+  cluster_size: number;
+  fragmentation_ratio: number;
+}
+
+export interface FragmentationDirSummary {
+  path: string;
+  files_analyzed: number;
+  average_fragmentation: number;
+  max_fragmentation: number;
+  fragmented_files: number;
+  total_bytes: number;
+}
+
+export interface FragmentationReport {
+  root_path: string;
+  files_analyzed: number;
+  total_files_seen: number;
+  average_fragmentation: number;
+  high_fragmentation_files: number;
+  top_dirs: FragmentationDirSummary[];
+  top_files: FileFragmentation[];
+  sampled: boolean;
+}
+
+export interface DiskFullPrediction {
+  drive_letter: string;
+  days_to_full: number | null;
+  optimistic_days: number | null;
+  pessimistic_days: number | null;
+  urgency: string;
+  confidence_score: number;
+}
+
+export interface CleanupGain {
+  drive_letter: string;
+  freed_bytes: number;
+  estimated_extra_days: number | null;
+  new_urgency: string;
 }
 
 export interface AgingScanProgress {

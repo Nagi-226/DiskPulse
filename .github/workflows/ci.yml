@@ -3,12 +3,19 @@
 on:
   push:
     branches: [main, master, "release/**"]
+    tags: ["v*"]
   pull_request:
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   build:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -31,7 +38,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config libfuse2
 
       - name: Install frontend dependencies
         run: npm ci
@@ -53,6 +60,33 @@ jobs:
       - name: Tauri build
         run: npm run tauri build
 
+      - name: Verify Linux bundles
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          deb=(src-tauri/target/release/bundle/deb/*.deb)
+          appimage=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          if (( ${#deb[@]} == 0 )); then
+            echo "Missing .deb bundle"
+            exit 1
+          fi
+
+      - name: Verify macOS bundles
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          dmg=(src-tauri/target/release/bundle/dmg/*.dmg)
+          if (( ${#dmg[@]} == 0 )); then
+            echo "Missing .dmg bundle"
+            exit 1
+          fi
+          if (( ${#appimage[@]} == 0 )); then
+            echo "Missing .AppImage bundle"
+            exit 1
+          fi
+
       - name: Upload Windows bundles
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
@@ -62,6 +96,39 @@ jobs:
             src-tauri/target/release/bundle/msi/*.msi
             src-tauri/target/release/bundle/nsis/*.exe
 
+      - name: Upload unsigned Windows artifacts for SignPath
+        id: upload-unsigned-windows-artifacts
+        if: matrix.os == 'windows-latest' && (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: diskpulse-windows-unsigned
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+
+      - name: Submit SignPath signing request
+        id: signpath
+        if: matrix.os == 'windows-latest' && env.SIGNPATH_API_TOKEN != '' && (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/'))
+        uses: signpath/github-action-submit-signing-request@v2
+        env:
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: diskpulse
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: windows-installers
+          github-artifact-id: ${{ steps.upload-unsigned-windows-artifacts.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-windows
+
+      - name: Upload signed Windows artifacts
+        if: matrix.os == 'windows-latest' && steps.signpath.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: diskpulse-windows-signed
+          path: signed-windows/**
+
       - name: Upload Linux bundles
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
@@ -70,6 +137,8 @@ jobs:
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload macOS bundles
         if: matrix.os == 'macos-latest'
@@ -77,3 +146,5 @@ jobs:
         with:
           name: diskpulse-macos
           path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14

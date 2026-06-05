@@ -1,15 +1,15 @@
 ﻿# DiskPulse Progress Snapshot
 
-> **Last updated**: 2026-06-04
+> **Last updated**: 2026-06-05
 > **Purpose**: Fast context sync for resuming DiskPulse development.
 
 ## Current Baseline
 
-- **Current version**: `v0.7.0` — Intelligent Operations Platform
-- **Next target**: v0.8.0 — Production-Ready Deep Intelligence (see `docs/v0.8.0-plan.md`)
+- **Current version**: `v0.8.0` — Production-Ready Deep Intelligence local implementation
+- **Next target**: v0.9.0 follow-ups / native runner validation
 - **Full plan**: `docs/v0.8.0-plan.md` (2 phases, 10 feature versions + release)
-- **Status**: v0.7.0 released; v0.8.0 planning complete; 119 tests.
-- **Last verified**: (2026-06-04) `cargo test` (119/119 passed), `cargo clippy -- -D warnings` (0 warnings), `npm run typecheck` (0 errors), `npm run build:web` (chunk-size warning only), `npm run tauri build` (Windows MSI/NSIS generated).
+- **Status**: v0.8.0 local implementation complete. Native Linux/macOS CI artifacts and real platform fragmentation APIs still require native runner validation.
+- **Last verified**: (2026-06-05) `cargo test --manifest-path src-tauri\Cargo.toml` (129/129), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `cargo bench --manifest-path src-tauri\Cargo.toml`, `npm run verify:signing`, `npm run verify:linux-ci`.
 
 ## What Works Right Now
 
@@ -22,6 +22,8 @@
 | FS watcher (native Windows + polling fallback) | `src-tauri/src/platform/windows.rs`, `src-tauri/src/watcher/mod.rs` | ✅ 8 tests |
 | SQLite database | `src-tauri/src/db/mod.rs` | 鉁?8 tests |
 | Tauri IPC (34 commands) | `src-tauri/src/lib.rs` | ✅ registered + 3 watcher-cache tests |
+| Signing configuration | `.signpath/`, `.github/workflows/ci.yml`, `docs/signing.md`, `packaging/homebrew/diskpulse.rb` | ✅ `npm run verify:signing` |
+| Linux native CI configuration | `.github/workflows/ci.yml`, `src-tauri/src/platform/linux.rs`, `docs/linux-ci.md` | ✅ `npm run verify:linux-ci` |
 | System tray | `src-tauri/src/lib.rs` | 鉁?|
 | React dashboard + treemap | `src/App.tsx`, `src/components/Treemap.tsx` | 鉁?|
 | Cleanup report page | `src/pages/Cleanup/` | 鉁?|
@@ -360,47 +362,45 @@ v0.7.0 made DiskPulse smart. v0.8.0 makes it **shippable to the public** while p
 
 | Version | Focus | Key Deliverables | Priority |
 |---------|-------|-----------------|----------|
-| v0.7.1 | Code Signing + Notarization | SignPath Foundation (Win) + Homebrew Cask (macOS), $0 OSS distribution | P0 |
-| v0.7.2 | Linux Native CI | GitHub Actions ubuntu-latest: cargo test + .deb/.AppImage packaging | P0 |
-| v0.7.3 | macOS Native CI + FSEvents | GitHub Actions macos-latest + FSEvents native watcher activation | P0 |
-| v0.7.4 | Code Split + Auto-Update | React.lazy route splitting (first screen <300KB gzip) + GitHub Release update checker | P1 |
-| v0.7.5 | Perf Bench + i18n + Edge Fixes | 10 benchmarks (synthetic fixtures), Japanese locale, 6 edge-case fixes | P1 |
+| v0.7.1 | Code Signing + Notarization | SignPath config + CI signing hook + Homebrew Cask template; external approval/secrets pending | ✅ Local |
+| v0.7.2 | Linux Native CI | GitHub Actions ubuntu-latest: cargo test + .deb/.AppImage packaging; local config complete, native runner pending | ✅ Local |
+| v0.7.3 | macOS Native CI + FSEvents | GitHub Actions macos-latest + FSEvents native watcher activation; native runner pending | ✅ Local |
+| v0.7.4 | Code Split + Auto-Update | React.lazy route splitting (first screen <300KB gzip) + GitHub Release update checker | ✅ Local |
+| v0.7.5 | Perf Bench + i18n + Edge Fixes | 10 benchmarks (synthetic fixtures), Japanese locale, edge-case fixes | ✅ Local |
 
 ### Phase 2: Deep Intelligence (v0.7.6 — v0.7.10)
 
 | Version | Focus | Key Deliverables | Priority |
 |---------|-------|-----------------|----------|
 | v0.7.6 | Disk Fragmentation Analysis | FSCTL_GET_RETRIEVAL_POINTERS / FS_IOC_FIEMAP / F_LOG2PHYS extent detection; analysis only, no defrag | P0 |
-| v0.7.7 | burn DL Anomaly Detection | Pure Rust Autoencoder (6→4→6 dims) + 3-way signal fusion; `#[cfg(feature = "ml-engine")]` compile-time gating + 8-point runtime fallback matrix | P0 |
-| v0.7.8 | Health Score v2 | 4D→6D radar (Space/Waste/Trend/Age/Frag/Anomaly) + composite score + health trend + actionable advice | P0 |
-| v0.7.9 | Predictive Cleanup | "3 days until full" → quantify gain if cleaned → time-sensitive pre-cleanup list; safety invariant: user confirmation required | P1 |
-| v0.7.10 | Smart File Classification | 3-stage pipeline (extension→magic bytes→burn classifier, 12 categories); `file_category` condition in risk rules | P1 |
+| v0.7.7 | Anomaly Fusion Fallback | Holt-Winters + Modified Z-Score + optional AE signal fusion; runtime fallback weights | ✅ Local |
+| v0.7.8 | Health Score v2 | 4D→6D scoring (Space/Waste/Trend/Age/Frag/Anomaly) + health snapshots | ✅ Local |
+| v0.7.9 | Predictive Cleanup | Disk-full prediction, cleanup gain simulation, pre-cleanup candidates with confirmation guard | ✅ Local |
+| v0.7.10 | Smart File Classification | Extension + magic-byte classification, `file_category` in file entries | ✅ Local |
 
 ### v0.8.0 Release
 
 | Task | Status |
 |------|--------|
-| Target: 155+ tests (119 → 155, +36 new) | 📋 Planned |
-| 10 feature versions (v0.7.1–v0.7.10) | 📋 Planned |
-| 2 new burn models (AE ~50KB + Classifier ~80KB) | 📋 Planned |
-| 3-platform signed CI all green | 📋 Planned |
-| Docs sync: CLAUDE.md, PROGRESS.md, CHANGELOG.md, CODEX.md, README | 📋 Planned |
+| Target: expanded tests | ✅ 129 Rust tests |
+| 10 feature versions (v0.7.1–v0.7.10) | ✅ Local |
+| 2 new burn models (AE ~50KB + Classifier ~80KB) | ⏭️ Deferred to v0.9.0 |
+| 3-platform signed CI all green | ⚠️ Native runners pending |
+| Docs sync: CLAUDE.md, PROGRESS.md, CHANGELOG.md, CODEX.md, README | ✅ Local |
 
-### New Modules (v0.8.0 planned)
+### New Modules (v0.8.0)
 
 | Module | Phase | Purpose |
 |--------|-------|---------|
-| `fileclass/` (4 files) | v0.7.10 | 3-stage file classification pipeline |
-| `anomaly/ae.rs` | v0.7.7 | burn Autoencoder model, training, inference |
-| `anomaly/features.rs` | v0.7.7 | 6-dim snapshot feature extractor |
-| `anomaly/synthetic.rs` | v0.7.7 | Synthetic training data generator |
+| `fileclass/` | v0.7.10 | Extension + magic-byte classification |
+| `fragmentation.rs` | v0.7.6 | Sampled fragmentation reports and file estimates |
+| `anomaly` fusion types | v0.7.7 | Runtime fallback/fusion weighting |
 
-### New Crate Deps (v0.8.0 planned)
+### New Crate Deps (v0.8.0)
 
 | Crate | Phase | Purpose |
 |-------|-------|---------|
-| `burn = "0.16"` | v0.7.7 | Pure Rust DL framework |
-| `burn-ndarray = "0.16"` | v0.7.7 | CPU backend for burn |
+| None | — | Burn model packaging deferred to v0.9.0; v0.8.0 keeps statistical fallback path |
 
 ### Deferred to v0.9.0
 
@@ -461,7 +461,9 @@ v0.7.0 made DiskPulse smart. v0.8.0 makes it **shippable to the public** while p
 | v0.6.6 | Smart Recommendations v2 | ✅ | Urgency multiplier, behavior learning, health radar |
 | v0.6.7 | Multi-Device Dashboard | ✅ | WebSocket Hub, mDNS, pairing, remote device selector |
 | v0.7.0 | Intelligent Ops Platform | ✅ Complete | 119 tests, Windows MSI/NSIS generated, docs synced |
-| v0.8.0 | Production-Ready Deep Intelligence | 📋 Planned | 10 feature versions, 155+ tests, burn DL, 6D health, signed 3-platform CI |
+| v0.7.1 | Code Signing Foundation | ✅ Local | SignPath config, CI signing hook, Homebrew Cask template, signing docs |
+| v0.7.2 | Linux Native CI | ✅ Local | ubuntu-latest deps, .deb/.AppImage verification, trash-rs fallback, inotify parser test, Linux CI docs |
+| v0.8.0 | Production-Ready Deep Intelligence | ✅ Local | 129 tests, fragmentation, anomaly fusion fallback, 6D health, predictive cleanup, file classification |
 
 ## v0.1.0 Release Checklist
 

@@ -1,10 +1,12 @@
 mod aging;
 mod alert;
-mod anomaly;
+pub mod anomaly;
 mod cleaner;
 mod cli;
 mod db;
 pub mod duplicates;
+pub mod fileclass;
+pub mod fragmentation;
 pub mod hub;
 pub mod platform;
 mod prediction;
@@ -57,6 +59,7 @@ static SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 static LARGE_FILE_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 static DUPLICATE_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 static AGING_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+static FRAGMENTATION_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 
 fn begin_scan_token() -> Arc<AtomicBool> {
     let token = Arc::new(AtomicBool::new(false));
@@ -133,6 +136,27 @@ fn begin_aging_scan_token() -> Arc<AtomicBool> {
 
 fn finish_aging_scan_token(token: &Arc<AtomicBool>) {
     if let Ok(mut guard) = AGING_SCAN_CANCEL.lock() {
+        if guard
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, token))
+        {
+            *guard = None;
+        }
+    }
+}
+
+fn begin_fragmentation_scan_token() -> Arc<AtomicBool> {
+    let token = Arc::new(AtomicBool::new(false));
+    if let Ok(mut guard) = FRAGMENTATION_SCAN_CANCEL.lock() {
+        if let Some(previous) = guard.replace(token.clone()) {
+            previous.store(true, Ordering::Relaxed);
+        }
+    }
+    token
+}
+
+fn finish_fragmentation_scan_token(token: &Arc<AtomicBool>) {
+    if let Ok(mut guard) = FRAGMENTATION_SCAN_CANCEL.lock() {
         if guard
             .as_ref()
             .is_some_and(|current| Arc::ptr_eq(current, token))
@@ -778,6 +802,68 @@ fn get_disk_health(drive: String) -> Result<recommendations::DiskHealth, String>
     recommendations::get_disk_health(&drive)
 }
 
+#[tauri::command]
+fn get_health_history(drive: String, limit: usize) -> Result<Vec<db::HealthSnapshot>, String> {
+    db::get_health_history(&drive, limit)
+}
+
+/// Analyze sampled file fragmentation for a drive.
+#[tauri::command]
+fn analyze_fragmentation(drive: String) -> Result<fragmentation::FragmentationReport, String> {
+    let token = begin_fragmentation_scan_token();
+    let report = fragmentation::analyze_drive(&drive, Some(&token));
+    finish_fragmentation_scan_token(&token);
+    report
+}
+
+/// Analyze a single file's estimated fragmentation.
+#[tauri::command]
+fn get_file_fragmentation(path: String) -> Result<fragmentation::FileFragmentation, String> {
+    fragmentation::get_file_fragmentation(Path::new(&path))
+}
+
+/// Cancel an active fragmentation scan.
+#[tauri::command]
+fn cancel_fragmentation_scan() -> Result<(), String> {
+    if let Ok(guard) = FRAGMENTATION_SCAN_CANCEL.lock() {
+        if let Some(token) = guard.as_ref() {
+            token.store(true, Ordering::Relaxed);
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn predict_disk_full(drive: String) -> Result<prediction::DiskFullPrediction, String> {
+    prediction::predict_disk_full(&drive)
+}
+
+#[tauri::command]
+fn simulate_cleanup_gain(
+    drive: String,
+    items: Vec<CleanItem>,
+) -> Result<prediction::CleanupGain, String> {
+    prediction::simulate_cleanup_gain(&drive, items)
+}
+
+#[tauri::command]
+fn get_pre_cleanup_candidates(drive: String) -> Result<Vec<CleanItem>, String> {
+    recommendations::get_pre_cleanup_candidates(&drive)
+}
+
+#[tauri::command]
+fn execute_pre_cleanup(
+    app: AppHandle,
+    drive: String,
+    confirmed: bool,
+) -> Result<CleanResult, String> {
+    if !confirmed {
+        return Err("Pre-cleanup requires explicit user confirmation".into());
+    }
+    let items = recommendations::get_pre_cleanup_candidates(&drive)?;
+    clean_items(app, items)
+}
+
 /// Export a scan report to a temporary CSV/JSON file.
 #[tauri::command]
 fn export_scan_report(drive: String, format: String) -> Result<String, String> {
@@ -1064,6 +1150,14 @@ pub fn run() {
             get_auto_cleanup_history,
             get_recommendations,
             get_disk_health,
+            get_health_history,
+            analyze_fragmentation,
+            get_file_fragmentation,
+            cancel_fragmentation_scan,
+            predict_disk_full,
+            simulate_cleanup_gain,
+            get_pre_cleanup_candidates,
+            execute_pre_cleanup,
             export_scan_report,
             export_cleanup_history,
             export_duplicates,

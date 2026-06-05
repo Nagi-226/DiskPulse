@@ -325,6 +325,9 @@ fn file_entry_from_record(record: &FileTimeRecord) -> FileEntry {
             .unwrap_or(0),
         hard_link_count: meta.hard_link_count(&record.path).unwrap_or(1),
         size_on_disk_bytes: meta.size_on_disk(&record.path).ok().flatten(),
+        file_category: Some(
+            crate::fileclass::category_id(&crate::fileclass::classify_path(path)).into(),
+        ),
     }
 }
 

@@ -1,0 +1,21 @@
+project_slug: diskpulse
+organization_slug: diskpulse
+artifact_configuration_slug: windows-installers
+signing_policy_slug: release-signing
+
+artifact_configuration:
+  name: Windows Installers
+  description: DiskPulse MSI and NSIS installer bundles produced by Tauri.
+  files:
+    - path: "*.msi"
+      sign: true
+    - path: "*.exe"
+      sign: true
+
+trigger:
+  branches:
+    - main
+    - master
+    - release/**
+  tags:
+    - v*

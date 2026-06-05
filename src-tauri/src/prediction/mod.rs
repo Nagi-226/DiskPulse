@@ -1,4 +1,5 @@
 use crate::db;
+use crate::cleaner::CleanItem;
 use serde::{Deserialize, Serialize};
 
 const TARGET_USAGE_PERCENT: f64 = 95.0;
@@ -33,6 +34,24 @@ pub struct Prediction {
     pub forecast: Vec<ForecastPoint>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DiskFullPrediction {
+    pub drive_letter: String,
+    pub days_to_full: Option<f64>,
+    pub optimistic_days: Option<f64>,
+    pub pessimistic_days: Option<f64>,
+    pub urgency: String,
+    pub confidence_score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CleanupGain {
+    pub drive_letter: String,
+    pub freed_bytes: u64,
+    pub estimated_extra_days: Option<f64>,
+    pub new_urgency: String,
+}
+
 #[derive(Debug, Clone)]
 struct Regression {
     slope: f64,
@@ -42,6 +61,90 @@ struct Regression {
 pub fn predict_disk_usage(drive: &str, days: u32) -> Result<Prediction, String> {
     let snapshots = db::get_snapshot_history(drive, days)?;
     predict_from_snapshots(drive, days, &snapshots)
+}
+
+pub fn predict_disk_full(drive: &str) -> Result<DiskFullPrediction, String> {
+    let prediction = predict_disk_usage(drive, 180)?;
+    let days_to_full = prediction.days_to_95_percent;
+    let (optimistic_days, pessimistic_days) = prediction
+        .dynamic_confidence_interval
+        .map(|(low, high)| {
+            let total = prediction
+                .forecast
+                .last()
+                .map(|point| point.used_bytes.saturating_add(point.free_bytes).max(1))
+                .unwrap_or(1) as f64;
+            let current = prediction
+                .forecast
+                .iter()
+                .rev()
+                .find(|point| !point.is_forecast)
+                .map(|point| point.used_bytes as f64)
+                .unwrap_or(0.0);
+            let growth = prediction.growth_bytes_per_day.max(1.0);
+            let high_days = ((total * 0.95 - low.max(current)) / growth).max(0.0);
+            let low_days = ((total * 0.95 - high.max(current)) / growth).max(0.0);
+            (Some(high_days), Some(low_days))
+        })
+        .unwrap_or((days_to_full.map(|days| days * 1.25), days_to_full.map(|days| days * 0.75)));
+
+    Ok(DiskFullPrediction {
+        drive_letter: drive.to_uppercase(),
+        days_to_full,
+        optimistic_days,
+        pessimistic_days,
+        urgency: urgency_from_days(days_to_full),
+        confidence_score: prediction.confidence_score,
+    })
+}
+
+pub fn simulate_cleanup_gain(drive: &str, items: Vec<CleanItem>) -> Result<CleanupGain, String> {
+    let prediction = predict_disk_usage(drive, 180)?;
+    Ok(simulate_cleanup_gain_from_growth(
+        drive,
+        items,
+        prediction.growth_bytes_per_day,
+        prediction.days_to_95_percent,
+    ))
+}
+
+fn simulate_cleanup_gain_from_growth(
+    drive: &str,
+    items: Vec<CleanItem>,
+    growth_bytes_per_day: f64,
+    current_days_to_full: Option<f64>,
+) -> CleanupGain {
+    let freed_bytes = items
+        .into_iter()
+        .filter(|item| item.safe_to_delete && item.risk_level == crate::risk::RiskLevel::Low)
+        .map(|item| item.size_bytes)
+        .sum::<u64>();
+    let estimated_extra_days = if growth_bytes_per_day > 1.0 {
+        Some(freed_bytes as f64 / growth_bytes_per_day)
+    } else {
+        None
+    };
+    let new_days = match (current_days_to_full, estimated_extra_days) {
+        (Some(current), Some(extra)) => Some(current + extra),
+        (current, _) => current,
+    };
+
+    CleanupGain {
+        drive_letter: drive.to_uppercase(),
+        freed_bytes,
+        estimated_extra_days,
+        new_urgency: urgency_from_days(new_days),
+    }
+}
+
+fn urgency_from_days(days: Option<f64>) -> String {
+    match days {
+        Some(value) if value <= 3.0 => "critical",
+        Some(value) if value <= 14.0 => "high",
+        Some(value) if value <= 45.0 => "elevated",
+        _ => "normal",
+    }
+    .into()
 }
 
 fn predict_from_snapshots(
@@ -566,5 +669,25 @@ mod tests {
         assert!(prediction.seasonal_component.abs() > 0.0);
         assert!(prediction.dynamic_confidence_interval.is_some());
         assert!(prediction.forecast.iter().any(|point| point.is_forecast));
+    }
+
+    #[test]
+    fn cleanup_gain_converts_reclaimed_bytes_to_extra_days() {
+        let gain = simulate_cleanup_gain_from_growth(
+            "C",
+            vec![CleanItem {
+                name: "cache".into(),
+                path: "C:\\Temp\\cache".into(),
+                size_bytes: 10 * GIB,
+                risk_level: crate::risk::RiskLevel::Low,
+                safe_to_delete: true,
+            }],
+            2.0 * GIB as f64,
+            Some(4.0),
+        );
+
+        assert_eq!(gain.freed_bytes, 10 * GIB);
+        assert_eq!(gain.estimated_extra_days, Some(5.0));
+        assert_eq!(gain.new_urgency, "high");
     }
 }

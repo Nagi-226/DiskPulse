@@ -5,6 +5,7 @@
     "largeFiles": "Large Files",
     "duplicates": "Duplicates",
     "aging": "Aging Analysis",
+    "fragmentation": "Fragmentation",
     "wizard": "Cleanup Wizard",
     "history": "History",
     "settings": "Settings"
@@ -18,6 +19,7 @@
     "auto": "Auto",
     "english": "English",
     "chinese": "Simplified Chinese",
+    "japanese": "Japanese",
     "light": "Light",
     "dark": "Dark"
   }

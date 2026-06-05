@@ -10,6 +10,8 @@ pub enum AnomalyType {
     BurstAnomaly,
     HotspotAnomaly,
     PatternDeviation,
+    DriftAnomaly,
+    AntiSeasonal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -36,6 +38,36 @@ pub struct AnomalyReport {
     pub drive_letter: String,
     pub sample_count: usize,
     pub events: Vec<AnomalyEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum AeStatus {
+    Healthy,
+    Degraded,
+    Disabled,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FusionWeights {
+    pub holt_winters: f64,
+    pub zscore: f64,
+    pub autoencoder: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FusionSignal {
+    pub name: String,
+    pub triggered: bool,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FusionResult {
+    pub weights: FusionWeights,
+    pub confidence: String,
+    pub fused_score: f64,
+    pub signals: Vec<FusionSignal>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -174,6 +206,58 @@ impl Default for AnomalyDetector {
             },
             modified_z_score: ModifiedZScore { threshold: 3.5 },
         }
+    }
+}
+
+pub fn fusion_weights(status: AeStatus) -> FusionWeights {
+    match status {
+        AeStatus::Healthy => FusionWeights {
+            holt_winters: 0.30,
+            zscore: 0.30,
+            autoencoder: 0.40,
+        },
+        AeStatus::Degraded => FusionWeights {
+            holt_winters: 0.45,
+            zscore: 0.45,
+            autoencoder: 0.10,
+        },
+        AeStatus::Disabled => FusionWeights {
+            holt_winters: 0.50,
+            zscore: 0.50,
+            autoencoder: 0.0,
+        },
+    }
+}
+
+pub fn fuse_anomaly_signals(status: AeStatus, signals: Vec<FusionSignal>) -> FusionResult {
+    let weights = fusion_weights(status);
+    let weight_for = |name: &str| match name {
+        "holt_winters" => weights.holt_winters,
+        "zscore" => weights.zscore,
+        "autoencoder" => weights.autoencoder,
+        _ => 0.0,
+    };
+    let fused_score = signals
+        .iter()
+        .filter(|signal| signal.triggered)
+        .map(|signal| signal.score.clamp(0.0, 1.0) * weight_for(&signal.name))
+        .sum::<f64>()
+        .clamp(0.0, 1.0);
+    let triggered = signals.iter().filter(|signal| signal.triggered).count();
+    let confidence = if triggered >= 2 {
+        "high"
+    } else if triggered == 1 {
+        "low"
+    } else {
+        "none"
+    }
+    .to_string();
+
+    FusionResult {
+        weights,
+        confidence,
+        fused_score,
+        signals,
     }
 }
 
@@ -417,6 +501,41 @@ mod tests {
         assert!((result.forecast[0] - 156.0).abs() < 6.0);
         assert!(result.trend > 1.0);
         assert!(result.seasonal.abs() > 0.1);
+    }
+
+    #[test]
+    fn fusion_weights_degrade_when_autoencoder_unavailable() {
+        assert_eq!(fusion_weights(AeStatus::Healthy).autoencoder, 0.40);
+        assert_eq!(fusion_weights(AeStatus::Degraded).autoencoder, 0.10);
+        assert_eq!(fusion_weights(AeStatus::Disabled).autoencoder, 0.0);
+        assert_eq!(fusion_weights(AeStatus::Disabled).holt_winters, 0.50);
+    }
+
+    #[test]
+    fn fusion_confidence_is_high_when_two_detectors_trigger() {
+        let result = fuse_anomaly_signals(
+            AeStatus::Healthy,
+            vec![
+                FusionSignal {
+                    name: "holt_winters".into(),
+                    triggered: true,
+                    score: 0.8,
+                },
+                FusionSignal {
+                    name: "zscore".into(),
+                    triggered: true,
+                    score: 0.9,
+                },
+                FusionSignal {
+                    name: "autoencoder".into(),
+                    triggered: false,
+                    score: 0.0,
+                },
+            ],
+        );
+
+        assert_eq!(result.confidence, "high");
+        assert!(result.fused_score > 0.4);
     }
 
     #[test]

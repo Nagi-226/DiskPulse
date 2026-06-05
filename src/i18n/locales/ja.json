@@ -1,0 +1,26 @@
+{
+  "nav": {
+    "dashboard": "ダッシュボード",
+    "cleanup": "クリーンアップレポート",
+    "largeFiles": "大容量ファイル",
+    "duplicates": "重複ファイル",
+    "aging": "経年分析",
+    "fragmentation": "断片化",
+    "wizard": "クリーンアップウィザード",
+    "history": "履歴",
+    "settings": "設定"
+  },
+  "settings": {
+    "language": "言語",
+    "languageHelp": "UI の言語を選択します。自動はシステム言語に従います。",
+    "theme": "テーマ",
+    "themeHelp": "Aurora ライト、Aurora ダーク、またはシステム連動を選択します。",
+    "appearance": "外観",
+    "auto": "自動",
+    "english": "英語",
+    "chinese": "簡体字中国語",
+    "japanese": "日本語",
+    "light": "ライト",
+    "dark": "ダーク"
+  }
+}

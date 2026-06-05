@@ -1,4 +1,4 @@
-use crate::risk::{RiskItem, RiskLevel};
+﻿use crate::risk::{RiskItem, RiskLevel};
 use crate::scanner;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -15,6 +15,7 @@ struct RecommendationInput {
     age_days: Option<u64>,
     duplicate_waste_bytes: u64,
     detector_hits: u8,
+    fragmentation_ratio: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -53,6 +54,8 @@ pub struct DiskHealth {
     pub waste_score: u8,
     pub trend_score: u8,
     pub age_score: u8,
+    pub frag_score: u8,
+    pub anomaly_score: u8,
     pub trend_growth_percent_per_day: f64,
     pub message: String,
 }
@@ -101,6 +104,7 @@ pub fn get_recommendations(drive: &str) -> Result<Vec<Recommendation>, String> {
     let aging_report = crate::aging::analyze_file_aging(drive)?;
     let age_map = build_age_map(&aging_report);
     let detector_hits = build_detector_hits(drive, &age_map).unwrap_or_default();
+    let fragmentation = crate::fragmentation::analyze_drive(drive, None).ok();
     let category_counts = cleanup_category_counts().unwrap_or_default();
     let urgency = crate::prediction::predict_disk_usage(drive, 90)
         .map(|prediction| urgency_multiplier(prediction.days_to_95_percent))
@@ -109,7 +113,7 @@ pub fn get_recommendations(drive: &str) -> Result<Vec<Recommendation>, String> {
     let inputs = report
         .items
         .into_iter()
-        .map(|item| input_from_risk_item(item, &age_map, &detector_hits))
+        .map(|item| input_from_risk_item(item, &age_map, &detector_hits, fragmentation.as_ref()))
         .collect::<Vec<_>>();
     Ok(rank_recommendations_with_context(
         inputs,
@@ -147,9 +151,38 @@ pub fn get_disk_health(drive: &str) -> Result<DiskHealth, String> {
         growth_percent_per_day,
         duplicate_waste_bytes,
         zombie_bytes,
+        0.0,
+        0.0,
     );
     health.drive_letter = meta.drive_letter;
+    let _ = crate::db::save_health_snapshot(&crate::db::HealthSnapshotInput {
+        drive_letter: health.drive_letter.clone(),
+        score: health.score,
+        space_score: health.space_score,
+        waste_score: health.waste_score,
+        trend_score: health.trend_score,
+        age_score: health.age_score,
+        frag_score: health.frag_score,
+        anomaly_score: health.anomaly_score,
+    });
     Ok(health)
+}
+
+pub fn get_pre_cleanup_candidates(drive: &str) -> Result<Vec<crate::cleaner::CleanItem>, String> {
+    Ok(get_recommendations(drive)?
+        .into_iter()
+        .filter(|recommendation| {
+            recommendation.item.safe_to_delete && recommendation.item.risk_level == "low"
+        })
+        .take(20)
+        .map(|recommendation| crate::cleaner::CleanItem {
+            name: recommendation.item.name,
+            path: recommendation.item.path,
+            size_bytes: recommendation.item.size_bytes,
+            risk_level: crate::risk::RiskLevel::Low,
+            safe_to_delete: true,
+        })
+        .collect())
 }
 
 fn load_scoring_weights() -> ScoringWeights {
@@ -193,14 +226,16 @@ fn input_from_risk_item(
     item: RiskItem,
     age_map: &HashMap<String, u64>,
     detector_hits: &HashMap<String, u8>,
+    fragmentation: Option<&crate::fragmentation::FragmentationReport>,
 ) -> RecommendationInput {
     let key = normalize_path_key(&item.path);
     let age_days = age_map.get(&key).copied();
+    let fragmentation_ratio = fragmentation_ratio_for_path(&item.path, fragmentation);
     let detector_hit_count = detector_hits
         .get(&key)
         .copied()
         .unwrap_or(1)
-        .max(if age_days.is_some() { 2 } else { 1 });
+        .max(if age_days.is_some() || fragmentation_ratio > 0.5 { 2 } else { 1 });
     RecommendationInput {
         path: item.path,
         name: item.name,
@@ -211,7 +246,24 @@ fn input_from_risk_item(
         age_days,
         duplicate_waste_bytes: 0,
         detector_hits: detector_hit_count,
+        fragmentation_ratio,
     }
+}
+
+fn fragmentation_ratio_for_path(
+    path: &str,
+    report: Option<&crate::fragmentation::FragmentationReport>,
+) -> f64 {
+    let Some(report) = report else {
+        return 0.0;
+    };
+    let key = normalize_path_key(path);
+    report
+        .top_dirs
+        .iter()
+        .find(|dir| normalize_path_key(&dir.path) == key)
+        .map(|dir| dir.average_fragmentation)
+        .unwrap_or(0.0)
 }
 
 fn risk_level_to_string(level: &RiskLevel) -> String {
@@ -459,6 +511,9 @@ fn recommendation_reason(input: &RecommendationInput) -> String {
     if input.duplicate_waste_bytes > 0 {
         return "Duplicate content can be reviewed to reclaim repeated bytes.".into();
     }
+    if input.fragmentation_ratio > 0.5 {
+        return "High-fragmentation directory; keep it on the watch list.".into();
+    }
     if input.safe_to_delete {
         return "Low-risk whitelisted cleanup candidate.".into();
     }
@@ -470,6 +525,8 @@ fn calculate_disk_health(
     growth_percent_per_day: f64,
     duplicate_waste_bytes: u64,
     zombie_bytes: u64,
+    average_fragmentation: f64,
+    anomaly_risk: f64,
 ) -> DiskHealth {
     let space_score = free_percent.clamp(0.0, 100.0);
     let waste_pressure_gb = duplicate_waste_bytes as f64 / 1024.0 / 1024.0 / 1024.0;
@@ -478,9 +535,25 @@ fn calculate_disk_health(
     let trend_score = (100.0 - (growth_percent_per_day.max(0.0) * 12.0).min(80.0))
         .clamp(0.0, 100.0);
     let age_score = (100.0 - (age_pressure_gb * 1.5).min(70.0)).clamp(0.0, 100.0);
+    let frag_score = (100.0 - (average_fragmentation.clamp(0.0, 1.0) * 100.0))
+        .clamp(0.0, 100.0);
+    let anomaly_score = (100.0 - (anomaly_risk.clamp(0.0, 1.0) * 100.0))
+        .clamp(0.0, 100.0);
 
-    let score =
-        space_score * 0.50 + waste_score * 0.20 + trend_score * 0.15 + age_score * 0.15;
+    let raw_score = space_score * 0.25
+        + waste_score * 0.20
+        + trend_score * 0.20
+        + age_score * 0.10
+        + frag_score * 0.10
+        + anomaly_score * 0.15;
+    let urgency_penalty = if free_percent < 10.0 {
+        0.55
+    } else if free_percent < 20.0 || growth_percent_per_day > 4.0 {
+        0.75
+    } else {
+        1.0
+    };
+    let score = raw_score * urgency_penalty;
     let score = score.round().clamp(0.0, 100.0) as u8;
     let status = if free_percent < 10.0 {
         "warning"
@@ -510,6 +583,8 @@ fn calculate_disk_health(
         waste_score: waste_score.round() as u8,
         trend_score: trend_score.round() as u8,
         age_score: age_score.round() as u8,
+        frag_score: frag_score.round() as u8,
+        anomaly_score: anomaly_score.round() as u8,
         trend_growth_percent_per_day: growth_percent_per_day,
         message,
     }
@@ -532,6 +607,7 @@ mod tests {
             age_days: Some(300),
             duplicate_waste_bytes: 0,
             detector_hits: 1,
+            fragmentation_ratio: 0.0,
         };
 
         let score = score_recommendation(&item, &ScoringWeights::default());
@@ -552,6 +628,7 @@ mod tests {
                 age_days: None,
                 duplicate_waste_bytes: 0,
                 detector_hits: 1,
+                fragmentation_ratio: 0.0,
             },
             RecommendationInput {
                 path: "C:\\Temp\\cache".into(),
@@ -563,6 +640,7 @@ mod tests {
                 age_days: Some(200),
                 duplicate_waste_bytes: 0,
                 detector_hits: 1,
+                fragmentation_ratio: 0.0,
             },
         ];
 
@@ -590,7 +668,7 @@ mod tests {
         age_map.insert("c:\\temp\\cache".to_string(), 240);
         let detector_hits = HashMap::new();
 
-        let input = input_from_risk_item(item, &age_map, &detector_hits);
+        let input = input_from_risk_item(item, &age_map, &detector_hits, None);
 
         assert_eq!(input.age_days, Some(240));
     }
@@ -607,6 +685,7 @@ mod tests {
             age_days: Some(365),
             duplicate_waste_bytes: 0,
             detector_hits: 1,
+            fragmentation_ratio: 0.0,
         };
         let missing_age = RecommendationInput {
             age_days: None,
@@ -621,7 +700,7 @@ mod tests {
 
     #[test]
     fn disk_health_penalizes_low_free_space() {
-        let health = calculate_disk_health(5.0, 0.0, 0, 0);
+        let health = calculate_disk_health(5.0, 0.0, 0, 0, 0.0, 0.0);
 
         assert!(health.score < 60);
         assert_eq!(health.status, "warning");
@@ -629,8 +708,8 @@ mod tests {
 
     #[test]
     fn disk_health_penalizes_duplicate_and_zombie_waste() {
-        let clean = calculate_disk_health(80.0, 0.0, 0, 0);
-        let waste_heavy = calculate_disk_health(80.0, 0.0, 11_000_000_000, 26_000_000_000);
+        let clean = calculate_disk_health(80.0, 0.0, 0, 0, 0.0, 0.0);
+        let waste_heavy = calculate_disk_health(80.0, 0.0, 11_000_000_000, 26_000_000_000, 0.0, 0.0);
 
         assert!(waste_heavy.score < clean.score);
         assert_eq!(waste_heavy.duplicate_waste_bytes, 11_000_000_000);
@@ -683,14 +762,26 @@ mod tests {
     }
 
     #[test]
-    fn disk_health_returns_four_dimensions() {
-        let health = calculate_disk_health(40.0, 2.0, 30_000_000_000, 60_000_000_000);
+    fn disk_health_returns_six_dimensions() {
+        let health = calculate_disk_health(40.0, 2.0, 30_000_000_000, 60_000_000_000, 0.0, 0.0);
 
         assert!(health.space_score <= 40);
         assert!(health.waste_score < 100);
         assert!(health.trend_score < 100);
         assert!(health.age_score < 100);
-        assert!(health.score <= 60);
+        assert_eq!(health.frag_score, 100);
+        assert_eq!(health.anomaly_score, 100);
+        assert!(health.score <= 65);
+    }
+
+    #[test]
+    fn disk_health_penalizes_fragmentation_and_anomaly_risk() {
+        let clean = calculate_disk_health(80.0, 0.0, 0, 0, 0.0, 0.0);
+        let risky = calculate_disk_health(80.0, 0.0, 0, 0, 0.75, 0.60);
+
+        assert!(risky.score < clean.score);
+        assert!(risky.frag_score < clean.frag_score);
+        assert!(risky.anomaly_score < clean.anomaly_score);
     }
 
     #[test]
@@ -722,7 +813,7 @@ mod tests {
             .items
             .iter()
             .cloned()
-            .map(|item| input_from_risk_item(item, &age_map, &HashMap::new()))
+            .map(|item| input_from_risk_item(item, &age_map, &HashMap::new(), None))
             .collect::<Vec<_>>();
         let recommendations = rank_recommendations(inputs, &ScoringWeights::default());
         let preview_items = report
@@ -740,3 +831,5 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 }
+
+

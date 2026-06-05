@@ -139,6 +139,8 @@ pub struct FileEntry {
     pub hard_link_count: u64,
     #[serde(default)]
     pub size_on_disk_bytes: Option<u64>,
+    #[serde(default)]
+    pub file_category: Option<String>,
 }
 
 impl Ord for FileEntry {
@@ -148,6 +150,7 @@ impl Ord for FileEntry {
             self.modified_epoch_ms,
             self.hard_link_count,
             self.size_on_disk_bytes,
+            &self.file_category,
             &self.path,
             &self.name,
         )
@@ -156,6 +159,7 @@ impl Ord for FileEntry {
                 other.modified_epoch_ms,
                 other.hard_link_count,
                 other.size_on_disk_bytes,
+                &other.file_category,
                 &other.path,
                 &other.name,
             ))
@@ -309,7 +313,7 @@ where
             let name = e.file_name().to_string_lossy().to_string();
             let is_symlink = e.file_type().map(|ft| ft.is_symlink()).unwrap_or(false);
             let path = e.path();
-            if path.is_dir() && !is_symlink && !is_protected_root_dir(&name) {
+            if path.is_dir() && !is_symlink && !is_protected_root_entry(&path, &name) {
                 Some((path, name))
             } else {
                 None
@@ -473,6 +477,10 @@ fn is_protected_root_dir(name: &str) -> bool {
     matches!(name, "System Volume Information" | "$Recycle.Bin")
 }
 
+fn is_protected_root_entry(path: &Path, name: &str) -> bool {
+    is_protected_root_dir(name) || path == Path::new("/System/Volumes/Data")
+}
+
 /// Scan a drive for the largest individual files above a minimum size.
 pub fn find_large_files_with_progress_and_cancel<F>(
     drive_letter: &str,
@@ -492,6 +500,15 @@ where
     }
 
     find_large_files_under_root(path, drive_letter, min_size, limit, on_progress, cancel)
+}
+
+/// Bench-only helper for synthetic fixtures that are not mounted as drive roots.
+pub fn find_large_files_in_directory_for_bench(
+    root: &Path,
+    min_size: u64,
+    limit: usize,
+) -> Result<Vec<FileEntry>, String> {
+    find_large_files_under_root(root, "BENCH", min_size, limit, |_| {}, None)
 }
 
 fn find_large_files_under_root<F>(
@@ -533,7 +550,7 @@ where
         let path = entry.path();
         if file_type.as_ref().map(|ft| ft.is_dir()).unwrap_or(false) {
             let name = entry.file_name().to_string_lossy().to_string();
-            if !is_protected_root_dir(&name) {
+            if !is_protected_root_entry(&path, &name) {
                 top_dirs.push(path);
             }
         } else if file_type.as_ref().map(|ft| ft.is_file()).unwrap_or(false) {
@@ -639,6 +656,9 @@ fn push_file_candidate(
         modified_epoch_ms: modified_epoch_ms(&metadata),
         hard_link_count: meta.hard_link_count(&path_text).unwrap_or(1),
         size_on_disk_bytes: meta.size_on_disk(&path_text).ok().flatten(),
+        file_category: Some(
+            crate::fileclass::category_id(&crate::fileclass::classify_path(path)).into(),
+        ),
     };
 
     heap.push(Reverse(entry));
@@ -803,6 +823,15 @@ mod tests {
         assert!(is_protected_root_dir("System Volume Information"));
         assert!(is_protected_root_dir("$Recycle.Bin"));
         assert!(!is_protected_root_dir("Users"));
+    }
+
+    #[test]
+    fn synthetic_macos_data_volume_is_skipped() {
+        assert!(is_protected_root_entry(
+            Path::new("/System/Volumes/Data"),
+            "Data"
+        ));
+        assert!(!is_protected_root_entry(Path::new("/Users"), "Users"));
     }
 
     #[test]
