@@ -1,3 +1,7 @@
+pub mod ae;
+pub mod features;
+pub mod synthetic;
+
 use crate::db;
 use crate::scanner::DirInfo;
 use serde::{Deserialize, Serialize};
@@ -284,7 +288,8 @@ impl AnomalyDetector {
             .collect();
         let scores = self.modified_z_score.scores(&rates);
 
-        for ((snapshot, rate), score) in history.iter().skip(1).zip(rates.iter()).zip(scores.iter()) {
+        for ((snapshot, rate), score) in history.iter().skip(1).zip(rates.iter()).zip(scores.iter())
+        {
             let abs_score = score.abs();
             if abs_score > 10.0 {
                 events.push(AnomalyEvent {
@@ -326,8 +331,10 @@ impl AnomalyDetector {
                 continue;
             }
 
-            let previous_by_path: HashMap<String, u64> =
-                previous.into_iter().map(|dir| (dir.path, dir.size_bytes)).collect();
+            let previous_by_path: HashMap<String, u64> = previous
+                .into_iter()
+                .map(|dir| (dir.path, dir.size_bytes))
+                .collect();
             let growths: Vec<(DirInfo, f64)> = current
                 .into_iter()
                 .filter_map(|dir| {
@@ -544,7 +551,9 @@ mod tests {
         let scores = detector.scores(&[10.0, 11.0, 9.5, 10.5, 10.0, 90.0]);
 
         assert!(scores[5].abs() > detector.threshold);
-        assert!(scores[..5].iter().all(|score| score.abs() < detector.threshold));
+        assert!(scores[..5]
+            .iter()
+            .all(|score| score.abs() < detector.threshold));
     }
 
     #[test]

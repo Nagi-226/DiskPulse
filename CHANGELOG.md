@@ -36,6 +36,35 @@ All notable changes to DiskPulse will be documented in this file.
 
 ---
 
+## [0.8.5] - 2026-06-06
+
+> M2 P0 intelligence foundation. Local implementation advances through v0.8.5 while SignPath approval/secrets and native CI runs remain external gates.
+
+### Full Intelligence
+
+- Added v0.8.4 AE foundation modules: 6D snapshot feature extraction, deterministic 6→4→6 autoencoder inference, and 5,400 synthetic training samples.
+- Added v0.8.5 file classifier Stage 3: 8D file feature extraction, extended magic signatures, 12-class softmax-style classifier output, model version metadata, and stage-aware classification results.
+- Enhanced cleanup risk rules with optional `file_category` conditions plus built-in Stage 3 rules for `dev_cache`, `build`, and `dependency` categories.
+- Updated Settings rule details/search to surface `file_category`-based rules.
+- Added the `ml-engine` feature gate placeholder and bumped app/package versions to `0.8.5`.
+
+### Release Coordination
+
+- M1 local readiness remains intact for Windows SignPath and Linux bundle verification; real SignPath approval/signing and GitHub-hosted native CI are still expected to be triggered externally.
+
+### Verification (v0.8.5)
+
+- `cargo test --manifest-path src-tauri\Cargo.toml`: 138/138 passed.
+- `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`: passed.
+- `npm run typecheck`: passed.
+- `npm run build:web`: passed.
+- `npm run verify:m2-intelligence`: passed.
+- `npm run verify:m1-release`: passed.
+- `npm run verify:signing`: passed.
+- `npm run verify:linux-ci`: passed.
+
+---
+
 ## [0.8.0] - 2026-06-05
 
 > Production-Ready Deep Intelligence. Local v0.7.6-v0.8.0 implementation is complete with 129 Rust tests. Native Linux/macOS runner validation and true platform extent APIs remain external validation/follow-up items.

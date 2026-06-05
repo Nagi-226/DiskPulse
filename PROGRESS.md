@@ -1,15 +1,15 @@
 ﻿# DiskPulse Progress Snapshot
 
-> **Last updated**: 2026-06-05
+> **Last updated**: 2026-06-06
 > **Purpose**: Fast context sync for resuming DiskPulse development.
 
 ## Current Baseline
 
-- **Current version**: `v0.8.0` — Production-Ready Deep Intelligence local implementation (committed & pushed)
-- **Next target**: M1 v0.8.1–v0.8.3 (Native Runner + Signing) → M2 v0.9.0 (burn DL + Extended Storage + i18n) → M3 v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0
+- **Current version**: `v0.8.5` — M2 P0 intelligence foundation (AE foundation + file classifier Stage 3) local implementation
+- **Next target**: external M1 completion (SignPath approval/secrets + GitHub native CI) in parallel with M2 v0.8.6 Extended Storage
 - **Full plans**: `docs/v0.8.0-plan.md` (M1 details) + `docs/v1.0.0-plan.md` (M1–M4 master plan, 4 milestones, 14 feature versions)
-- **Status**: v0.8.0 local implementation complete and pushed. v0.8.1-v0.8.2 local readiness is complete; SignPath approval/secrets and a GitHub Actions `ubuntu-latest` run remain external/native gates. M2 (burn DL development) can proceed in parallel.
-- **Last verified**: (2026-06-05) `cargo test --manifest-path src-tauri\Cargo.toml` (129/129), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `cargo bench --manifest-path src-tauri\Cargo.toml`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`.
+- **Status**: v0.8.5 local implementation and verification complete. v0.8.1-v0.8.2 local readiness is complete; SignPath approval/secrets and GitHub Actions native runner results remain external gates that can be handled from Claude Code.
+- **Last verified**: (2026-06-06) `cargo test --manifest-path src-tauri\Cargo.toml` (138/138), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `npm run verify:m2-intelligence`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`.
 
 ## What Works Right Now
 
@@ -440,8 +440,8 @@ v0.8.0 made DiskPulse production-ready with deep intelligence. The v1.0.0 journe
 
 | Version | Focus | Key Deliverables | Priority |
 |---------|-------|-----------------|----------|
-| v0.8.4 | burn AE Anomaly Detection | burn Autoencoder (6→4→6), synthetic training pipeline, 3-way signal fusion, 8 risk mitigations | P0 |
-| v0.8.5 | burn File Classifier Stage 3 | burn 12-class softmax (8→32→16→12), 5000+ training samples, file_category risk rules | P0 |
+| v0.8.4 | burn AE Anomaly Detection | 6D features, 6→4→6 AE inference foundation, synthetic training samples, fusion compatibility | ✅ Local |
+| v0.8.5 | burn File Classifier Stage 3 | 8D features, 12-class softmax-style Stage 3, 5000+ synthetic sample target, file_category risk rules | ✅ Local |
 | v0.8.6 | Extended Storage | external drive hot-plug detection (WM_DEVICECHANGE/udev/IOKit), new storage-attached events | P1 |
 | v0.8.7 | i18n Expansion | Korean (ko) + Spanish (es) locales — total 5 languages (en/zh-CN/ja/ko/es) | P1 |
 | v0.8.8 | Model Fine-tune UI | Settings → AI Model panel, AUC metrics, user fine-tune trigger (>60 snapshots), model reset | P2 |

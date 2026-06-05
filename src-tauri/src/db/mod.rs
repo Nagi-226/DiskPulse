@@ -824,6 +824,7 @@ fn create_custom_rule_with(
         explanation: format!("Custom rule: {}", name),
         safe_to_delete: false,
         name_match: None,
+        file_category: None,
     };
     conn.execute(
         "INSERT INTO custom_rules
@@ -871,6 +872,7 @@ fn get_custom_rules_with(
                 explanation: row.get(4)?,
                 safe_to_delete: row.get::<_, i64>(5)? != 0,
                 name_match: None,
+                file_category: None,
             })
         })
         .map_err(|e| format!("Query custom rules error: {}", e))?;

@@ -1,5 +1,6 @@
 use crate::scanner::{DirInfo, DriveInfo};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 /// Risk level for cleanup safety
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -67,18 +68,38 @@ pub struct RiskRule {
     pub explanation: String,
     pub safe_to_delete: bool,
     pub name_match: Option<String>,
+    #[serde(default)]
+    pub file_category: Option<String>,
 }
 
 impl RiskRule {
     pub fn matches(&self, dir: &DirInfo) -> bool {
         let lower_name = normalize_match_text(&dir.name);
         let lower_path = normalize_match_text(&dir.path);
+        let category_matches = self
+            .file_category
+            .as_ref()
+            .map(|expected| {
+                let actual = crate::fileclass::category_id(&crate::fileclass::classify_path(
+                    Path::new(&dir.path),
+                ));
+                actual == expected
+            })
+            .unwrap_or(true);
+
+        if !category_matches {
+            return false;
+        }
 
         if let Some(ref name_pat) = self.name_match {
             let pat = normalize_match_text(name_pat);
             if lower_name == pat || lower_name.contains(&pat) {
                 return true;
             }
+        }
+
+        if self.patterns.is_empty() {
+            return self.file_category.is_some();
         }
 
         self.patterns.iter().any(|pattern| {
@@ -99,6 +120,7 @@ fn default_rules() -> Vec<RiskRule> {
                 .into(),
             safe_to_delete: true,
             name_match: None,
+            file_category: None,
         },
         RiskRule {
             id: "browser-cache".into(),
@@ -112,6 +134,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "Browser cache files — safe to delete, will be re-downloaded".into(),
             safe_to_delete: true,
             name_match: Some("/cache".into()),
+            file_category: None,
         },
         RiskRule {
             id: "nvidia-dx-cache".into(),
@@ -121,6 +144,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "GPU shader cache — safe to delete, rebuilt on next game launch".into(),
             safe_to_delete: true,
             name_match: Some("/dxcache".into()),
+            file_category: None,
         },
         RiskRule {
             id: "npm-cache".into(),
@@ -130,6 +154,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "npm package cache — safe to delete, re-downloaded on next install".into(),
             safe_to_delete: true,
             name_match: Some("npm-cache".into()),
+            file_category: None,
         },
         RiskRule {
             id: "pip-cache".into(),
@@ -139,6 +164,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "pip package cache — safe to delete, re-downloaded on next install".into(),
             safe_to_delete: true,
             name_match: Some("pip".into()),
+            file_category: None,
         },
         RiskRule {
             id: "cargo-cache".into(),
@@ -149,6 +175,7 @@ fn default_rules() -> Vec<RiskRule> {
                 .into(),
             safe_to_delete: true,
             name_match: Some(".cargo".into()),
+            file_category: None,
         },
         RiskRule {
             id: "delivery-optimization".into(),
@@ -158,6 +185,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "Windows Delivery Optimization files — safe to delete".into(),
             safe_to_delete: true,
             name_match: Some("deliveryoptimization".into()),
+            file_category: None,
         },
         RiskRule {
             id: "recycle-bin".into(),
@@ -167,6 +195,40 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "Recycle Bin contents — already marked for deletion by user".into(),
             safe_to_delete: true,
             name_match: Some("$recycle.bin".into()),
+            file_category: None,
+        },
+        RiskRule {
+            id: "file-category-dev-cache".into(),
+            patterns: vec![],
+            risk_level: RiskLevel::Low,
+            category: "developer_cache".into(),
+            explanation: "Stage 3 classifier identified developer cache content".into(),
+            safe_to_delete: true,
+            name_match: None,
+            file_category: Some("dev_cache".into()),
+        },
+        RiskRule {
+            id: "file-category-build".into(),
+            patterns: vec![],
+            risk_level: RiskLevel::Medium,
+            category: "build_output".into(),
+            explanation: "Stage 3 classifier identified build output; review before deleting"
+                .into(),
+            safe_to_delete: false,
+            name_match: None,
+            file_category: Some("build".into()),
+        },
+        RiskRule {
+            id: "file-category-dependency".into(),
+            patterns: vec![],
+            risk_level: RiskLevel::Medium,
+            category: "dependency_cache".into(),
+            explanation:
+                "Stage 3 classifier identified dependency content; review active projects first"
+                    .into(),
+            safe_to_delete: false,
+            name_match: None,
+            file_category: Some("dependency".into()),
         },
         RiskRule {
             id: "downloads-old".into(),
@@ -176,6 +238,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "Downloads folder — review contents before deleting".into(),
             safe_to_delete: false,
             name_match: Some("downloads".into()),
+            file_category: None,
         },
         RiskRule {
             id: "large-logs".into(),
@@ -185,6 +248,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "Log files — review before deleting, may be needed for debugging".into(),
             safe_to_delete: false,
             name_match: Some("log".into()),
+            file_category: None,
         },
         RiskRule {
             id: "winsxs".into(),
@@ -194,6 +258,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "Windows component store — use DISM cleanup, not manual deletion".into(),
             safe_to_delete: false,
             name_match: Some("winsxs".into()),
+            file_category: None,
         },
         RiskRule {
             id: "windows-installer".into(),
@@ -204,6 +269,7 @@ fn default_rules() -> Vec<RiskRule> {
                 .into(),
             safe_to_delete: false,
             name_match: Some("installer".into()),
+            file_category: None,
         },
         RiskRule {
             id: "windows-system".into(),
@@ -213,6 +279,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "Windows system directory — NEVER delete, OS will break".into(),
             safe_to_delete: false,
             name_match: None,
+            file_category: None,
         },
         RiskRule {
             id: "program-files".into(),
@@ -222,6 +289,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "Installed applications — only remove via Settings > Apps".into(),
             safe_to_delete: false,
             name_match: None,
+            file_category: None,
         },
         RiskRule {
             id: "wechat-qq-data".into(),
@@ -235,6 +303,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "Chat application user data — contains personal files and history".into(),
             safe_to_delete: false,
             name_match: None,
+            file_category: None,
         },
         RiskRule {
             id: "appdata-config".into(),
@@ -244,6 +313,7 @@ fn default_rules() -> Vec<RiskRule> {
             explanation: "Application configuration — contains user settings and data".into(),
             safe_to_delete: false,
             name_match: None,
+            file_category: None,
         },
     ]
 }

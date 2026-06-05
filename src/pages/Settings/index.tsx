@@ -361,7 +361,7 @@ function RulesTab() {
       if (scope === "custom" && !isCustom) return false;
       if (filter !== "all" && rule.risk_level !== filter) return false;
       if (!q) return true;
-      return [rule.id, rule.category, rule.explanation, ...rule.patterns].some((value) => value.toLowerCase().includes(q));
+      return [rule.id, rule.category, rule.explanation, rule.file_category ?? "", ...rule.patterns].some((value) => value.toLowerCase().includes(q));
     });
   }, [filter, query, rules, scope]);
 
@@ -501,6 +501,7 @@ function RulesTab() {
                           <div className="space-y-3 text-sm text-text-secondary">
                             <div><span className="text-text-muted">Patterns:</span> <span className="font-mono text-text-primary">{rule.patterns.join(", ")}</span></div>
                             {rule.name_match && <div><span className="text-text-muted">Name match:</span> <span className="font-mono text-text-primary">{rule.name_match}</span></div>}
+                            {rule.file_category && <div><span className="text-text-muted">File category:</span> <span className="font-mono text-text-primary">{rule.file_category}</span></div>}
                             <p className="leading-6">{rule.explanation}</p>
                           </div>
                         </td>

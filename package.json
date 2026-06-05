@@ -1,7 +1,7 @@
 {
   "name": "diskpulse",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.8.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
     "verify:signing": "node scripts/verify-signing-config.mjs",
     "verify:linux-ci": "node scripts/verify-linux-ci.mjs",
     "verify:m1-release": "node scripts/verify-m1-release.mjs",
+    "verify:m2-intelligence": "node scripts/verify-m2-intelligence.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

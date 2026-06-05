@@ -794,7 +794,7 @@ dependencies = [
 
 [[package]]
 name = "diskpulse"
-version = "0.8.0"
+version = "0.8.5"
 dependencies = [
  "anyhow",
  "futures-util",

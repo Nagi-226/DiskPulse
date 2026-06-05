@@ -1,8 +1,8 @@
 cask "diskpulse" do
-  version "0.8.0"
+  version "0.8.5"
   sha256 :no_check
 
-  url "https://github.com/Nagi-226/DiskPulse/releases/download/v0.8.0/DiskPulse_0.8.0_x64.dmg",
+  url "https://github.com/Nagi-226/DiskPulse/releases/download/v0.8.5/DiskPulse_0.8.5_x64.dmg",
       verified: "github.com/Nagi-226/DiskPulse/"
   name "DiskPulse"
   desc "Real-time disk space monitor and safe cleanup tool"

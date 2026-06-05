@@ -320,6 +320,7 @@ export interface RiskRule {
   explanation: string;
   safe_to_delete: boolean;
   name_match: string | null;
+  file_category?: string | null;
 }
 
 export interface CustomRule {

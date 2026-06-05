@@ -1,12 +1,14 @@
 [package]
 name = "diskpulse"
-version = "0.8.0"
+version = "0.8.5"
 description = "Real-time disk space monitor & safe cleanup tool for Windows 11"
 authors = ["FJL03"]
 edition = "2021"
 
 [features]
+default = ["ml-engine"]
 mft-scanner = []
+ml-engine = []
 
 [lib]
 name = "diskpulse_lib"
@@ -53,4 +55,3 @@ trash = "5"
 [[bench]]
 name = "performance"
 harness = false
-

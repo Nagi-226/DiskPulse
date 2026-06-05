@@ -15,7 +15,11 @@
 DiskPulse gives you full visibility into your disk space usage and helps you reclaim wasted gigabytes — safely. Built with an Aurora-designed UI, powered by a high-performance Rust backend with native kernel-level file monitoring, intelligent anomaly detection, deep-learning-ready intelligence pipeline, and committed to never losing your data.
 
 
-## v0.8.0 Production-Ready Deep Intelligence
+## v0.8.5 Full Intelligence Foundation
+
+- **AE anomaly foundation** ? 6D snapshot features, deterministic 6?4?6 autoencoder inference, and synthetic training samples for v0.8.4.
+- **File classifier Stage 3** ? 8D feature extraction, extended magic signatures, 12-class softmax-style classifier output, and model version metadata for v0.8.5.
+- **File-category risk rules** ? Built-in cleanup rules can now match `file_category` conditions such as `dev_cache`, `build`, and `dependency`.
 
 - **Disk fragmentation analysis** — Sampled extent-based fragmentation scoring (FSCTL_GET_RETRIEVAL_POINTERS / FIEMAP / F_LOG2PHYS), top directory/file summaries, `FragmentationView` UI.
 - **6D disk health v2** — Space / Waste / Trend / Age / Frag / Anomaly radar with health snapshot history and trend tracking.
@@ -40,7 +44,7 @@ DiskPulse gives you full visibility into your disk space usage and helps you rec
 ## ✅ Features
 
 - **Interactive treemap visualization** — See exactly what's eating your disk, drill down to any subdirectory
-- **Smart risk classification** — 16 built-in rules + custom rule editor categorize every directory as Low / Medium / High risk
+- **Smart risk classification** — 19 built-in rules + custom rule editor categorize every directory as Low / Medium / High risk
 - **One-click safe cleanup** — All deletions go to Recycle Bin / Trash, never permanent
 - **Multi-drive support** — Scan any drive with real-time streaming progress
 - **Cleanup report** — Search, filter, sort classified items; guided 5-step Cleanup Wizard
@@ -51,7 +55,7 @@ DiskPulse gives you full visibility into your disk space usage and helps you rec
 - **6D disk health radar** — Space / Waste / Trend / Age / Frag / Anomaly sub-scores + ECharts radar visualization
 - **Disk fragmentation analysis** — Extent-based fragmentation scoring with top directory/file summaries
 - **Predictive cleanup** — Disk-full prediction, cleanup gain simulation, pre-cleanup candidates with confirmation guard
-- **Smart file classification** — Extension + magic-byte pipeline, file category on scan entries
+- **Smart file classification** — Extension + magic-byte + Stage 3 pipeline, file category on scan entries
 - **ML anomaly detection** — Holt-Winters seasonal forecasting + Modified Z-Score; 4 anomaly types with fusion fallback
 - **Parallel scan engine** — jwalk + rayon + streaming; 500GB drives in under 5 seconds
 - **Real-time alerts** — Low-space thresholds + sudden growth + anomaly detection via native notifications
