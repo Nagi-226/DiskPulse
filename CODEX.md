@@ -28,8 +28,8 @@ If documentation conflicts with source code, trust the code and note the mismatc
 ## Current Baseline
 
 - Product: DiskPulse, a Windows 11 desktop app for disk monitoring and safe cleanup.
-- Current release baseline: `v0.8.0` local Production-Ready Deep Intelligence complete (fragmentation analysis, anomaly fusion fallback, 6D health, predictive cleanup, file classification; native runner validation pending).
-- Next milestone: M1 v0.8.1–v0.8.3 (Native Runner + Signing) → M2 v0.9.0 (burn DL + Extended Storage + i18n) → M3 v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0 (Public Release).
+- Current release baseline: `v0.9.1` — M3 Relay Server local-ready foundation. M2 Full Intelligence (v0.9.0: burn DL, extended storage, 5-language i18n, model mgmt) is complete; relay client/server, read-only route guard, and IPC/status are landed locally. Public relay deployment, DNS/TLS, and cross-WAN validation remain external ops gates.
+- Next milestone: M1 v0.8.1–v0.8.3 external gates (SignPath + native CI) parallel with M3 v0.9.2 Cloud Sync Bridge → v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0 (Public Release).
 - Full v1.0.0 roadmap: `docs/v1.0.0-plan.md` (master plan). M1 details: `docs/v0.8.0-plan.md`.
 - Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite, burn 0.16 (DL engine, feature-gated behind `ml-engine`).
 - Build targets: Windows (MSI/NSIS, SignPath signed), Linux (.deb/.AppImage), macOS (.dmg, Homebrew Cask).

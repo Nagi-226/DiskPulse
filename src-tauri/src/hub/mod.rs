@@ -9,7 +9,7 @@ use std::sync::{Mutex, OnceLock};
 pub use discovery::{DiscoveryInfo, DiscoveryMode};
 pub use pairing::{PairingManager, PairingToken};
 pub use registry::{DeviceInfo, DeviceRegistry};
-pub use router::{HubMessage, RemoteAlertPayload};
+pub use router::{is_allowed_remote_command, HubMessage, RemoteAlertPayload};
 use server::HubRuntime;
 
 pub const DEVICE_CONNECTED_EVENT: &str = "device-connected";

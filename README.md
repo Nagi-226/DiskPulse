@@ -15,6 +15,13 @@
 DiskPulse gives you full visibility into your disk space usage and helps you reclaim wasted gigabytes — safely. Built with an Aurora-designed UI, powered by a high-performance Rust backend with native kernel-level file monitoring, intelligent anomaly detection, deep-learning-ready intelligence pipeline, and committed to never losing your data.
 
 
+## v0.9.1 Local-ready Relay Server
+
+- **Self-hosted relay binary** - `diskpulse-relay` starts a local WebSocket relay on `127.0.0.1` for self-hosted smoke runs.
+- **Relay client IPC** - `connect_relay`, `disconnect_relay`, `get_relay_status`, and `list_cloud_devices` expose relay state to the desktop app.
+- **Read-only route guard** - Relay envelopes reuse the Hub remote-command allowlist and refuse cleanup/write commands without local confirmation.
+- **Local-ready scope** - Public relay deployment, DNS/TLS, and real cross-WAN two-device validation are external CI/ops gates.
+
 ## v0.9.0 Full Intelligence
 
 - **AE anomaly foundation** - 6D snapshot features, deterministic 6->4->6 autoencoder inference, and synthetic training samples for v0.8.4.
@@ -65,7 +72,7 @@ DiskPulse gives you full visibility into your disk space usage and helps you rec
 - **Windows Service mode** — Headless background monitoring with Named Pipe IPC and system tray integration
 - **Multi-device Dashboard** — Discover and monitor paired DiskPulse devices on the LAN
 - **Auto-cleanup scheduler** — Configurable LOW-risk automatic cleanup
-- **i18n** — English + Simplified Chinese + Japanese, auto-detect OS language
+- **i18n** — 5 languages: English, 简体中文, 日本語, 한국어, Español, auto-detect OS language
 - **Dark/Light themes** — Aurora design system with CSS variable tokens
 
 ## 🛡️ Safety-first Design
@@ -162,7 +169,7 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | Layer | Stack |
 |-------|-------|
 | Desktop Shell | Tauri 2.x |
-| Backend | Rust — 31 source files, 6 platform traits, 129 tests |
+| Backend | Rust — 40 source files, 6 platform traits, 147 tests |
 | Frontend | React 19 + TypeScript 5 + Tailwind CSS 4 |
 | Visualization | ECharts 6 + D3 7 |
 | Storage | SQLite (via rusqlite) |
@@ -190,6 +197,7 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | **v0.8.2** | **Linux Native Runner (ubuntu-latest CI)** | ✅ Local-ready / ⏳ Native |
 | **v0.8.3** | **macOS Native Runner + FSEvents** | ⏳ Native |
 | **v0.9.0** | **Full Intelligence: burn DL (AE + Classifier), Extended Storage, Korean/Spanish** | ✅ Local |
+| **v0.9.1** | **Local-ready Relay Server (self-hosted binary, IPC/status, read-only route guard)** | ✅ Local-ready |
 | **v0.10.0** | **Ecosystem: Cloud Sync Bridge + Web Dashboard** | ⏳ Planned |
 | **v1.0.0** | **Public Release (180+ tests, 3-platform signed, docs synced)** | ⏳ Planned |
 
@@ -264,6 +272,12 @@ discover_devices(timeout_ms: u64) -> Vec<DeviceInfo>
 create_pairing_token(device_name: String, ttl_seconds: u64) -> PairingToken
 pair_device(token: String) -> DeviceInfo
 unpair_device(device_id: String) -> ()
+
+// Relay Server (v0.9.1)
+connect_relay(url: String) -> RelayStatus
+disconnect_relay() -> RelayStatus
+get_relay_status() -> RelayStatus
+list_cloud_devices() -> Vec<CloudDevice>
 
 // Rules & Export
 create_custom_rule(name: String, pattern: String, risk_level: String) -> RiskRule

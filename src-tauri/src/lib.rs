@@ -12,6 +12,7 @@ mod model_manager;
 pub mod platform;
 mod prediction;
 mod recommendations;
+pub mod relay;
 mod report;
 mod risk;
 pub mod scanner;
@@ -741,6 +742,29 @@ fn unpair_device(app: AppHandle, device_id: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn connect_relay(url: String) -> Result<relay::RelayStatus, String> {
+    let device_name = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "DiskPulse Device".into());
+    relay::connect(&url, &device_name)
+}
+
+#[tauri::command]
+fn disconnect_relay() -> Result<relay::RelayStatus, String> {
+    relay::disconnect()
+}
+
+#[tauri::command]
+fn get_relay_status() -> relay::RelayStatus {
+    relay::status()
+}
+
+#[tauri::command]
+fn list_cloud_devices() -> Vec<relay::CloudDevice> {
+    relay::list_cloud_devices()
+}
+
 /// Get all risk rules with user overrides applied.
 #[tauri::command]
 fn get_rules() -> Result<Vec<risk::RiskRule>, String> {
@@ -1254,6 +1278,10 @@ pub fn run() {
             create_pairing_token,
             pair_device,
             unpair_device,
+            connect_relay,
+            disconnect_relay,
+            get_relay_status,
+            list_cloud_devices,
             get_rules,
             save_rule_override,
             create_custom_rule,

@@ -30,9 +30,22 @@ const i18n = read("src/i18n/index.tsx");
 const settingsPage = read("src/pages/Settings/index.tsx");
 const modelManager = read("src-tauri/src/model_manager.rs");
 
-check("package version is 0.9.0", packageJson.version === "0.9.0");
-check("Cargo version is 0.9.0", /version = "0\.9\.0"/.test(cargoToml));
-check("Tauri config version is 0.9.0", tauriConf.version === "0.9.0");
+function versionAtLeast(version, min) {
+  const left = version.split(".").map((part) => Number.parseInt(part, 10));
+  const right = min.split(".").map((part) => Number.parseInt(part, 10));
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const a = left[i] ?? 0;
+    const b = right[i] ?? 0;
+    if (a !== b) return a > b;
+  }
+  return true;
+}
+
+const cargoVersion = cargoToml.match(/version = "([^"]+)"/)?.[1] ?? "0.0.0";
+
+check("package version is 0.9.0 or newer after M2", versionAtLeast(packageJson.version, "0.9.0"));
+check("Cargo version is 0.9.0 or newer after M2", versionAtLeast(cargoVersion, "0.9.0"));
+check("Tauri config version is 0.9.0 or newer after M2", versionAtLeast(tauriConf.version, "0.9.0"));
 check("ml-engine feature gate exists", /ml-engine = \[\]/.test(cargoToml));
 
 check("AE module is registered", /pub mod ae;/.test(anomalyMod));
@@ -74,7 +87,7 @@ check("Settings page includes AI Model tab", /AI Model/.test(settingsPage) && /M
 check("Changelog has v0.8.5 entry", /## \[0\.8\.5\]/.test(changelog));
 check("Changelog has v0.8.6 entry", /## \[0\.8\.6\]/.test(changelog));
 check("Changelog has v0.9.0 entry", /## \[0\.9\.0\]/.test(changelog));
-check("Progress marks current version v0.9.0", /Current version\*\*: `v0\.9\.0`/.test(progress));
+check("Progress keeps M2 v0.9.0 completion", /M2 completion\*\*: v0\.9\.0 local complete/.test(progress) || /M2 \(v0\.9\.0\)/.test(progress));
 
 const failed = checks.filter((item) => !item.passed);
 for (const item of checks) {

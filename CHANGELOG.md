@@ -2,6 +2,34 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [0.9.1] - 2026-06-06
+
+> M3 Relay Server local-ready foundation. This version adds a self-hosted relay server binary, relay client status model, read-only envelope guard, local WebSocket register handshake, IPC, and verification gate. Public relay deployment, DNS/TLS, and real cross-WAN hardware validation remain external CI/ops gates.
+
+### Relay Server
+
+- Added `relay` module with `RelayRuntime`, `RelayStatus`, `CloudDevice`, `RelayEnvelope`, and local-ready connect/disconnect/status state.
+- Added local WebSocket relay server handshake for device registration plus ping/route message shapes.
+- Added read-only relay envelope validation by reusing the Hub remote-command allowlist; cleanup/write commands are refused without local confirmation.
+- Added standalone `diskpulse-relay` Rust binary for self-hosted local relay smoke runs.
+- Added Tauri IPC commands: `connect_relay`, `disconnect_relay`, `get_relay_status`, and `list_cloud_devices`.
+- Added frontend TypeScript relay/cloud device models and `npm run verify:m3-relay`.
+- Bumped app/package versions to `0.9.1`.
+
+### Verification (v0.9.1)
+
+- `cargo test --manifest-path src-tauri\Cargo.toml`: 147/147 passed.
+- `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`: passed.
+- `npm run typecheck`: passed.
+- `npm run build:web`: passed.
+- `npm run verify:m3-relay`: passed.
+- `npm run verify:m2-intelligence`: passed.
+- `npm run verify:m1-release`: passed.
+- `npm run verify:signing`: passed.
+- `npm run verify:linux-ci`: passed.
+
+---
+
 ## [0.9.0] - 2026-06-06
 
 > M2 Full Intelligence local completion. v0.8.4-v0.8.8 are implemented locally: AE foundation, Stage 3 classifier, external storage detection, 5-language i18n, and AI Model management UI.

@@ -5,11 +5,11 @@
 
 ## Current Baseline
 
-- **Current version**: `v0.9.0` — M2 Full Intelligence local completion
-- **Next target**: external M1 completion (SignPath approval/secrets + GitHub native CI) in parallel with M3 v0.9.1 Relay Server
+- **Current version**: `v0.9.1` — M3 Relay Server local-ready foundation
+- **Next target**: external M1 completion (SignPath approval/secrets + GitHub native CI) in parallel with M3 v0.9.2 Cloud Sync Bridge
 - **Full plans**: `docs/v0.8.0-plan.md` (M1 details) + `docs/v1.0.0-plan.md` (M1–M4 master plan, 4 milestones, 14 feature versions)
-- **Status**: v0.9.0 local implementation and verification are complete. v0.8.1-v0.8.2 local readiness is complete; SignPath approval/secrets and GitHub Actions native runner results remain external gates that can be handled from Claude Code.
-- **Last verified**: 2026-06-06 v0.9.0 local gate passed `cargo test --manifest-path src-tauri\Cargo.toml` (142/142), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `npm run verify:m2-intelligence`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`.
+- **Status**: v0.9.1 local implementation and verification are complete. v0.8.1-v0.8.2 local readiness is complete; SignPath approval/secrets, public relay deployment, DNS/TLS, and GitHub Actions native runner results remain external gates that can be handled from Claude Code/CI.
+- **Last verified**: 2026-06-06 v0.9.1 local gate passed `cargo test --manifest-path src-tauri\Cargo.toml` (147/147), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `npm run verify:m3-relay`, `npm run verify:m2-intelligence`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`.
 
 ## What Works Right Now
 
@@ -36,6 +36,11 @@
 | Alert monitor | `src-tauri/src/alert/mod.rs` | 鉁?4 tests |
 | Disk usage prediction | `src-tauri/src/prediction/mod.rs` | 鉁?3 tests |
 | Multi-device Dashboard | `src-tauri/src/hub/`, `src/hooks/useRemoteDevice.ts`, `src/App.tsx` | ✅ 10 hub tests |
+| File classifier Stage 1-3 | `src-tauri/src/fileclass/` (mod/model/features/magic) | ✅ 4 tests |
+| Fragmentation analysis | `src-tauri/src/fragmentation.rs` | ✅ 2 tests |
+| External storage detection | `src-tauri/src/storage/` | ✅ 2 tests |
+| Model manager | `src-tauri/src/model_manager.rs` | ✅ 2 tests |
+| Relay server | `src-tauri/src/relay/`, `src-tauri/src/bin/diskpulse-relay.rs` | ✅ 5 tests |
 | Large file finder backend | `src-tauri/src/scanner/mod.rs`, `src-tauri/src/lib.rs` | 鉁?3 tests |
 | Auto-cleanup backend | `src-tauri/src/scheduler/mod.rs`, `src-tauri/src/db/mod.rs` | 鉁?5 tests |
 | Auto-cleanup frontend | `src/components/AutoCleanupStatus.tsx`, `src/pages/Settings/index.tsx`, `src/pages/History/index.tsx` | 鉁?|
@@ -452,11 +457,11 @@ v0.8.0 made DiskPulse production-ready with deep intelligence. The v1.0.0 journe
 
 | Version | Focus | Key Deliverables | Priority |
 |---------|-------|-----------------|----------|
-| v0.9.1 | Relay Server | Self-hosted relay (Rust binary, systemd/Docker), public community relay (wss://relay.diskpulse.dev), E2E encryption | P0 |
+| v0.9.1 | Relay Server | self-hosted local relay binary, WebSocket register handshake, relay IPC/status, read-only envelope guard; public relay/DNS/TLS deferred to ops gate | ✅ Local-ready |
 | v0.9.2 | Cloud Sync Bridge | WAN device pairing via relay, existing Hub protocol reuse, 4 new IPC commands | P0 |
 | v0.9.3 | Web Dashboard | Embedded HTTP server (axum), shared React codebase dual-build (Tauri/Web), interactive mode with cleanup confirmation guard | P0 |
 
-**M3 completion**: 167+ tests, two devices paired across internet, Web Dashboard at localhost:PORT
+**M3 progress**: v0.9.1 local-ready relay foundation landed; public relay deployment, DNS/TLS, and real cross-WAN pairing remain external ops gates. Full M3 completion still requires v0.9.2 Cloud Sync Bridge and v0.9.3 Web Dashboard.
 
 ### M4: v1.0.0 — Public Release (target: mid-July 2026)
 
@@ -510,7 +515,7 @@ v0.8.0 made DiskPulse production-ready with deep intelligence. The v1.0.0 journe
 | `fileclass/model.rs` | M2 | burn classifier + inference |
 | `fileclass/features.rs` | M2 | 8-dim file feature extraction |
 | `storage/mod.rs` | M2 | external storage hot-plug detection |
-| `relay/mod.rs` | M3 | relay client (connect/auth/route) |
+| `relay/mod.rs` | M3 | relay client/server foundation (connect/status/register/route guard) |
 | `web/mod.rs` | M3 | embedded HTTP server for Web Dashboard |
 
 ### Target Test Counts
@@ -520,6 +525,7 @@ v0.8.0 made DiskPulse production-ready with deep intelligence. The v1.0.0 journe
 | v0.8.0 (baseline) | 129 |
 | M1 (v0.8.1–0.8.3) | 130+ |
 | M2 (v0.9.0) | 142 verified |
+| M3 v0.9.1 | 147+ target |
 | M3 (v0.10.0) | 167+ |
 | M4 (v1.0.0) | 180+ |
 
@@ -575,6 +581,8 @@ v0.8.0 made DiskPulse production-ready with deep intelligence. The v1.0.0 journe
 | v0.7.1 | Code Signing Foundation | ✅ Local | SignPath config, CI signing hook, Homebrew Cask template, signing docs |
 | v0.7.2 | Linux Native CI | ✅ Local | ubuntu-latest deps, .deb/.AppImage verification, trash-rs fallback, inotify parser test, Linux CI docs |
 | v0.8.0 | Production-Ready Deep Intelligence | ✅ Local | 129 tests, fragmentation, anomaly fusion fallback, 6D health, predictive cleanup, file classification |
+| v0.9.0 | Full Intelligence — burn DL + Extended Storage + i18n | ✅ Local | 142 tests, AE foundation, Stage 3 classifier, 5-language i18n, external storage, AI Model panel |
+| v0.9.1 | M3 Relay Server local-ready | ✅ Local-ready | 147 tests, self-hosted relay binary, IPC/status, read-only route guard |
 
 ## v0.1.0 Release Checklist
 

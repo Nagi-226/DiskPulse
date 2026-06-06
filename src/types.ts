@@ -60,6 +60,32 @@ export interface ModelStatus {
   message: string;
 }
 
+export interface RelayStatus {
+  connected: boolean;
+  url: string | null;
+  device_id: string | null;
+  device_name: string | null;
+  peer_count: number;
+  last_error: string | null;
+  mode: string;
+}
+
+export interface CloudDevice {
+  device_id: string;
+  name: string;
+  relay_url: string;
+  connected: boolean;
+  last_seen_epoch_ms: number;
+}
+
+export interface RelayEnvelope {
+  id: string;
+  from_device_id: string;
+  to_device_id: string | null;
+  kind: string;
+  payload: unknown;
+}
+
 export type ScanPhase = "walking" | "measuring" | "streaming" | "complete";
 
 export interface ScanProgress {

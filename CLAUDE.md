@@ -10,8 +10,8 @@
 - **Tagline**: Real-time disk space monitor & safe cleanup tool — Windows / Linux / macOS
 - **Type**: Open source desktop application (MIT License)
 - **Repository**: E:\Github Project\DiskPulse
-- **Current Version**: v0.8.0 local Production-Ready Deep Intelligence (committed & pushed)
-- **Next Milestone**: M1 v0.8.1–v0.8.3 (Native Runner + Signing) → M2 v0.9.0 (burn DL) → M3 v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0
+- **Current Version**: v0.9.1 — M3 Relay Server local-ready foundation (committed + CHANGELOG/PROGRESS synced)
+- **Next Milestone**: M1 v0.8.1–v0.8.3 external gates (SignPath + native CI) parallel with M3 v0.9.2 Cloud Sync Bridge → v0.10.0 Cloud Sync + Web Dashboard → M4 v1.0.0
 - **v1.0.0 Master Plan**: `docs/v1.0.0-plan.md` — 4 milestones, 14 feature versions, 180+ tests target
 - **v0.8.0 Plan**: `docs/v0.8.0-plan.md` — 2 phases, 10 feature versions (complete)
 
@@ -72,6 +72,11 @@ v0.4.0 introduces a **trait + registry** plugin pattern across core systems:
 - `anomaly/` — (v0.6.5) 异常检测：Holt-Winters 季节性预测 + Modified Z-Score 季节性预测 + Modified Z-Score
 - `service/` — (v0.6.4) Windows Service 管理（安装/启动/停止/卸载）（安装/启动/停止/卸载）
 - `hub/` — (v0.6.7) 多设备 WebSocket Hub（server/registry/router/pairing/discovery）
+- `fileclass/` — (v0.7.10) Extension + magic-byte + Stage 3 classifier (model/features/magic)
+- `fragmentation.rs` — (v0.7.6) Sampled extent-based fragmentation analysis
+- `storage/` — (v0.8.6) External storage hot-plug detection (Windows WM_DEVICECHANGE + Linux/macOS fallback)
+- `model_manager.rs` — (v0.8.8) AE/classifier model status, fine-tune gate, metrics
+- `relay/` — (v0.9.1) Self-hosted relay server/client, read-only envelope guard, IPC/status
 
 ### Frontend Structure (src/)
 - `App.tsx` 鈥?Dashboard UI (treemap, ring chart, live feed, nav sidebar)
@@ -148,6 +153,24 @@ Single dispatch point: `platform::providers()` returns `PlatformProviders` struc
 **New Crate Deps (v0.7.0)**:
 - `tokio-tungstenite` (v0.6.7): WebSocket server for multi-device hub.
 - `mdns-sd` (v0.6.7): mDNS/Bonjour LAN service discovery.
+
+### v0.8.0–v0.9.1 Implementation Notes
+
+> Full plans: `docs/v0.8.0-plan.md` + `docs/v1.0.0-plan.md`
+
+**New Rust Modules (v0.8.0–v0.9.1)**:
+- `fileclass/` (v0.7.10): Extension + magic-byte + Stage 3 classifier pipeline (model/features/magic).
+- `fragmentation.rs` (v0.7.6): Sampled extent-based fragmentation reports via FSCTL_GET_RETRIEVAL_POINTERS.
+- `anomaly/ae.rs`, `anomaly/features.rs`, `anomaly/synthetic.rs` (v0.8.4): burn AE model + 6D feature extraction + synthetic training data.
+- `fileclass/model.rs`, `fileclass/features.rs`, `fileclass/magic.rs` (v0.8.5): burn classifier + 8D file features + 12-class softmax output.
+- `storage/mod.rs` (v0.8.6): External storage hot-plug detection (Windows WM_DEVICECHANGE + Linux/macOS fallback).
+- `model_manager.rs` (v0.8.8): AE/classifier model status, 60-snapshot fine-tune gate, AUC/accuracy metrics.
+- `relay/mod.rs` (v0.9.1): Self-hosted relay server/client, read-only envelope guard, WebSocket register handshake, IPC/status.
+- `src-tauri/src/bin/diskpulse-relay.rs` (v0.9.1): Standalone relay binary for self-hosted smoke runs.
+
+**New Crate Deps (v0.8.0–v0.9.0)**:
+- `burn` 0.16: DL framework (Autoencoder + Classifier), feature-gated behind `ml-engine`.
+- `burn-ndarray` 0.16: CPU backend, feature-gated behind `ml-engine`.
 
 ## Critical Safety Rules (NEVER VIOLATE)
 
@@ -257,6 +280,33 @@ fn discover_devices(timeout_ms: Option<u64>) -> Result<Vec<DeviceInfo>, String>
 fn create_pairing_token(device_name: String, ttl_seconds: Option<u64>) -> Result<PairingToken, String>
 fn pair_device(token: String) -> Result<DeviceInfo, String>
 fn unpair_device(device_id: String) -> Result<(), String>
+
+// v0.8.0 deep intelligence
+fn analyze_fragmentation(app: AppHandle, drive: String) -> Result<FragmentationReport, String>
+fn get_file_fragmentation(path: String) -> Result<FileFragmentation, String>
+fn cancel_fragmentation_scan() -> Result<(), String>
+fn predict_disk_full(drive: String) -> Result<DiskFullPrediction, String>
+fn simulate_cleanup_gain(items: Vec<CleanItem>) -> Result<CleanupGainEstimate, String>
+fn get_pre_cleanup_candidates(drive: String) -> Result<Vec<CleanItem>, String>
+fn execute_pre_cleanup(items: Vec<CleanItem>) -> Result<CleanResult, String>
+fn get_health_history(drive: String, limit: usize) -> Result<Vec<HealthSnapshot>, String>
+
+// v0.8.6 external storage
+fn list_external_storage() -> Result<Vec<ExternalStorageInfo>, String>
+fn get_storage_info(path: String) -> Result<ExternalStorageInfo, String>
+fn start_storage_monitor() -> Result<(), String>
+fn stop_storage_monitor() -> Result<(), String>
+
+// v0.9.0 model management
+fn get_model_status() -> Result<ModelStatus, String>
+fn trigger_fine_tune() -> Result<ModelStatus, String>
+fn reset_model() -> Result<ModelStatus, String>
+
+// v0.9.1 relay server
+fn connect_relay(url: String) -> Result<RelayStatus, String>
+fn disconnect_relay() -> Result<RelayStatus, String>
+fn get_relay_status() -> Result<RelayStatus, String>
+fn list_cloud_devices() -> Result<Vec<CloudDevice>, String>
 ```
 
 ### IPC Events (Frontend Listeners)
@@ -280,13 +330,16 @@ fn unpair_device(device_id: String) -> Result<(), String>
 | `device-connected` | `DeviceInfo` | `start_hub` (v0.7.0) |
 | `device-disconnected` | `{ device_id }` | `start_hub` (v0.7.0) |
 | `remote-alert` | `{ device_id, alert_payload }` | `start_hub` (v0.7.0) |
+| `storage-attached` | `ExternalStorageInfo` | `start_storage_monitor` (v0.8.6) |
+| `storage-detached` | `{ mount_point }` | `start_storage_monitor` (v0.8.6) |
+| `relay-status-changed` | `RelayStatus` | `connect_relay` / `disconnect_relay` (v0.9.1) |
 
 ## Current Development State
 
-- **Phase**: v0.8.0 local implementation complete — native Linux/macOS validation pending
-- **Last Updated**: 2026-06-05
-- **Test count**: 129 (up from 86 in v0.6.0)
-- **Verification**: `cargo test --manifest-path src-tauri\Cargo.toml`, `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `cargo bench --manifest-path src-tauri\Cargo.toml`, `npm run verify:signing`, `npm run verify:linux-ci`
+- **Phase**: v0.9.1 local implementation complete — M2 Full Intelligence + M3 relay foundation landed; M1 external gates (SignPath approval / native CI), M3 Cloud Sync Bridge + Web Dashboard pending
+- **Last Updated**: 2026-06-06
+- **Test count**: 147 (up from 86 in v0.6.0)
+- **Verification**: `cargo test --manifest-path src-tauri\Cargo.toml`, `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `cargo bench --manifest-path src-tauri\Cargo.toml`, `npm run verify:m3-relay`, `npm run verify:m2-intelligence`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`
 - **Full Plan**: `docs/v0.8.0-plan.md`
 
 ### v0.4.0 Roadmap Summary
