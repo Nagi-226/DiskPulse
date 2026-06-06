@@ -25,6 +25,41 @@ export interface DriveMeta {
   cache_age_ms: number | null;
 }
 
+export type StorageKind = "removable" | "fixed_external" | "network" | "optical" | "unknown";
+
+export interface ExternalStorageInfo {
+  id: string;
+  name: string;
+  mount_path: string;
+  filesystem: string;
+  total_bytes: number;
+  free_bytes: number;
+  removable: boolean;
+  kind: StorageKind;
+  platform: string;
+  detection_source: string;
+}
+
+export interface StorageEvent {
+  event_type: "attached" | "detached";
+  storage: ExternalStorageInfo | null;
+  mount_path: string | null;
+  raw_code: number | null;
+  source: string;
+}
+
+export interface ModelStatus {
+  ae_model_version: string;
+  classifier_model_version: string;
+  snapshots_available: number;
+  min_snapshots_required: number;
+  can_fine_tune: boolean;
+  fine_tuned: boolean;
+  auc_score: number;
+  classifier_accuracy: number;
+  message: string;
+}
+
 export type ScanPhase = "walking" | "measuring" | "streaming" | "complete";
 
 export interface ScanProgress {

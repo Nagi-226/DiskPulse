@@ -1,0 +1,28 @@
+{
+  "nav": {
+    "dashboard": "Panel",
+    "cleanup": "Informe de limpieza",
+    "largeFiles": "Archivos grandes",
+    "duplicates": "Duplicados",
+    "aging": "Análisis de antigüedad",
+    "fragmentation": "Fragmentación",
+    "wizard": "Asistente de limpieza",
+    "history": "Historial",
+    "settings": "Configuración"
+  },
+  "settings": {
+    "language": "Idioma",
+    "languageHelp": "Elige el idioma de la interfaz. Auto sigue el idioma del sistema.",
+    "theme": "Tema",
+    "themeHelp": "Elige Aurora Light, Aurora Dark o sigue el tema del sistema.",
+    "appearance": "Apariencia",
+    "auto": "Auto",
+    "english": "Inglés",
+    "chinese": "Chino simplificado",
+    "japanese": "Japonés",
+    "korean": "Coreano",
+    "spanish": "Español",
+    "light": "Claro",
+    "dark": "Oscuro"
+  }
+}

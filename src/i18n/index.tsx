@@ -2,7 +2,9 @@ import i18n from "i18next";
 import { I18nextProvider, initReactI18next } from "react-i18next";
 import type { ReactNode } from "react";
 import en from "./locales/en.json";
+import es from "./locales/es.json";
 import ja from "./locales/ja.json";
+import ko from "./locales/ko.json";
 import zhCN from "./locales/zh-CN.json";
 
 export const LANGUAGE_OPTIONS = [
@@ -10,22 +12,31 @@ export const LANGUAGE_OPTIONS = [
   { id: "en", labelKey: "settings.english" },
   { id: "zh-CN", labelKey: "settings.chinese" },
   { id: "ja", labelKey: "settings.japanese" },
+  { id: "ko", labelKey: "settings.korean" },
+  { id: "es", labelKey: "settings.spanish" },
 ] as const;
 
 export type LanguageId = (typeof LANGUAGE_OPTIONS)[number]["id"];
 
-export function resolveLanguage(language: string): "en" | "zh-CN" | "ja" {
+export function resolveLanguage(language: string): "en" | "zh-CN" | "ja" | "ko" | "es" {
   if (language === "zh-CN") return "zh-CN";
   if (language === "ja") return "ja";
+  if (language === "ko") return "ko";
+  if (language === "es") return "es";
   if (language === "en") return "en";
-  if (navigator.language.toLowerCase().startsWith("ja")) return "ja";
-  return navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+  const systemLanguage = navigator.language.toLowerCase();
+  if (systemLanguage.startsWith("ja")) return "ja";
+  if (systemLanguage.startsWith("ko")) return "ko";
+  if (systemLanguage.startsWith("es")) return "es";
+  return systemLanguage.startsWith("zh") ? "zh-CN" : "en";
 }
 
 void i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en },
+    es: { translation: es },
     ja: { translation: ja },
+    ko: { translation: ko },
     "zh-CN": { translation: zhCN },
   },
   lng: resolveLanguage(localStorage.getItem("diskpulse.language") ?? "auto"),

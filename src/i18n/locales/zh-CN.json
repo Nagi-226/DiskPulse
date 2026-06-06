@@ -1,4 +1,4 @@
-﻿{
+{
   "nav": {
     "dashboard": "仪表盘",
     "cleanup": "清理报告",
@@ -21,6 +21,8 @@
     "chinese": "简体中文",
     "japanese": "日语",
     "light": "浅色",
-    "dark": "深色"
+    "dark": "深色",
+    "korean": "??",
+    "spanish": "????"
   }
 }

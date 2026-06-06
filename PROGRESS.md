@@ -5,11 +5,11 @@
 
 ## Current Baseline
 
-- **Current version**: `v0.8.5` — M2 P0 intelligence foundation (AE foundation + file classifier Stage 3) local implementation
-- **Next target**: external M1 completion (SignPath approval/secrets + GitHub native CI) in parallel with M2 v0.8.6 Extended Storage
+- **Current version**: `v0.9.0` — M2 Full Intelligence local completion
+- **Next target**: external M1 completion (SignPath approval/secrets + GitHub native CI) in parallel with M3 v0.9.1 Relay Server
 - **Full plans**: `docs/v0.8.0-plan.md` (M1 details) + `docs/v1.0.0-plan.md` (M1–M4 master plan, 4 milestones, 14 feature versions)
-- **Status**: v0.8.5 local implementation and verification complete. v0.8.1-v0.8.2 local readiness is complete; SignPath approval/secrets and GitHub Actions native runner results remain external gates that can be handled from Claude Code.
-- **Last verified**: (2026-06-06) `cargo test --manifest-path src-tauri\Cargo.toml` (138/138), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `npm run verify:m2-intelligence`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`.
+- **Status**: v0.9.0 local implementation and verification are complete. v0.8.1-v0.8.2 local readiness is complete; SignPath approval/secrets and GitHub Actions native runner results remain external gates that can be handled from Claude Code.
+- **Last verified**: 2026-06-06 v0.9.0 local gate passed `cargo test --manifest-path src-tauri\Cargo.toml` (142/142), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `npm run verify:m2-intelligence`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`.
 
 ## What Works Right Now
 
@@ -442,11 +442,11 @@ v0.8.0 made DiskPulse production-ready with deep intelligence. The v1.0.0 journe
 |---------|-------|-----------------|----------|
 | v0.8.4 | burn AE Anomaly Detection | 6D features, 6→4→6 AE inference foundation, synthetic training samples, fusion compatibility | ✅ Local |
 | v0.8.5 | burn File Classifier Stage 3 | 8D features, 12-class softmax-style Stage 3, 5000+ synthetic sample target, file_category risk rules | ✅ Local |
-| v0.8.6 | Extended Storage | external drive hot-plug detection (WM_DEVICECHANGE/udev/IOKit), new storage-attached events | P1 |
-| v0.8.7 | i18n Expansion | Korean (ko) + Spanish (es) locales — total 5 languages (en/zh-CN/ja/ko/es) | P1 |
-| v0.8.8 | Model Fine-tune UI | Settings → AI Model panel, AUC metrics, user fine-tune trigger (>60 snapshots), model reset | P2 |
+| v0.8.6 | Extended Storage | cross-platform storage abstraction, Windows WM_DEVICECHANGE model, Linux/macOS fallback stubs, storage IPC/events | ✅ Local |
+| v0.8.7 | i18n Expansion | Korean (ko) + Spanish (es) locales — total 5 languages (en/zh-CN/ja/ko/es) | ✅ Local |
+| v0.8.8 | Model Fine-tune UI | Settings → AI Model panel, AUC metrics, user fine-tune trigger (>60 snapshots), model reset | ✅ Local |
 
-**M2 completion**: 152+ tests, burn AE AUC > 0.85, classifier accuracy > 85%, 5 languages, external storage hot-plug
+**M2 completion**: v0.9.0 local complete with 5 languages, AE/classifier model metrics, external storage detection, and model management UI.
 
 ### M3: v0.9.1–v0.9.3 → v0.10.0 — Ecosystem Connection (target: early July 2026)
 
@@ -519,7 +519,7 @@ v0.8.0 made DiskPulse production-ready with deep intelligence. The v1.0.0 journe
 |-----------|-----------|
 | v0.8.0 (baseline) | 129 |
 | M1 (v0.8.1–0.8.3) | 130+ |
-| M2 (v0.9.0) | 152+ |
+| M2 (v0.9.0) | 142 verified |
 | M3 (v0.10.0) | 167+ |
 | M4 (v1.0.0) | 180+ |
 

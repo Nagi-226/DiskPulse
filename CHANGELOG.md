@@ -2,6 +2,30 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [0.9.0] - 2026-06-06
+
+> M2 Full Intelligence local completion. v0.8.4-v0.8.8 are implemented locally: AE foundation, Stage 3 classifier, external storage detection, 5-language i18n, and AI Model management UI.
+
+### Full Intelligence Completion
+
+- Completed v0.8.7 i18n expansion with Korean (`ko`) and Spanish (`es`) locale bundles, language selector labels, and system-language auto resolution.
+- Completed v0.8.8 AI Model management with model status IPC, 60-snapshot fine-tune gate, reset action, AUC/accuracy metrics, and a Settings → AI Model panel.
+- Preserved v0.8.6 external storage IPC/events and v0.8.4-v0.8.5 AE/classifier foundations as the v0.9.0 M2 baseline.
+- Bumped app/package versions to `0.9.0`.
+
+### Verification (v0.9.0)
+
+- `cargo test --manifest-path src-tauri\Cargo.toml`: 142/142 passed.
+- `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`: passed.
+- `npm run typecheck`: passed.
+- `npm run build:web`: passed.
+- `npm run verify:m2-intelligence`: passed.
+- `npm run verify:m1-release`: passed.
+- `npm run verify:signing`: passed.
+- `npm run verify:linux-ci`: passed.
+
+---
+
 ## [1.0.0] — Planned (target: mid-July 2026)
 
 > Full plan: `docs/v1.0.0-plan.md`. 4 milestones (M1–M4), 14 feature versions, 180+ tests target.
@@ -33,6 +57,32 @@ All notable changes to DiskPulse will be documented in this file.
 - 5 integration test pipelines, 10 real-hardware benchmarks
 - 3-platform signed artifacts (SignPath Windows, Homebrew macOS, Snap Linux)
 - 180+ Rust tests, all docs synced
+
+---
+
+## [0.8.6] - 2026-06-06
+
+> M2 external storage detection foundation. Local implementation adds the cross-platform storage abstraction, Windows `WM_DEVICECHANGE` event model, Linux/macOS fallback providers, IPC, and tests.
+
+### External Storage Detection
+
+- Added `storage` module with `ExternalStorageProvider`, `ExternalStorageInfo`, attach/detach event payloads, and a polling monitor guard.
+- Added Windows external storage provider using logical drive enumeration plus a `WM_DEVICECHANGE`/`DBT_DEVICEARRIVAL`/`DBT_DEVICEREMOVECOMPLETE` event model for volume unit masks.
+- Added Linux fallback provider based on `/proc/mounts` external mount heuristics (`/media`, `/mnt`, `/run/media`) and macOS fallback provider based on `/Volumes`.
+- Added Tauri IPC commands: `list_external_storage`, `get_storage_info`, `start_storage_monitor`, and `stop_storage_monitor`.
+- Added frontend TypeScript models for external storage info and storage attach/detach events.
+- Bumped app/package versions to `0.8.6`.
+
+### Verification (v0.8.6)
+
+- `cargo test --manifest-path src-tauri\Cargo.toml`: 140/140 passed.
+- `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`: passed.
+- `npm run typecheck`: passed.
+- `npm run build:web`: passed.
+- `npm run verify:m2-intelligence`: passed.
+- `npm run verify:m1-release`: passed.
+- `npm run verify:signing`: passed.
+- `npm run verify:linux-ci`: passed.
 
 ---
 

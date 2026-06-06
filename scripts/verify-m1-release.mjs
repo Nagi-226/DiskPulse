@@ -25,7 +25,7 @@ const macVerify = stepBlock("Verify macOS bundles");
 const unsignedUpload = stepBlock("Upload unsigned Windows artifacts for SignPath");
 const signedVerify = stepBlock("Verify signed Windows artifacts");
 
-check("package version is v0.8.x for M1", /^0\.8\.\d+$/.test(packageJson.version));
+check("package version is v0.8.x or newer after M1", /^(0\.(8|9)\.\d+|[1-9]\d*\.\d+\.\d+)$/.test(packageJson.version));
 check("Linux verify step checks .deb", /bundle\/deb\/\*\.deb|deb=\(.*\.deb/.test(linuxVerify));
 check("Linux verify step checks .AppImage", /bundle\/appimage\/\*\.AppImage|appimage=\(.*\.AppImage/.test(linuxVerify));
 check("macOS verify step checks only .dmg", /bundle\/dmg\/\*\.dmg|dmg=\(.*\.dmg/.test(macVerify) && !/AppImage/.test(macVerify));

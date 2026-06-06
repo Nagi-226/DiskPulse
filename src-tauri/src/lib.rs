@@ -8,6 +8,7 @@ pub mod duplicates;
 pub mod fileclass;
 pub mod fragmentation;
 pub mod hub;
+mod model_manager;
 pub mod platform;
 mod prediction;
 mod recommendations;
@@ -16,6 +17,7 @@ mod risk;
 pub mod scanner;
 mod scheduler;
 mod service;
+pub mod storage;
 mod watcher;
 
 use cleaner::{CleanItem, CleanPreview, CleanResult, RestoreResult};
@@ -52,6 +54,8 @@ pub const ANOMALY_DETECTED_EVENT: &str = "anomaly-detected";
 pub const DEVICE_CONNECTED_EVENT: &str = hub::DEVICE_CONNECTED_EVENT;
 pub const DEVICE_DISCONNECTED_EVENT: &str = hub::DEVICE_DISCONNECTED_EVENT;
 pub const REMOTE_ALERT_EVENT: &str = hub::REMOTE_ALERT_EVENT;
+pub const STORAGE_ATTACHED_EVENT: &str = storage::STORAGE_ATTACHED_EVENT;
+pub const STORAGE_DETACHED_EVENT: &str = storage::STORAGE_DETACHED_EVENT;
 
 /// Global watcher guard so we can stop it from another command.
 static WATCHER: Mutex<Option<platform::WatcherGuard>> = Mutex::new(None);
@@ -60,6 +64,7 @@ static LARGE_FILE_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None)
 static DUPLICATE_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 static AGING_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
 static FRAGMENTATION_SCAN_CANCEL: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+static STORAGE_MONITOR: Mutex<Option<storage::StorageMonitorGuard>> = Mutex::new(None);
 
 fn begin_scan_token() -> Arc<AtomicBool> {
     let token = Arc::new(AtomicBool::new(false));
@@ -360,6 +365,55 @@ fn cancel_aging_scan() -> Result<(), String> {
 #[tauri::command]
 fn list_drives() -> Result<Vec<String>, String> {
     platform::providers().disk_info.list_drives()
+}
+
+/// List externally attached storage devices detected by the platform adapter.
+#[tauri::command]
+fn list_external_storage() -> Result<Vec<storage::ExternalStorageInfo>, String> {
+    storage::list_external_storage()
+}
+
+/// Return external storage metadata for a mount path or drive root.
+#[tauri::command]
+fn get_storage_info(path: String) -> Result<storage::ExternalStorageInfo, String> {
+    storage::get_storage_info(&path)
+}
+
+/// Start external storage attach/detach monitoring.
+#[tauri::command]
+fn start_storage_monitor(app: AppHandle) -> Result<String, String> {
+    let mut guard = STORAGE_MONITOR
+        .lock()
+        .map_err(|e| format!("Storage monitor lock error: {}", e))?;
+    if guard.is_some() {
+        return Ok("storage monitor already running".into());
+    }
+
+    let handle = app.clone();
+    let monitor = storage::start_monitor(1500, move |event| {
+        let event_name = match event.event_type {
+            storage::StorageEventType::Attached => STORAGE_ATTACHED_EVENT,
+            storage::StorageEventType::Detached => STORAGE_DETACHED_EVENT,
+        };
+        let _ = handle.emit(event_name, &event);
+    })?;
+
+    *guard = Some(monitor);
+    Ok("storage monitor running".into())
+}
+
+/// Stop external storage attach/detach monitoring.
+#[tauri::command]
+fn stop_storage_monitor() -> Result<String, String> {
+    let mut guard = STORAGE_MONITOR
+        .lock()
+        .map_err(|e| format!("Storage monitor lock error: {}", e))?;
+    if let Some(mut monitor) = guard.take() {
+        monitor.stop();
+        Ok("storage monitor stopped".into())
+    } else {
+        Ok("no storage monitor running".into())
+    }
 }
 
 /// Scan a specific directory for drill-down navigation
@@ -852,6 +906,21 @@ fn get_pre_cleanup_candidates(drive: String) -> Result<Vec<CleanItem>, String> {
 }
 
 #[tauri::command]
+fn get_model_status(drive: String) -> Result<model_manager::ModelStatus, String> {
+    model_manager::get_model_status(&drive)
+}
+
+#[tauri::command]
+fn fine_tune_models(drive: String) -> Result<model_manager::ModelStatus, String> {
+    model_manager::fine_tune_models(&drive)
+}
+
+#[tauri::command]
+fn reset_models(drive: String) -> Result<model_manager::ModelStatus, String> {
+    model_manager::reset_models(&drive)
+}
+
+#[tauri::command]
 fn execute_pre_cleanup(
     app: AppHandle,
     drive: String,
@@ -1134,6 +1203,10 @@ pub fn run() {
             analyze_file_aging,
             cancel_aging_scan,
             list_drives,
+            list_external_storage,
+            get_storage_info,
+            start_storage_monitor,
+            stop_storage_monitor,
             scan_directory,
             classify_risks,
             preview_cleanup,
@@ -1157,6 +1230,9 @@ pub fn run() {
             predict_disk_full,
             simulate_cleanup_gain,
             get_pre_cleanup_candidates,
+            get_model_status,
+            fine_tune_models,
+            reset_models,
             execute_pre_cleanup,
             export_scan_report,
             export_cleanup_history,

@@ -5,10 +5,10 @@ import { useTranslation } from "react-i18next";
 import { applyLanguage, LANGUAGE_OPTIONS } from "../../i18n";
 import RuleEditor, { type RuleEditorValue } from "../../components/RuleEditor";
 import { THEME_OPTIONS, useTheme, type ThemeId } from "../../hooks/useTheme";
-import type { AppSettings, AutoCleanupStatus, CleanResult, RiskLevel, RiskRule, ServiceStatus } from "../../types";
+import type { AppSettings, AutoCleanupStatus, CleanResult, ModelStatus, RiskLevel, RiskRule, ServiceStatus } from "../../types";
 import { formatSize } from "../../utils/format";
 
-type SettingsTab = "general" | "appearance" | "rules" | "alerts" | "automation" | "recommendations" | "service" | "about";
+type SettingsTab = "general" | "appearance" | "rules" | "alerts" | "automation" | "recommendations" | "model" | "service" | "about";
 type RuleScope = "built-in" | "custom";
 
 const RISK_STYLES: Record<RiskLevel, string> = {
@@ -731,6 +731,106 @@ function RecommendationSettingsTab({ settings, saving, onUpdate, onSave, message
   );
 }
 
+function ModelSettingsTab({ drive }: { drive: string }) {
+  const [status, setStatus] = useState<ModelStatus | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function refresh() {
+    setMessage(null);
+    setStatus(await invoke<ModelStatus>("get_model_status", { drive }));
+  }
+
+  async function runModelAction(command: "fine_tune_models" | "reset_models") {
+    setBusy(command);
+    setMessage(null);
+    try {
+      const next = await invoke<ModelStatus>(command, { drive });
+      setStatus(next);
+      setMessage(command === "fine_tune_models" ? "Fine-tune completed." : "Model reset complete.");
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  useEffect(() => {
+    void refresh().catch((e) => setMessage(String(e)));
+  }, [drive]);
+
+  const snapshotProgress = status
+    ? Math.min(100, Math.round((status.snapshots_available / status.min_snapshots_required) * 100))
+    : 0;
+
+  return (
+    <div className="glass-card overflow-hidden rounded-2xl border border-aurora-border/50">
+      <div className="border-b border-aurora-border/40 bg-gradient-to-r from-accent/15 via-aurora-elevated/70 to-transparent p-6">
+        <div className="text-xs uppercase tracking-[0.24em] text-accent-light">AI Model Lab</div>
+        <h3 className="mt-2 text-2xl font-semibold text-text-primary">Local intelligence tuning</h3>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-text-secondary">
+          Track AE anomaly and Stage 3 classifier health, then calibrate models once this drive has enough snapshots.
+        </p>
+      </div>
+
+      <div className="space-y-6 p-6">
+        {status ? (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <StatusTile label="AE model" value={status.ae_model_version} />
+              <StatusTile label="Classifier" value={status.classifier_model_version} />
+              <StatusTile label="AUC" value={status.auc_score.toFixed(2)} />
+              <StatusTile label="Accuracy" value={`${Math.round(status.classifier_accuracy * 100)}%`} />
+            </div>
+
+            <div className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/50 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-text-primary">Snapshot readiness</div>
+                  <p className="mt-1 text-xs text-text-muted">{status.message}</p>
+                </div>
+                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${status.can_fine_tune ? "border-success/25 bg-risk-low-bg text-success" : "border-warning/25 bg-risk-medium-bg text-warning"}`}>
+                  {status.snapshots_available}/{status.min_snapshots_required}
+                </span>
+              </div>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-aurora-border/40">
+                <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${snapshotProgress}%` }} />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                className="btn-primary px-5 py-2.5"
+                disabled={!status.can_fine_tune || busy !== null}
+                onClick={() => void runModelAction("fine_tune_models")}
+              >
+                <span>{busy === "fine_tune_models" ? "Fine-tuning..." : "Fine-tune Models"}</span>
+              </button>
+              <button
+                className="rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-5 py-2.5 text-sm font-semibold text-text-secondary hover:text-accent-light"
+                disabled={busy !== null}
+                onClick={() => void runModelAction("reset_models")}
+              >
+                {busy === "reset_models" ? "Resetting..." : "Reset Models"}
+              </button>
+              <button
+                className="rounded-xl border border-aurora-border/60 bg-aurora-elevated/70 px-5 py-2.5 text-sm text-text-secondary hover:text-text-primary"
+                disabled={busy !== null}
+                onClick={() => void refresh().catch((e) => setMessage(String(e)))}
+              >
+                Refresh
+              </button>
+              {message && <span className={`text-xs ${message.includes("requires") || message.includes("failed") ? "text-danger" : "text-success"}`}>{message}</span>}
+            </div>
+          </>
+        ) : (
+          <div className="py-16 text-center text-sm text-text-muted">Loading model status...</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function WeightSlider({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return (
     <div className="rounded-2xl border border-aurora-border/40 bg-aurora-elevated/50 p-4">
@@ -912,6 +1012,7 @@ export default function SettingsPage() {
     { id: "alerts", label: "Alerts" },
     { id: "automation", label: "Automation" },
     { id: "recommendations", label: "Recommendations" },
+    { id: "model", label: "AI Model" },
     { id: "service", label: "Service" },
     { id: "about", label: "About" },
   ];
@@ -937,6 +1038,7 @@ export default function SettingsPage() {
       {tab === "alerts" && <AlertsTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
       {tab === "automation" && <AutomationTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
       {tab === "recommendations" && <RecommendationSettingsTab settings={settings} saving={saving} onUpdate={setSettings} onSave={handleSave} message={message} />}
+      {tab === "model" && <ModelSettingsTab drive={settings.default_drive} />}
       {tab === "service" && <ServiceTab />}
       {tab === "about" && <AboutTab />}
     </div>

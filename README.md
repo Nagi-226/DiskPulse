@@ -15,11 +15,14 @@
 DiskPulse gives you full visibility into your disk space usage and helps you reclaim wasted gigabytes — safely. Built with an Aurora-designed UI, powered by a high-performance Rust backend with native kernel-level file monitoring, intelligent anomaly detection, deep-learning-ready intelligence pipeline, and committed to never losing your data.
 
 
-## v0.8.5 Full Intelligence Foundation
+## v0.9.0 Full Intelligence
 
-- **AE anomaly foundation** ? 6D snapshot features, deterministic 6?4?6 autoencoder inference, and synthetic training samples for v0.8.4.
-- **File classifier Stage 3** ? 8D feature extraction, extended magic signatures, 12-class softmax-style classifier output, and model version metadata for v0.8.5.
-- **File-category risk rules** ? Built-in cleanup rules can now match `file_category` conditions such as `dev_cache`, `build`, and `dependency`.
+- **AE anomaly foundation** - 6D snapshot features, deterministic 6->4->6 autoencoder inference, and synthetic training samples for v0.8.4.
+- **File classifier Stage 3** - 8D feature extraction, extended magic signatures, 12-class softmax-style classifier output, and model version metadata for v0.8.5.
+- **File-category risk rules** - Built-in cleanup rules can now match `file_category` conditions such as `dev_cache`, `build`, and `dependency`.
+- **External storage detection** - Cross-platform storage abstraction, Windows `WM_DEVICECHANGE` event model, Linux/macOS fallback providers, and storage attach/detach IPC events.
+- **5-language i18n** - English, Simplified Chinese, Japanese, Korean, and Spanish with auto system-language resolution.
+- **AI Model panel** - Settings -> AI Model shows AE/classifier versions, AUC/accuracy metrics, 60-snapshot fine-tune gate, and reset action.
 
 - **Disk fragmentation analysis** — Sampled extent-based fragmentation scoring (FSCTL_GET_RETRIEVAL_POINTERS / FIEMAP / F_LOG2PHYS), top directory/file summaries, `FragmentationView` UI.
 - **6D disk health v2** — Space / Waste / Trend / Age / Frag / Anomaly radar with health snapshot history and trend tracking.
@@ -186,7 +189,7 @@ Frontend (React/TS)  <-->  Tauri IPC  <-->  Rust Backend
 | **v0.8.1** | **SignPath Approval + Windows Signing** | ✅ Local-ready / ⏳ External |
 | **v0.8.2** | **Linux Native Runner (ubuntu-latest CI)** | ✅ Local-ready / ⏳ Native |
 | **v0.8.3** | **macOS Native Runner + FSEvents** | ⏳ Native |
-| **v0.9.0** | **Full Intelligence: burn DL (AE + Classifier), Extended Storage, Korean/Spanish** | ⏳ Planned |
+| **v0.9.0** | **Full Intelligence: burn DL (AE + Classifier), Extended Storage, Korean/Spanish** | ✅ Local |
 | **v0.10.0** | **Ecosystem: Cloud Sync Bridge + Web Dashboard** | ⏳ Planned |
 | **v1.0.0** | **Public Release (180+ tests, 3-platform signed, docs synced)** | ⏳ Planned |
 

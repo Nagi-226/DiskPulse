@@ -23,10 +23,16 @@ const anomalyMod = read("src-tauri/src/anomaly/mod.rs");
 const anomalyAe = read("src-tauri/src/anomaly/ae.rs");
 const anomalyFeatures = read("src-tauri/src/anomaly/features.rs");
 const risk = read("src-tauri/src/risk/mod.rs");
+const storage = read("src-tauri/src/storage/mod.rs");
+const types = read("src/types.ts");
+const lib = read("src-tauri/src/lib.rs");
+const i18n = read("src/i18n/index.tsx");
+const settingsPage = read("src/pages/Settings/index.tsx");
+const modelManager = read("src-tauri/src/model_manager.rs");
 
-check("package version is 0.8.5", packageJson.version === "0.8.5");
-check("Cargo version is 0.8.5", /version = "0\.8\.5"/.test(cargoToml));
-check("Tauri config version is 0.8.5", tauriConf.version === "0.8.5");
+check("package version is 0.9.0", packageJson.version === "0.9.0");
+check("Cargo version is 0.9.0", /version = "0\.9\.0"/.test(cargoToml));
+check("Tauri config version is 0.9.0", tauriConf.version === "0.9.0");
 check("ml-engine feature gate exists", /ml-engine = \[\]/.test(cargoToml));
 
 check("AE module is registered", /pub mod ae;/.test(anomalyMod));
@@ -46,9 +52,29 @@ check("Risk rules include dev_cache category rule", /file-category-dev-cache/.te
 check("Risk rules include build category rule", /file-category-build/.test(risk));
 check("Risk rules include dependency category rule", /file-category-dependency/.test(risk));
 
+check("Storage module defines external storage info", /struct ExternalStorageInfo/.test(storage));
+check("Storage module defines attach/detach events", /STORAGE_ATTACHED_EVENT/.test(storage) && /STORAGE_DETACHED_EVENT/.test(storage));
+check("Storage module defines provider trait", /trait ExternalStorageProvider/.test(storage));
+check("Storage module includes Windows WM_DEVICECHANGE model", /WM_DEVICECHANGE/.test(storage) && /DBT_DEVICEARRIVAL/.test(storage));
+check("Storage module includes Linux fallback provider", /linux_mount_poll_fallback/.test(storage));
+check("Storage module includes macOS fallback provider", /macos_volumes_poll_fallback/.test(storage));
+check("Storage IPC commands are registered", /list_external_storage/.test(lib) && /get_storage_info/.test(lib) && /start_storage_monitor/.test(lib));
+check("Frontend types include ExternalStorageInfo", /interface ExternalStorageInfo/.test(types));
+
+check("Korean locale is registered", /locales\/ko\.json/.test(i18n) && /id: "ko"/.test(i18n));
+check("Spanish locale is registered", /locales\/es\.json/.test(i18n) && /id: "es"/.test(i18n));
+check("Korean locale file exists", existsSync("src/i18n/locales/ko.json"));
+check("Spanish locale file exists", existsSync("src/i18n/locales/es.json"));
+
+check("Model manager exposes 60 snapshot gate", /MIN_FINE_TUNE_SNAPSHOTS: usize = 60/.test(modelManager));
+check("Model IPC commands are registered", /get_model_status/.test(lib) && /fine_tune_models/.test(lib) && /reset_models/.test(lib));
+check("Frontend types include ModelStatus", /interface ModelStatus/.test(types));
+check("Settings page includes AI Model tab", /AI Model/.test(settingsPage) && /ModelSettingsTab/.test(settingsPage));
+
 check("Changelog has v0.8.5 entry", /## \[0\.8\.5\]/.test(changelog));
-check("Progress marks current version v0.8.5", /Current version\*\*: `v0\.8\.5`/.test(progress));
-check("Progress records 138 tests", /138\/138/.test(progress));
+check("Changelog has v0.8.6 entry", /## \[0\.8\.6\]/.test(changelog));
+check("Changelog has v0.9.0 entry", /## \[0\.9\.0\]/.test(changelog));
+check("Progress marks current version v0.9.0", /Current version\*\*: `v0\.9\.0`/.test(progress));
 
 const failed = checks.filter((item) => !item.passed);
 for (const item of checks) {

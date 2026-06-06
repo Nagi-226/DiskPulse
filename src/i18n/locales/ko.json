@@ -1,0 +1,28 @@
+{
+  "nav": {
+    "dashboard": "대시보드",
+    "cleanup": "정리 보고서",
+    "largeFiles": "대용량 파일",
+    "duplicates": "중복 파일",
+    "aging": "오래된 파일 분석",
+    "fragmentation": "조각화",
+    "wizard": "정리 마법사",
+    "history": "기록",
+    "settings": "설정"
+  },
+  "settings": {
+    "language": "언어",
+    "languageHelp": "UI 언어를 선택합니다. 자동은 시스템 언어를 따릅니다.",
+    "theme": "테마",
+    "themeHelp": "Aurora Light, Aurora Dark 또는 시스템 테마를 선택합니다.",
+    "appearance": "모양",
+    "auto": "자동",
+    "english": "영어",
+    "chinese": "중국어 간체",
+    "japanese": "일본어",
+    "korean": "한국어",
+    "spanish": "스페인어",
+    "light": "라이트",
+    "dark": "다크"
+  }
+}
