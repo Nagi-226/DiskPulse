@@ -94,6 +94,7 @@ pub fn device_from_resolved_parts(
         device_id: fullname.to_string(),
         name,
         address: format!("{address}:{port}"),
+        transport: "lan".into(),
         paired: false,
         connected: true,
         last_seen_epoch_ms: super::pairing::now_epoch_ms(),
@@ -145,7 +146,10 @@ fn sanitize_dns_label(value: &str) -> String {
             }
         })
         .collect();
-    sanitized.trim_matches('-').to_string().max_non_empty("diskpulse")
+    sanitized
+        .trim_matches('-')
+        .to_string()
+        .max_non_empty("diskpulse")
 }
 
 trait NonEmptyString {

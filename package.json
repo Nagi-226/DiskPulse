@@ -1,7 +1,7 @@
 {
   "name": "diskpulse",
   "private": true,
-  "version": "0.9.1",
+  "version": "0.9.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,7 +15,8 @@
     "verify:m2-intelligence": "node scripts/verify-m2-intelligence.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
-    "verify:m3-relay": "node scripts/verify-m3-relay.mjs"
+    "verify:m3-relay": "node scripts/verify-m3-relay.mjs",
+    "verify:m3-cloud-sync": "node scripts/verify-m3-cloud-sync.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",

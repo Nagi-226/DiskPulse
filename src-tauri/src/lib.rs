@@ -747,7 +747,9 @@ fn connect_relay(url: String) -> Result<relay::RelayStatus, String> {
     let device_name = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
         .unwrap_or_else(|_| "DiskPulse Device".into());
-    relay::connect(&url, &device_name)
+    let status = relay::connect(&url, &device_name)?;
+    let _ = hub::sync_cloud_devices(relay::list_cloud_devices());
+    Ok(status)
 }
 
 #[tauri::command]
@@ -762,7 +764,17 @@ fn get_relay_status() -> relay::RelayStatus {
 
 #[tauri::command]
 fn list_cloud_devices() -> Vec<relay::CloudDevice> {
-    relay::list_cloud_devices()
+    let devices = relay::list_cloud_devices();
+    let _ = hub::sync_cloud_devices(devices.clone());
+    devices
+}
+
+#[tauri::command]
+fn query_cloud_device(
+    device_id: String,
+    request: hub::HubRequest,
+) -> Result<hub::HubResponse, String> {
+    relay::route_hub_request(&device_id, request)
 }
 
 /// Get all risk rules with user overrides applied.
@@ -1282,6 +1294,7 @@ pub fn run() {
             disconnect_relay,
             get_relay_status,
             list_cloud_devices,
+            query_cloud_device,
             get_rules,
             save_rule_override,
             create_custom_rule,

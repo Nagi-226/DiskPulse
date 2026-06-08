@@ -258,6 +258,9 @@ function DeviceSelector({
   onDiscover,
   onCreateToken,
   onPairToken,
+  relayConnected,
+  onConnectRelay,
+  onDisconnectRelay,
 }: {
   devices: DeviceInfo[];
   selectedDeviceId: string;
@@ -271,6 +274,9 @@ function DeviceSelector({
   onDiscover: () => void;
   onCreateToken: () => void;
   onPairToken: (token: string) => void;
+  relayConnected: boolean;
+  onConnectRelay: (url: string) => void;
+  onDisconnectRelay: () => void;
 }) {
   return (
     <div className="flex items-center gap-2 rounded-xl border border-aurora-border/40 bg-aurora-elevated/50 px-2 py-1.5">
@@ -284,7 +290,7 @@ function DeviceSelector({
         <option value="local">Local device</option>
         {devices.map((device) => (
           <option key={device.device_id} value={device.device_id}>
-            {device.connected ? "●" : "○"} {device.name}
+            {device.connected ? "online" : "offline"} {device.transport === "cloud" ? "Cloud - " : ""}{device.name}
           </option>
         ))}
       </select>
@@ -301,6 +307,20 @@ function DeviceSelector({
         onClick={onDiscover}
       >
         Discover
+      </button>
+      <button
+        className="px-2 py-1 rounded-lg text-[11px] font-semibold border border-aurora-border/50 text-text-secondary hover:text-accent-light hover:border-accent/40 disabled:opacity-50"
+        disabled={loading}
+        onClick={() => {
+          if (relayConnected) {
+            onDisconnectRelay();
+            return;
+          }
+          const url = window.prompt("Enter relay WebSocket URL", "ws://127.0.0.1:19741");
+          if (url) onConnectRelay(url);
+        }}
+      >
+        {relayConnected ? "Relay On" : "Relay"}
       </button>
       <button
         className="px-2 py-1 rounded-lg text-[11px] font-semibold border border-aurora-border/50 text-text-secondary hover:text-accent-light hover:border-accent/40 disabled:opacity-50"
@@ -472,6 +492,7 @@ export default function App() {
   const {
     devices,
     pairingToken,
+    relayStatus,
     discoveryInfo,
     isHubRunning,
     loading: remoteLoading,
@@ -479,6 +500,8 @@ export default function App() {
     setError: setRemoteError,
     startHub,
     stopHub,
+    connectRelay,
+    disconnectRelay,
     discoverDevices,
     createToken,
     pairDevice,
@@ -839,6 +862,9 @@ export default function App() {
               onDiscover={() => void discoverDevices()}
               onCreateToken={() => void createToken(activeDeviceLabel)}
               onPairToken={(token) => void pairDevice(token)}
+              relayConnected={relayStatus?.connected ?? false}
+              onConnectRelay={(url) => void connectRelay(url)}
+              onDisconnectRelay={() => void disconnectRelay()}
             />
 
             {/* Drive selector */}

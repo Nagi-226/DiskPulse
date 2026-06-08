@@ -1,6 +1,35 @@
-﻿# Changelog
+# Changelog
 
 All notable changes to DiskPulse will be documented in this file.
+
+## [0.9.2] - 2026-06-08
+
+> M3 Cloud Sync Bridge local implementation. This version turns the v0.9.1 relay foundation into a local cloud bridge path with persistent relay client mode, cloud device registry sync, relay-forwarded Hub requests, and frontend relay controls. Public relay deployment, DNS/TLS, E2E encryption hardening, and real cross-WAN hardware validation remain external gates.
+
+### Cloud Sync Bridge
+
+- Added persistent relay client bridge mode (`cloud_bridge`) that keeps a registered WebSocket relay session open after `connect_relay`.
+- Extended relay routing so registered peers can forward read-only Hub envelopes to target devices instead of echoing only to the sender.
+- Added cloud device registry support in Hub with `transport: "lan" | "cloud"` and cloud sync into `get_connected_devices`.
+- Added LAN-first discovery fallback to relay-listed cloud devices.
+- Added `query_cloud_device` IPC for relay-routed read-only Hub requests.
+- Updated `useRemoteDevice` and the dashboard device selector with relay connect/disconnect state and cloud query routing.
+- Bumped app/package versions to `0.9.2`.
+
+### Verification (v0.9.2)
+
+- `cargo test --manifest-path src-tauri\Cargo.toml`: 150/150 passed.
+- `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`: passed.
+- `npm run typecheck`: passed.
+- `npm run build:web`: passed.
+- `npm run verify:m3-cloud-sync`: passed.
+- `npm run verify:m3-relay`: passed.
+- `npm run verify:m2-intelligence`: passed.
+- `npm run verify:m1-release`: passed.
+- `npm run verify:signing`: passed.
+- `npm run verify:linux-ci`: passed.
+
+---
 
 ## [0.9.1] - 2026-06-06
 

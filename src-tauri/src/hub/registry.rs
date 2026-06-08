@@ -10,6 +10,7 @@ pub struct DeviceInfo {
     pub device_id: String,
     pub name: String,
     pub address: String,
+    pub transport: String,
     pub paired: bool,
     pub connected: bool,
     pub last_seen_epoch_ms: u64,
@@ -22,6 +23,7 @@ impl DeviceInfo {
             device_id: format!("device-{id}"),
             name,
             address,
+            transport: "lan".into(),
             paired: true,
             connected: true,
             last_seen_epoch_ms: now_epoch_ms(),
@@ -37,6 +39,18 @@ pub struct DeviceRegistry {
 impl DeviceRegistry {
     pub fn upsert(&mut self, device: DeviceInfo) {
         self.devices.insert(device.device_id.clone(), device);
+    }
+
+    pub fn upsert_cloud(&mut self, device: crate::relay::CloudDevice) {
+        self.upsert(DeviceInfo {
+            device_id: device.device_id,
+            name: device.name,
+            address: device.relay_url,
+            transport: "cloud".into(),
+            paired: true,
+            connected: device.connected,
+            last_seen_epoch_ms: device.last_seen_epoch_ms,
+        });
     }
 
     pub fn list_devices(&self) -> Vec<DeviceInfo> {

@@ -5,6 +5,8 @@ import type {
   DeviceInfo,
   HubDiscoveryInfo,
   PairingToken,
+  CloudDevice,
+  RelayStatus,
   RemoteAlertPayload,
   RemoteDeviceRequest,
   RemoteDeviceResponse,
@@ -20,6 +22,8 @@ function toWsUrl(address: string) {
 export function useRemoteDevice(defaultPort = 19740) {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [pairingToken, setPairingToken] = useState<PairingToken | null>(null);
+  const [relayStatus, setRelayStatus] = useState<RelayStatus | null>(null);
+  const [cloudDevices, setCloudDevices] = useState<CloudDevice[]>([]);
   const [remoteAlerts, setRemoteAlerts] = useState<RemoteAlertPayload[]>([]);
   const [discoveryInfo, setDiscoveryInfo] = useState<HubDiscoveryInfo | null>(null);
   const [isHubRunning, setIsHubRunning] = useState(false);
@@ -30,6 +34,19 @@ export function useRemoteDevice(defaultPort = 19740) {
   const refreshDevices = useCallback(async () => {
     const result = await invoke<DeviceInfo[]>("get_connected_devices");
     setDevices(result);
+    return result;
+  }, []);
+
+  const refreshCloudDevices = useCallback(async () => {
+    const result = await invoke<CloudDevice[]>("list_cloud_devices");
+    setCloudDevices(result);
+    await refreshDevices();
+    return result;
+  }, [refreshDevices]);
+
+  const refreshRelayStatus = useCallback(async () => {
+    const result = await invoke<RelayStatus>("get_relay_status");
+    setRelayStatus(result);
     return result;
   }, []);
 
@@ -74,6 +91,8 @@ export function useRemoteDevice(defaultPort = 19740) {
     void listenToHubEvents();
     void refreshDevices().catch(() => undefined);
     void refreshDiscoveryInfo().catch(() => undefined);
+    void refreshRelayStatus().catch(() => undefined);
+    void refreshCloudDevices().catch(() => undefined);
 
     return () => {
       mounted = false;
@@ -82,7 +101,7 @@ export function useRemoteDevice(defaultPort = 19740) {
       }
       unlistenRefs.current = [];
     };
-  }, [refreshDevices, refreshDiscoveryInfo]);
+  }, [refreshCloudDevices, refreshDevices, refreshDiscoveryInfo, refreshRelayStatus]);
 
   const startHub = useCallback(
     async (port = defaultPort) => {
@@ -118,6 +137,42 @@ export function useRemoteDevice(defaultPort = 19740) {
       setLoading(false);
     }
   }, []);
+
+  const connectRelay = useCallback(
+    async (url: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const status = await invoke<RelayStatus>("connect_relay", { url });
+        setRelayStatus(status);
+        await refreshCloudDevices();
+        return status;
+      } catch (e) {
+        setError(String(e));
+        throw e;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [refreshCloudDevices],
+  );
+
+  const disconnectRelay = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const status = await invoke<RelayStatus>("disconnect_relay");
+      setRelayStatus(status);
+      setCloudDevices([]);
+      await refreshDevices();
+      return status;
+    } catch (e) {
+      setError(String(e));
+      throw e;
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshDevices]);
 
   const createToken = useCallback(async (deviceName: string, ttlSeconds = 300) => {
     setError(null);
@@ -159,6 +214,26 @@ export function useRemoteDevice(defaultPort = 19740) {
   const queryRemoteDevice = useCallback(
     async <T,>(device: DeviceInfo, request: RemoteDeviceRequest, timeoutMs = 8000) =>
       new Promise<T>((resolve, reject) => {
+        if (device.transport === "cloud") {
+          const requestWithId = {
+            ...request,
+            id: request.id ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          };
+          void invoke<RemoteDeviceResponse<T>>("query_cloud_device", {
+            deviceId: device.device_id,
+            request: requestWithId,
+          })
+            .then((response) => {
+              if (!response.ok) {
+                reject(new Error(response.error ?? "Cloud device request failed"));
+                return;
+              }
+              resolve(response.payload);
+            })
+            .catch(reject);
+          return;
+        }
+
         const ws = new WebSocket(toWsUrl(device.address));
         const requestWithId = {
           ...request,
@@ -197,6 +272,8 @@ export function useRemoteDevice(defaultPort = 19740) {
   return {
     devices,
     pairingToken,
+    relayStatus,
+    cloudDevices,
     remoteAlerts,
     discoveryInfo,
     isHubRunning,
@@ -204,9 +281,13 @@ export function useRemoteDevice(defaultPort = 19740) {
     error,
     setError,
     refreshDevices,
+    refreshCloudDevices,
+    refreshRelayStatus,
     refreshDiscoveryInfo,
     startHub,
     stopHub,
+    connectRelay,
+    disconnectRelay,
     discoverDevices,
     createToken,
     pairDevice,

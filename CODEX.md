@@ -1,4 +1,4 @@
-﻿# CODEX.md - DiskPulse Agent Operating Manual
+# CODEX.md - DiskPulse Agent Operating Manual
 
 This file is the first-stop memory for Codex when working in this repository. Its goal is to keep project context, safety constraints, and verification habits aligned before any code change.
 
@@ -28,8 +28,8 @@ If documentation conflicts with source code, trust the code and note the mismatc
 ## Current Baseline
 
 - Product: DiskPulse, a Windows 11 desktop app for disk monitoring and safe cleanup.
-- Current release baseline: `v0.9.1` — M3 Relay Server local-ready foundation. M2 Full Intelligence (v0.9.0: burn DL, extended storage, 5-language i18n, model mgmt) is complete; relay client/server, read-only route guard, and IPC/status are landed locally. Public relay deployment, DNS/TLS, and cross-WAN validation remain external ops gates.
-- Next milestone: M1 v0.8.1–v0.8.3 external gates (SignPath + native CI) parallel with M3 v0.9.2 Cloud Sync Bridge → v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0 (Public Release).
+- Current release baseline: `v0.9.2` — M3 Cloud Sync Bridge local implementation. M2 Full Intelligence (v0.9.0: burn DL, extended storage, 5-language i18n, model mgmt) is complete; relay client/server, read-only route guard, persistent cloud bridge client, cloud registry, and relay-routed Hub requests are landed locally. Public relay deployment, DNS/TLS, and real cross-WAN hardware validation remain external ops gates.
+- Next milestone: M1 v0.8.1–v0.8.3 external gates (SignPath + native CI) parallel with M3 v0.9.3 Web Dashboard → v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0 (Public Release).
 - Full v1.0.0 roadmap: `docs/v1.0.0-plan.md` (master plan). M1 details: `docs/v0.8.0-plan.md`.
 - Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite, burn 0.16 (DL engine, feature-gated behind `ml-engine`).
 - Build targets: Windows (MSI/NSIS, SignPath signed), Linux (.deb/.AppImage), macOS (.dmg, Homebrew Cask).
@@ -915,14 +915,13 @@ AK: independent
 - Target: +6 tests (connection routing, E2E encryption, rate limiting)
 - Files: `src-relay/` (new directory, separate crate)
 
-**Task AU — Cloud Sync Bridge (v0.9.2) P0**
-- Create `relay/mod.rs`: relay client (connect, authenticate, route)
-- Extend existing Hub: support cloud device registry alongside LAN devices
-- Reuse 6-digit pairing token mechanism for WAN pairing
-- Add IPC: `connect_relay(url)`, `disconnect_relay()`, `get_relay_status()`, `list_cloud_devices()`
-- Auto-discovery: try LAN first (mDNS), fallback to relay query
-- Target: +4 tests (relay connect/disconnect, cloud pairing, message routing)
-- Files: `src-tauri/src/relay/mod.rs` (new), `src-tauri/src/hub/{mod,registry,router}.rs`
+**Task AU — Cloud Sync Bridge (v0.9.2) P0 — Local Complete**
+- Created persistent relay client mode (`cloud_bridge`) with connect/register/route lifecycle.
+- Extended existing Hub registry with `transport: "lan" | "cloud"` and cloud device sync alongside LAN devices.
+- Preserved relay IPC: `connect_relay(url)`, `disconnect_relay()`, `get_relay_status()`, `list_cloud_devices()`; added `query_cloud_device()` for relay-routed read-only Hub requests.
+- Auto-discovery now tries LAN first and falls back to relay-listed cloud devices.
+- Target tests landed: cloud registry, relay peer message routing, and relay device listing (+3, total 150).
+- Files: `src-tauri/src/relay/mod.rs`, `src-tauri/src/hub/{mod,registry,router}.rs`, `src/hooks/useRemoteDevice.ts`
 
 **Task AV — Web Dashboard (v0.9.3) P0**
 - Create `web/mod.rs`: embedded HTTP server (axum) on localhost:PORT

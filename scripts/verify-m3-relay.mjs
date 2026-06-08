@@ -11,6 +11,18 @@ function read(path) {
   return readFileSync(path, "utf8");
 }
 
+function versionAtLeast(actual, minimum) {
+  const actualParts = actual.split(".").map(Number);
+  const minimumParts = minimum.split(".").map(Number);
+  for (let i = 0; i < Math.max(actualParts.length, minimumParts.length); i += 1) {
+    const left = actualParts[i] ?? 0;
+    const right = minimumParts[i] ?? 0;
+    if (left > right) return true;
+    if (left < right) return false;
+  }
+  return true;
+}
+
 const packageJson = JSON.parse(read("package.json"));
 const cargoToml = read("src-tauri/Cargo.toml");
 const tauriConf = JSON.parse(read("src-tauri/tauri.conf.json"));
@@ -21,9 +33,9 @@ const types = read("src/types.ts");
 const changelog = read("CHANGELOG.md");
 const progress = read("PROGRESS.md");
 
-check("package version is 0.9.1", packageJson.version === "0.9.1");
-check("Cargo version is 0.9.1", /version = "0\.9\.1"/.test(cargoToml));
-check("Tauri config version is 0.9.1", tauriConf.version === "0.9.1");
+check("package version is 0.9.1 or newer", versionAtLeast(packageJson.version, "0.9.1"));
+check("Cargo version is 0.9.1 or newer", versionAtLeast(cargoToml.match(/^version = "([^"]+)"/m)?.[1] ?? "0.0.0", "0.9.1"));
+check("Tauri config version is 0.9.1 or newer", versionAtLeast(tauriConf.version, "0.9.1"));
 check("relay module exists", existsSync("src-tauri/src/relay/mod.rs"));
 check("relay module defines status", /pub struct RelayStatus/.test(relay));
 check("relay module defines cloud devices", /pub struct CloudDevice/.test(relay));
@@ -38,7 +50,7 @@ check("relay IPC commands are registered", /connect_relay/.test(lib) && /disconn
 check("frontend types include RelayStatus", /interface RelayStatus/.test(types));
 check("frontend types include CloudDevice", /interface CloudDevice/.test(types));
 check("changelog has v0.9.1 entry", /## \[0\.9\.1\]/.test(changelog));
-check("progress marks current version v0.9.1", /Current version\*\*: `v0\.9\.1`/.test(progress));
+check("progress preserves v0.9.1 relay baseline", /v0\.9\.1/.test(progress));
 
 const failed = checks.filter((item) => !item.passed);
 for (const item of checks) {

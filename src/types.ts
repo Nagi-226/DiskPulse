@@ -559,6 +559,7 @@ export interface DeviceInfo {
   device_id: string;
   name: string;
   address: string;
+  transport: "lan" | "cloud";
   paired: boolean;
   connected: boolean;
   last_seen_epoch_ms: number;

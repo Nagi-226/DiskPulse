@@ -9,7 +9,10 @@ use std::sync::{Mutex, OnceLock};
 pub use discovery::{DiscoveryInfo, DiscoveryMode};
 pub use pairing::{PairingManager, PairingToken};
 pub use registry::{DeviceInfo, DeviceRegistry};
-pub use router::{is_allowed_remote_command, HubMessage, RemoteAlertPayload};
+pub use router::{
+    handle_request, is_allowed_remote_command, HubMessage, HubRequest, HubResponse,
+    RemoteAlertPayload,
+};
 use server::HubRuntime;
 
 pub const DEVICE_CONNECTED_EVENT: &str = "device-connected";
@@ -82,7 +85,22 @@ pub fn discovery_info() -> Option<DiscoveryInfo> {
 }
 
 pub fn discover_devices(timeout_ms: u64) -> Result<Vec<DeviceInfo>, String> {
-    discovery::discover_devices(timeout_ms)
+    let mut devices = discovery::discover_devices(timeout_ms)?;
+    if devices.is_empty() && crate::relay::status().connected {
+        devices = crate::relay::list_cloud_devices()
+            .into_iter()
+            .map(|device| DeviceInfo {
+                device_id: device.device_id,
+                name: device.name,
+                address: device.relay_url,
+                transport: "cloud".into(),
+                paired: true,
+                connected: device.connected,
+                last_seen_epoch_ms: device.last_seen_epoch_ms,
+            })
+            .collect();
+    }
+    Ok(devices)
 }
 
 pub fn connected_devices() -> Vec<DeviceInfo> {
@@ -90,6 +108,18 @@ pub fn connected_devices() -> Vec<DeviceInfo> {
         .lock()
         .map(|state| state.registry.list_devices())
         .unwrap_or_default()
+}
+
+pub fn sync_cloud_devices(
+    devices: Vec<crate::relay::CloudDevice>,
+) -> Result<Vec<DeviceInfo>, String> {
+    let mut state = state()
+        .lock()
+        .map_err(|e| format!("Hub state lock error: {e}"))?;
+    for device in devices {
+        state.registry.upsert_cloud(device);
+    }
+    Ok(state.registry.list_devices())
 }
 
 pub fn create_pairing_token(device_name: String, ttl_seconds: u64) -> Result<PairingToken, String> {
@@ -158,6 +188,7 @@ mod tests {
             device_id: "device-1".into(),
             name: "Office PC".into(),
             address: "192.168.1.20:48765".into(),
+            transport: "lan".into(),
             paired: true,
             connected: true,
             last_seen_epoch_ms: 1_700_000_000_000,
@@ -171,6 +202,39 @@ mod tests {
         assert!(!listed[0].connected);
         assert!(registry.unpair("device-1"));
         assert!(registry.list_devices().is_empty());
+    }
+
+    #[test]
+    fn registry_keeps_cloud_devices_alongside_lan_devices() {
+        let mut registry = DeviceRegistry::default();
+        registry.upsert(DeviceInfo {
+            device_id: "lan-1".into(),
+            name: "Office LAN".into(),
+            address: "192.168.1.20:19740".into(),
+            transport: "lan".into(),
+            paired: true,
+            connected: true,
+            last_seen_epoch_ms: 1_700_000_000_000,
+        });
+
+        let cloud = crate::relay::CloudDevice {
+            device_id: "cloud-1".into(),
+            name: "Laptop WAN".into(),
+            relay_url: "wss://relay.diskpulse.dev".into(),
+            connected: true,
+            last_seen_epoch_ms: 1_700_000_000_100,
+        };
+        registry.upsert_cloud(cloud.clone());
+
+        let listed = registry.list_devices();
+        assert_eq!(listed.len(), 2);
+        let cloud_device = listed
+            .iter()
+            .find(|device| device.device_id == cloud.device_id)
+            .expect("cloud device");
+        assert_eq!(cloud_device.transport, "cloud");
+        assert_eq!(cloud_device.address, "wss://relay.diskpulse.dev");
+        assert!(cloud_device.paired);
     }
 
     #[test]
@@ -263,9 +327,11 @@ mod tests {
                 token: None,
                 payload: serde_json::Value::Null,
             };
-            ws.send(Message::Text(serde_json::to_string(&request).unwrap().into()))
-                .await
-                .unwrap();
+            ws.send(Message::Text(
+                serde_json::to_string(&request).unwrap().into(),
+            ))
+            .await
+            .unwrap();
 
             let response = ws.next().await.unwrap().unwrap();
             let response: router::HubResponse =
