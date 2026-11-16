@@ -4,6 +4,7 @@ pub mod anomaly;
 mod cleaner;
 mod cli;
 mod db;
+mod device;
 pub mod duplicates;
 pub mod fileclass;
 pub mod fragmentation;
@@ -1009,6 +1010,32 @@ fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+// board_* = 串口 MCU 板子（如 ESP32-S3），与 hub 的 DeviceInfo（局域网对等 PC/手机）无关。
+
+/// List serial ports available for board connection.
+#[tauri::command]
+fn board_list_ports() -> Result<Vec<String>, String> {
+    device::list_ports()
+}
+
+/// Open a serial connection to a board (replaces any previous connection).
+#[tauri::command]
+fn board_connect(port: String, baud: u32) -> Result<(), String> {
+    device::connect(&port, baud)
+}
+
+/// Drain pending board frames and return the latest parsed status.
+#[tauri::command]
+fn board_get_status() -> Result<device::metrics::BoardStatus, String> {
+    device::get_status()
+}
+
+/// Close the current board serial connection.
+#[tauri::command]
+fn board_disconnect() -> Result<(), String> {
+    device::disconnect()
+}
+
 /// Return platform system metadata.
 #[tauri::command]
 fn get_system_info() -> Result<platform::PlatformSystemInfo, String> {
@@ -1325,6 +1352,10 @@ pub fn run() {
             clear_notifications,
             get_system_info,
             get_file_meta,
+            board_list_ports,
+            board_connect,
+            board_get_status,
+            board_disconnect,
             app_version
         ])
         .run(tauri::generate_context!())
