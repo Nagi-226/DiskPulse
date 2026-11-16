@@ -28,8 +28,8 @@ If documentation conflicts with source code, trust the code and note the mismatc
 ## Current Baseline
 
 - Product: DiskPulse, a Windows 11 desktop app for disk monitoring and safe cleanup.
-- Current release baseline: `v0.9.2` — M3 Cloud Sync Bridge local implementation. M2 Full Intelligence (v0.9.0: burn DL, extended storage, 5-language i18n, model mgmt) is complete; relay client/server, read-only route guard, persistent cloud bridge client, cloud registry, and relay-routed Hub requests are landed locally. Public relay deployment, DNS/TLS, and real cross-WAN hardware validation remain external ops gates.
-- Next milestone: M1 v0.8.1–v0.8.3 external gates (SignPath + native CI) parallel with M3 v0.9.3 Web Dashboard → v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0 (Public Release).
+- Current release baseline: `v0.9.3` — M3 Web Dashboard local implementation. M2 Full Intelligence (v0.9.0: burn DL, extended storage, 5-language i18n, model mgmt) is complete; relay client/server, Cloud Sync Bridge, localhost Web Dashboard runtime, static serving, browser API bridge, read-only REST routing, and cleanup-command blocking are landed locally. Public relay deployment, DNS/TLS, real cross-WAN hardware validation, and full realtime WebSocket hardening remain external/follow-up gates.
+- Next milestone: M1 v0.8.1–v0.8.3 external gates (SignPath + native CI) parallel with M3 hardening → v0.10.0 (Cloud Sync + Web Dashboard) → M4 v1.0.0 (Public Release).
 - Full v1.0.0 roadmap: `docs/v1.0.0-plan.md` (master plan). M1 details: `docs/v0.8.0-plan.md`.
 - Stack: Tauri 2, Rust 1.94+, React 19, TypeScript 5, Tailwind CSS 4, SQLite via rusqlite, burn 0.16 (DL engine, feature-gated behind `ml-engine`).
 - Build targets: Windows (MSI/NSIS, SignPath signed), Linux (.deb/.AppImage), macOS (.dmg, Homebrew Cask).
@@ -923,16 +923,15 @@ AK: independent
 - Target tests landed: cloud registry, relay peer message routing, and relay device listing (+3, total 150).
 - Files: `src-tauri/src/relay/mod.rs`, `src-tauri/src/hub/{mod,registry,router}.rs`, `src/hooks/useRemoteDevice.ts`
 
-**Task AV — Web Dashboard (v0.9.3) P0**
-- Create `web/mod.rs`: embedded HTTP server (axum) on localhost:PORT
-- Serve React Web build from static files (same source, dual Vite build)
-- Create `src/api/index.ts`: auto-detect environment → `invoke` (Tauri) or `fetch` (Web)
-- WebSocket proxy: `/ws` → Hub for real-time data
-- REST API: `/api/cmd/*` → read-only Tauri command whitelist
-- Safety: Web mode CANNOT execute cleanup (only read + trigger desktop confirmation)
-- Dual Vite build: `npm run build:web` (existing) + `npm run build:webui` (new target)
-- Target: +3 tests (HTTP server startup, API routing, WebSocket proxy)
-- Files: `src-tauri/src/web/mod.rs` (new), `vite.config.ts`, `src/api/index.ts` (new)
+**Task AV — Web Dashboard (v0.9.3) P0 — Local Complete**
+- `src-tauri/src/web/mod.rs` provides a localhost-only HTTP runtime, `/api/health`, module lifecycle (`start`, `stop`, `get_status`), static serving from `dist-web-dashboard` / `dist`, SPA fallback, and path traversal protection.
+- Tauri IPC commands are registered: `start_web_dashboard`, `stop_web_dashboard`, and `get_web_dashboard_status`.
+- `src/api/index.ts` and Vite web-dashboard aliases let shared React code use Tauri `invoke` in desktop mode or browser `fetch('/api/cmd/*')` in Web Dashboard mode.
+- `/api/cmd/*` routes read-only commands for disk metadata, history, recommendations, model status, relay/cloud state, and other safe queries.
+- Browser mode blocks cleanup/mutation/service commands with a desktop-confirmation error; `/ws` is exposed as a realtime placeholder for follow-up WebSocket proxy hardening.
+- Added `npm run build:webui` and expanded `npm run verify:m3-web-dashboard`.
+- Verification landed: `npm run verify:m3-web-dashboard`, `npm run typecheck`, `npm run build:webui`, `npm run build:web`, `cargo metadata --no-deps --manifest-path src-tauri\Cargo.toml --format-version 1`. `cargo check` was attempted but timed out locally while Cargo stayed running without output.
+- Files: `src-tauri/src/web/mod.rs`, `src/api/index.ts`, `src/api/tauri-event-web.ts`, `src/api/notification-web.ts`, `vite.config.ts`, `package.json`
 
 #### M4: Public Release (v1.0.0)
 

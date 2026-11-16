@@ -1,12 +1,13 @@
 {
   "name": "diskpulse",
   "private": true,
-  "version": "0.9.2",
+  "version": "0.9.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "build:web": "vite build",
+    "build:webui": "vite build --mode web-dashboard",
     "build": "npm run typecheck && npm run build:web",
     "bench": "cargo bench --manifest-path src-tauri/Cargo.toml",
     "verify:signing": "node scripts/verify-signing-config.mjs",
@@ -16,7 +17,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "verify:m3-relay": "node scripts/verify-m3-relay.mjs",
-    "verify:m3-cloud-sync": "node scripts/verify-m3-cloud-sync.mjs"
+    "verify:m3-cloud-sync": "node scripts/verify-m3-cloud-sync.mjs",
+    "verify:m3-web-dashboard": "node scripts/verify-m3-web-dashboard.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",

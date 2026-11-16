@@ -10,8 +10,8 @@
 - **Tagline**: Real-time disk space monitor & safe cleanup tool — Windows / Linux / macOS
 - **Type**: Open source desktop application (MIT License)
 - **Repository**: E:\Github Project\DiskPulse
-- **Current Version**: v0.9.2 — M3 Cloud Sync Bridge local implementation (committed + CHANGELOG/PROGRESS synced)
-- **Next Milestone**: M1 v0.8.1–v0.8.3 external gates (SignPath + native CI) parallel with M3 v0.9.3 Web Dashboard → v0.10.0 Cloud Sync + Web Dashboard → M4 v1.0.0
+- **Current Version**: v0.9.3 — M3 Web Dashboard local implementation (CHANGELOG/PROGRESS synced)
+- **Next Milestone**: M1 v0.8.1–v0.8.3 external gates (SignPath + native CI) parallel with M3 hardening → v0.10.0 Cloud Sync + Web Dashboard → M4 v1.0.0
 - **v1.0.0 Master Plan**: `docs/v1.0.0-plan.md` — 4 milestones, 14 feature versions, 180+ tests target
 - **v0.8.0 Plan**: `docs/v0.8.0-plan.md` — 2 phases, 10 feature versions (complete)
 
@@ -77,6 +77,7 @@ v0.4.0 introduces a **trait + registry** plugin pattern across core systems:
 - `storage/` — (v0.8.6) External storage hot-plug detection (Windows WM_DEVICECHANGE + Linux/macOS fallback)
 - `model_manager.rs` — (v0.8.8) AE/classifier model status, fine-tune gate, metrics
 - `relay/` — (v0.9.2) Self-hosted relay server/client, persistent cloud bridge, read-only envelope guard, IPC/status
+- `web/` — (v0.9.3) Localhost-only Web Dashboard runtime, static serving, read-only REST bridge, cleanup block
 
 ### Frontend Structure (src/)
 - `App.tsx` 鈥?Dashboard UI (treemap, ring chart, live feed, nav sidebar)
@@ -154,11 +155,11 @@ Single dispatch point: `platform::providers()` returns `PlatformProviders` struc
 - `tokio-tungstenite` (v0.6.7): WebSocket server for multi-device hub.
 - `mdns-sd` (v0.6.7): mDNS/Bonjour LAN service discovery.
 
-### v0.8.0–v0.9.2 Implementation Notes
+### v0.8.0–v0.9.3 Implementation Notes
 
 > Full plans: `docs/v0.8.0-plan.md` + `docs/v1.0.0-plan.md`
 
-**New Rust Modules (v0.8.0–v0.9.2)**:
+**New Rust Modules (v0.8.0–v0.9.3)**:
 - `fileclass/` (v0.7.10): Extension + magic-byte + Stage 3 classifier pipeline (model/features/magic).
 - `fragmentation.rs` (v0.7.6): Sampled extent-based fragmentation reports via FSCTL_GET_RETRIEVAL_POINTERS.
 - `anomaly/ae.rs`, `anomaly/features.rs`, `anomaly/synthetic.rs` (v0.8.4): burn AE model + 6D feature extraction + synthetic training data.
@@ -166,6 +167,7 @@ Single dispatch point: `platform::providers()` returns `PlatformProviders` struc
 - `storage/mod.rs` (v0.8.6): External storage hot-plug detection (Windows WM_DEVICECHANGE + Linux/macOS fallback).
 - `model_manager.rs` (v0.8.8): AE/classifier model status, 60-snapshot fine-tune gate, AUC/accuracy metrics.
 - `relay/mod.rs` (v0.9.2): Self-hosted relay server/client, persistent cloud bridge, read-only envelope guard, WebSocket register handshake, cloud-routed Hub requests, IPC/status.
+- `web/mod.rs` (v0.9.3): Localhost Web Dashboard HTTP runtime, static bundle serving, read-only REST command bridge, cleanup-command blocking.
 - `src-tauri/src/bin/diskpulse-relay.rs` (v0.9.1): Standalone relay binary for self-hosted smoke runs.
 
 **New Crate Deps (v0.8.0–v0.9.0)**:
@@ -337,8 +339,8 @@ fn query_cloud_device(device_id: String, request: HubRequest) -> Result<HubRespo
 
 ## Current Development State
 
-- **Phase**: v0.9.2 local implementation complete — M2 Full Intelligence + M3 relay/cloud bridge landed; M1 external gates (SignPath approval / native CI), M3 Web Dashboard pending
-- **Last Updated**: 2026-06-08
+- **Phase**: v0.9.3 local Web Dashboard complete — M2 Full Intelligence + M3 relay/cloud bridge + localhost browser dashboard landed; M1 external gates (SignPath approval / native CI), public relay ops, cross-WAN validation, and realtime WebSocket hardening pending
+- **Last Updated**: 2026-06-09
 - **Test count**: 149 (up from 86 in v0.6.0)
 - **Verification**: `cargo test --manifest-path src-tauri\Cargo.toml`, `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `cargo bench --manifest-path src-tauri\Cargo.toml`, `npm run verify:m3-relay`, `npm run verify:m2-intelligence`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`
 - **Full Plan**: `docs/v0.8.0-plan.md`

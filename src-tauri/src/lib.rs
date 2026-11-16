@@ -20,6 +20,7 @@ mod scheduler;
 mod service;
 pub mod storage;
 mod watcher;
+pub mod web;
 
 use cleaner::{CleanItem, CleanPreview, CleanResult, RestoreResult};
 use scanner::{DirInfo, DriveInfo, DriveMeta};
@@ -777,6 +778,21 @@ fn query_cloud_device(
     relay::route_hub_request(&device_id, request)
 }
 
+#[tauri::command]
+fn start_web_dashboard(port: u16) -> Result<web::WebDashboardStatus, String> {
+    web::start(port)
+}
+
+#[tauri::command]
+fn stop_web_dashboard() -> Result<web::WebDashboardStatus, String> {
+    web::stop()
+}
+
+#[tauri::command]
+fn get_web_dashboard_status() -> web::WebDashboardStatus {
+    web::get_status()
+}
+
 /// Get all risk rules with user overrides applied.
 #[tauri::command]
 fn get_rules() -> Result<Vec<risk::RiskRule>, String> {
@@ -1295,6 +1311,9 @@ pub fn run() {
             get_relay_status,
             list_cloud_devices,
             query_cloud_device,
+            start_web_dashboard,
+            stop_web_dashboard,
+            get_web_dashboard_status,
             get_rules,
             save_rule_override,
             create_custom_rule,

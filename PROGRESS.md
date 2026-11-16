@@ -1,15 +1,15 @@
 # DiskPulse Progress Snapshot
 
-> **Last updated**: 2026-06-08
+> **Last updated**: 2026-06-09
 > **Purpose**: Fast context sync for resuming DiskPulse development.
 
 ## Current Baseline
 
-- **Current version**: `v0.9.2` — M3 Cloud Sync Bridge local implementation
-- **Next target**: external M1 completion (SignPath approval/secrets + GitHub native CI) in parallel with M3 v0.9.3 Web Dashboard
+- **Current version**: `v0.9.3` — M3 Web Dashboard local implementation
+- **Next target**: external M1 completion (SignPath approval/secrets + GitHub native CI) in parallel with M3 hardening toward v0.10.0
 - **Full plans**: `docs/v0.8.0-plan.md` (M1 details) + `docs/v1.0.0-plan.md` (M1–M4 master plan, 4 milestones, 14 feature versions)
-- **Status**: v0.9.2 local implementation and verification are complete. v0.8.1-v0.8.2 local readiness is complete; SignPath approval/secrets, public relay deployment, DNS/TLS, and real cross-WAN hardware validation remain external gates that can be handled from Claude Code/CI.
-- **Last verified**: 2026-06-08 v0.9.2 local gate passed `cargo test --manifest-path src-tauri\Cargo.toml` (150/150), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run typecheck`, `npm run build:web`, `npm run verify:m3-cloud-sync`, `npm run verify:m3-relay`, `npm run verify:m2-intelligence`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`.
+- **Status**: v0.9.3 local Web Dashboard implementation is complete for localhost static serving, browser API bridge, read-only REST routing, and cleanup-command blocking. v0.8.1-v0.8.2 local readiness is complete; SignPath approval/secrets, public relay deployment, DNS/TLS, and real cross-WAN hardware validation remain external gates that can be handled from Claude Code/CI.
+- **Last verified**: 2026-06-09 v0.9.3 local web gate passed `npm run verify:m3-web-dashboard`, `npm run typecheck`, `npm run build:webui`, `npm run build:web`, and `cargo metadata --no-deps --manifest-path src-tauri\Cargo.toml --format-version 1`. `cargo check --manifest-path src-tauri\Cargo.toml` was attempted but timed out locally while Cargo stayed running without output. Previous 2026-06-08 v0.9.2 full gate passed `cargo test --manifest-path src-tauri\Cargo.toml` (150/150), `cargo clippy --manifest-path src-tauri\Cargo.toml -- -D warnings`, `npm run verify:m3-cloud-sync`, `npm run verify:m3-relay`, `npm run verify:m2-intelligence`, `npm run verify:m1-release`, `npm run verify:signing`, `npm run verify:linux-ci`.
 
 ## What Works Right Now
 
@@ -41,6 +41,7 @@
 | External storage detection | `src-tauri/src/storage/` | ✅ 2 tests |
 | Model manager | `src-tauri/src/model_manager.rs` | ✅ 2 tests |
 | Relay server / Cloud Sync Bridge | `src-tauri/src/relay/`, `src-tauri/src/hub/`, `src/hooks/useRemoteDevice.ts` | ✅ 8 relay/hub tests |
+| Web Dashboard | `src-tauri/src/web/`, `src/api/`, `vite.config.ts`, `src-tauri/src/lib.rs` | ✅ verifier + web builds |
 | Large file finder backend | `src-tauri/src/scanner/mod.rs`, `src-tauri/src/lib.rs` | 鉁?3 tests |
 | Auto-cleanup backend | `src-tauri/src/scheduler/mod.rs`, `src-tauri/src/db/mod.rs` | 鉁?5 tests |
 | Auto-cleanup frontend | `src/components/AutoCleanupStatus.tsx`, `src/pages/Settings/index.tsx`, `src/pages/History/index.tsx` | 鉁?|
@@ -459,9 +460,9 @@ v0.8.0 made DiskPulse production-ready with deep intelligence. The v1.0.0 journe
 |---------|-------|-----------------|----------|
 | v0.9.1 | Relay Server | self-hosted local relay binary, WebSocket register handshake, relay IPC/status, read-only envelope guard; public relay/DNS/TLS deferred to ops gate | ✅ Local-ready |
 | v0.9.2 | Cloud Sync Bridge | persistent relay client bridge, cloud device registry, relay-routed Hub requests, cloud device UI/hook path | ✅ Local |
-| v0.9.3 | Web Dashboard | Embedded HTTP server (axum), shared React codebase dual-build (Tauri/Web), interactive mode with cleanup confirmation guard | P0 |
+| v0.9.3 | Web Dashboard | Embedded localhost HTTP runtime, health endpoint, static React serving, browser API bridge, read-only REST routing, `/ws` placeholder, cleanup-command block | ✅ Local |
 
-**M3 progress**: v0.9.2 local Cloud Sync Bridge landed on top of the v0.9.1 relay foundation; public relay deployment, DNS/TLS, and real cross-WAN hardware validation remain external ops gates. Full M3 completion still requires v0.9.3 Web Dashboard.
+**M3 progress**: v0.9.3 local Web Dashboard landed on top of the v0.9.1 relay foundation and v0.9.2 Cloud Sync Bridge. Public relay deployment, DNS/TLS, real cross-WAN hardware validation, and full realtime WebSocket proxy hardening remain external/follow-up gates.
 
 ### M4: v1.0.0 — Public Release (target: mid-July 2026)
 
@@ -585,6 +586,7 @@ v0.8.0 made DiskPulse production-ready with deep intelligence. The v1.0.0 journe
 | v0.9.0 | Full Intelligence — burn DL + Extended Storage + i18n | ✅ Local | 142 tests, AE foundation, Stage 3 classifier, 5-language i18n, external storage, AI Model panel |
 | v0.9.1 | M3 Relay Server local-ready | ✅ Local-ready | 147 tests, self-hosted relay binary, IPC/status, read-only route guard |
 | v0.9.2 | M3 Cloud Sync Bridge | ✅ Local | 150 tests, persistent relay client, cloud registry, relay-routed Hub requests |
+| v0.9.3 | M3 Web Dashboard | ✅ Local | localhost HTTP runtime, dual web build, static serving, API bridge, read-only REST command routing |
 
 ## v0.1.0 Release Checklist
 

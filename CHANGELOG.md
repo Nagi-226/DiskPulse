@@ -2,6 +2,34 @@
 
 All notable changes to DiskPulse will be documented in this file.
 
+## [0.9.3] - 2026-06-09
+
+> M3 Web Dashboard local implementation. This version adds an embedded localhost-only HTTP runtime, static React web bundle serving, a browser/Tauri API bridge, read-only REST command routing, WebSocket route placeholder for realtime follow-up, and cleanup-command blocking from browser mode.
+
+### Web Dashboard Scaffold
+
+- Added `src-tauri/src/web/mod.rs` with a localhost-only HTTP runtime.
+- Added `/api/health` response for Web Dashboard smoke checks.
+- Added read-only command guard reusing the Hub remote command allowlist.
+- Added Tauri IPC commands: `start_web_dashboard`, `stop_web_dashboard`, and `get_web_dashboard_status`.
+- Added static serving from `dist-web-dashboard` / `dist` with SPA fallback and path traversal protection.
+- Added `src/api/index.ts` plus Vite web-dashboard aliases so shared React code can call Tauri in desktop mode or `/api/cmd/*` in browser mode.
+- Added read-only Web Dashboard command routing for disk metadata, history, health, recommendations, model status, relay/cloud status, and other safe queries.
+- Blocked cleanup, mutation, service, and write commands from browser mode unless future desktop confirmation flow is added.
+- Added `npm run build:webui` for the dual web dashboard build.
+- Added `npm run verify:m3-web-dashboard`.
+
+### Verification (v0.9.3)
+
+- `npm run verify:m3-web-dashboard`: passed.
+- `npm run typecheck`: passed.
+- `npm run build:webui`: passed.
+- `npm run build:web`: passed.
+- `cargo metadata --no-deps --manifest-path src-tauri\Cargo.toml --format-version 1`: passed.
+- `cargo check --manifest-path src-tauri\Cargo.toml`: attempted, but timed out locally while Cargo stayed running without output.
+
+---
+
 ## [0.9.2] - 2026-06-08
 
 > M3 Cloud Sync Bridge local implementation. This version turns the v0.9.1 relay foundation into a local cloud bridge path with persistent relay client mode, cloud device registry sync, relay-forwarded Hub requests, and frontend relay controls. Public relay deployment, DNS/TLS, E2E encryption hardening, and real cross-WAN hardware validation remain external gates.
