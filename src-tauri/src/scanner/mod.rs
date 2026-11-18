@@ -388,7 +388,7 @@ where
         dirs.push(dir);
     }
 
-    dirs.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    dirs.sort_by_key(|a| std::cmp::Reverse(a.size_bytes));
     on_progress(ScanProgress {
         drive_letter,
         processed,
@@ -462,7 +462,7 @@ where
         }
     }
 
-    dirs.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    dirs.sort_by_key(|a| std::cmp::Reverse(a.size_bytes));
     Ok(dirs)
 }
 
@@ -785,7 +785,7 @@ pub fn scan_directory(path: &str) -> Result<Vec<DirInfo>, String> {
         });
     }
 
-    dirs.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    dirs.sort_by_key(|a| std::cmp::Reverse(a.size_bytes));
     Ok(dirs)
 }
 

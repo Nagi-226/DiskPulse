@@ -192,11 +192,11 @@ where
         }
     }
 
-    zombie_files.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    zombie_files.sort_by_key(|a| std::cmp::Reverse(a.size_bytes));
     let zombies_total_size = zombie_files.iter().map(|file| file.size_bytes).sum();
     file_ages.sort_by(|a, b| a.path.cmp(&b.path));
     let mut hotspots: Vec<Hotspot> = hotspots.into_values().collect();
-    hotspots.sort_by(|a, b| b.recent_bytes.cmp(&a.recent_bytes));
+    hotspots.sort_by_key(|a| std::cmp::Reverse(a.recent_bytes));
 
     Ok(AgingReport {
         drive_letter,

@@ -562,7 +562,7 @@ fn refresh_dirty_drive_cache(batch: &watcher::FsChangeBatch) -> Vec<DriveInfo> {
             continue;
         }
 
-        dirs.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+        dirs.sort_by_key(|a| std::cmp::Reverse(a.size_bytes));
 
         let meta = scanner::scan_drive_meta(&drive, None, None).ok();
         let info = DriveInfo {

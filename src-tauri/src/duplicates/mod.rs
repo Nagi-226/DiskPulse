@@ -203,7 +203,7 @@ where
             None,
         );
     }
-    groups.sort_by(|a, b| b.total_size_wasted.cmp(&a.total_size_wasted));
+    groups.sort_by_key(|a| std::cmp::Reverse(a.total_size_wasted));
     Ok(groups)
 }
 

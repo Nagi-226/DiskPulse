@@ -352,9 +352,7 @@ impl AnomalyDetector {
             let values: Vec<f64> = growths.iter().map(|(_, growth)| *growth).collect();
             let scores = self.modified_z_score.scores(&values);
 
-            for (index, ((dir, growth), score)) in
-                growths.into_iter().zip(scores.into_iter()).enumerate()
-            {
+            for (index, ((dir, growth), score)) in growths.into_iter().zip(scores).enumerate() {
                 let peer_growths: Vec<f64> = values
                     .iter()
                     .enumerate()

@@ -580,8 +580,9 @@ fn parse_info_file(path: &std::path::Path) -> Option<String> {
 
     let remaining = &data[path_start..];
     let mut utf16_chars: Vec<u16> = Vec::new();
-    for chunk in remaining.chunks_exact(2) {
-        let word = u16::from_le_bytes([chunk[0], chunk[1]]);
+    let (utf16_words, _remainder) = remaining.as_chunks::<2>();
+    for &[lo, hi] in utf16_words {
+        let word = u16::from_le_bytes([lo, hi]);
         if word == 0 {
             break;
         }
