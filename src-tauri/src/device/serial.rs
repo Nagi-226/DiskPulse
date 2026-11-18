@@ -5,17 +5,22 @@
 
 #[cfg(test)]
 use std::collections::VecDeque;
-use std::io::Read;
+use std::io::{Read, Write};
+#[cfg(test)]
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use super::protocol::FrameBuffer;
 
 /// 传输层抽象：真实串口与 mock 各实现一份，command 层只认 trait。
 /// read_frame 返回完整帧的 JSON 载荷（不含长度头）；Ok(None) = 暂无完整帧。
+/// write_frame 收的是**已 encode 好的完整帧字节**（含 [u32 BE len] 头）——
+/// 组帧是 protocol::encode 的事，传输层只负责把字节送出去，分层不打乱。
 pub trait DeviceTransport: Send {
     fn list_ports(&self) -> Result<Vec<String>, String>;
     fn open(&mut self, port: &str, baud: u32) -> Result<(), String>;
     fn read_frame(&mut self) -> Result<Option<Vec<u8>>, String>;
+    fn write_frame(&mut self, bytes: &[u8]) -> Result<(), String>;
     fn close(&mut self);
 }
 
@@ -26,6 +31,7 @@ pub struct MockTransport {
     chunks: VecDeque<Vec<u8>>,
     frame_buf: FrameBuffer,
     opened: bool,
+    written: Arc<Mutex<Vec<Vec<u8>>>>,
 }
 
 #[cfg(test)]
@@ -35,12 +41,18 @@ impl MockTransport {
             chunks: VecDeque::new(),
             frame_buf: FrameBuffer::default(),
             opened: false,
+            written: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     /// 注入一段原始字节（可以是一帧、多帧、半帧、或故意坏的长度头）。
     pub fn push_bytes(&mut self, bytes: Vec<u8>) {
         self.chunks.push_back(bytes);
+    }
+
+    /// 共享的写入记录：mock 被 move 进连接状态后，测试仍可通过此句柄断言写出的字节。
+    pub fn written_log(&self) -> Arc<Mutex<Vec<Vec<u8>>>> {
+        Arc::clone(&self.written)
     }
 }
 
@@ -70,6 +82,17 @@ impl DeviceTransport for MockTransport {
         }
     }
 
+    fn write_frame(&mut self, bytes: &[u8]) -> Result<(), String> {
+        if !self.opened {
+            return Err("mock transport not opened".into());
+        }
+        self.written
+            .lock()
+            .map_err(|e| format!("mock written log lock: {e}"))?
+            .push(bytes.to_vec());
+        Ok(())
+    }
+
     fn close(&mut self) {
         self.opened = false;
         self.chunks.clear();
@@ -80,6 +103,7 @@ impl DeviceTransport for MockTransport {
 /// 真实串口（serialport crate，Windows/Linux/macOS 均支持）。
 pub struct SerialTransport {
     port: Option<Box<dyn serialport::SerialPort>>,
+    port_name: String,
     frame_buf: FrameBuffer,
 }
 
@@ -87,6 +111,7 @@ impl SerialTransport {
     pub fn new() -> Self {
         Self {
             port: None,
+            port_name: String::new(),
             frame_buf: FrameBuffer::default(),
         }
     }
@@ -106,6 +131,7 @@ impl DeviceTransport for SerialTransport {
             .open()
             .map_err(|e| format!("open serial port {port}: {e}"))?;
         self.port = Some(handle);
+        self.port_name = port.to_string();
         Ok(())
     }
 
@@ -130,8 +156,21 @@ impl DeviceTransport for SerialTransport {
         }
     }
 
+    fn write_frame(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let port = self
+            .port
+            .as_mut()
+            .ok_or_else(|| "serial port not opened".to_string())?;
+        port.write_all(bytes)
+            .map_err(|e| format!("serial write on {}: {e}", self.port_name))?;
+        port.flush()
+            .map_err(|e| format!("serial flush on {}: {e}", self.port_name))?;
+        Ok(())
+    }
+
     fn close(&mut self) {
         self.port = None;
+        self.port_name.clear();
         self.frame_buf.reset();
     }
 }

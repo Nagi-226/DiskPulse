@@ -34,10 +34,7 @@ pub enum BoardMessage {
     },
 }
 
-/// 编码一帧：4 字节大端长度头 + compact JSON。
-/// 第一版传输层只读（trait 无 write），encode 仅供测试构造帧；
-/// 板端固件落地、需要主机下发 hello/ack 时去掉 cfg(test)。
-#[cfg(test)]
+/// 编码一帧：4 字节大端长度头 + compact JSON。主机下发 hello/ack 用。
 pub fn encode(msg: &BoardMessage) -> Result<Vec<u8>, String> {
     let payload = serde_json::to_vec(msg).map_err(|e| format!("board frame encode: {e}"))?;
     if payload.len() > MAX_FRAME_LEN as usize {

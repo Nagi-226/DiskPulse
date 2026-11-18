@@ -58,12 +58,21 @@ pub fn connect(port: &str, baud: u32) -> Result<(), String> {
 }
 
 /// 注入任意传输层（mock 测试入口；真实路径走 connect）。
+/// open 成功后立即下发一帧主机 Hello；发送失败则 close 回滚，不留半开连接。
 pub fn connect_with_transport(
     mut transport: Box<dyn DeviceTransport>,
     port: &str,
     baud: u32,
 ) -> Result<(), String> {
     transport.open(port, baud)?;
+    let hello = protocol::encode(&BoardMessage::Hello {
+        board: "diskpulse-host".into(),
+        fw_version: env!("CARGO_PKG_VERSION").into(),
+    })?;
+    if let Err(e) = transport.write_frame(&hello) {
+        transport.close();
+        return Err(format!("board hello on {port}: {e}"));
+    }
     let mut guard = lock_state()?;
     if let Some(mut old) = guard.transport.take() {
         old.close();
@@ -261,5 +270,81 @@ mod tests {
     fn list_ports_returns_ok_on_this_machine() {
         let ports = list_ports().expect("list_ports must not error");
         println!("board_list_ports actual result: {ports:?}");
+    }
+
+    #[test]
+    fn connect_writes_hello_frame_decodable_from_written_bytes() {
+        let _serial = TEST_LOCK.lock().expect("test lock");
+        let mock = MockTransport::new();
+        let written = mock.written_log();
+        connect_with_transport(Box::new(mock), "MOCK0", 115200).expect("connect");
+
+        // J4：写出去的字节经独立切帧路径解回来，必须是合法 Hello 帧且字段一致
+        let log = written.lock().expect("written log lock");
+        assert_eq!(log.len(), 1, "connect must write exactly one frame");
+        let mut fb = crate::device::protocol::FrameBuffer::default();
+        for chunk in log.iter() {
+            fb.feed(chunk);
+        }
+        let payload = fb
+            .next_frame()
+            .expect("written bytes must form a valid frame")
+            .expect("frame must be complete");
+        assert_eq!(fb.pending(), 0, "no trailing garbage after the frame");
+        assert_eq!(
+            crate::device::protocol::decode(&payload).expect("decode written hello"),
+            BoardMessage::Hello {
+                board: "diskpulse-host".into(),
+                fw_version: env!("CARGO_PKG_VERSION").into(),
+            }
+        );
+        println!("written hello bytes: {} bytes, decoded OK", log[0].len());
+        disconnect().expect("disconnect");
+    }
+
+    /// open 成功但 write 必失败的传输层，验证 hello 发送失败的回滚路径。
+    struct FailingWriteTransport {
+        opened: bool,
+        closed: bool,
+    }
+
+    impl DeviceTransport for FailingWriteTransport {
+        fn list_ports(&self) -> Result<Vec<String>, String> {
+            Ok(vec![])
+        }
+        fn open(&mut self, _port: &str, _baud: u32) -> Result<(), String> {
+            self.opened = true;
+            Ok(())
+        }
+        fn read_frame(&mut self) -> Result<Option<Vec<u8>>, String> {
+            Ok(None)
+        }
+        fn write_frame(&mut self, _bytes: &[u8]) -> Result<(), String> {
+            Err("simulated write failure".into())
+        }
+        fn close(&mut self) {
+            self.opened = false;
+            self.closed = true;
+        }
+    }
+
+    #[test]
+    fn hello_write_failure_rolls_back_and_keeps_state_clean() {
+        let _serial = TEST_LOCK.lock().expect("test lock");
+        disconnect().expect("clean state");
+        let err = connect_with_transport(
+            Box::new(FailingWriteTransport {
+                opened: false,
+                closed: false,
+            }),
+            "MOCK0",
+            115200,
+        )
+        .expect_err("hello write fails => connect must fail");
+        assert!(err.contains("simulated write failure"), "got: {err}");
+        // 半开连接不得留在静态状态里
+        let status_err = get_status().expect_err("state must stay unconnected");
+        assert!(status_err.contains("not connected"), "got: {status_err}");
+        println!("rollback error surfaced: {err}");
     }
 }
